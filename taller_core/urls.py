@@ -10,4 +10,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     # Módulo de Seguridad — /api/seguridad/...
     path("api/seguridad/", include("apps.seguridad.urls")),
+    # Nuevos Módulos
+    path("api/inventario/", include("apps.inventario.urls")),
+    path("api/vehiculos/", include("apps.vehiculos.urls")),
 ]
