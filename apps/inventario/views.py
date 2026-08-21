@@ -82,6 +82,19 @@ class RepuestoViewSet(viewsets.ModelViewSet):
     search_fields = ['codigo', 'nombre']
     ordering_fields = ['codigo', 'nombre', 'precio_lista']
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        ubicacion = self.request.query_params.get('ubicacion')
+        if ubicacion:
+            # Filter by pasillo, estante, casillero or codigo
+            qs = qs.filter(
+                Q(inventario_stock__ubicacion__pasillo__icontains=ubicacion) |
+                Q(inventario_stock__ubicacion__estante__icontains=ubicacion) |
+                Q(inventario_stock__ubicacion__casillero__icontains=ubicacion) |
+                Q(inventario_stock__ubicacion__codigo__icontains=ubicacion)
+            ).distinct()
+        return qs
+
     def get_serializer_class(self):
         """
         Usa el serializer detallado (con inventario anidado) para el retrieve (GET /id/).

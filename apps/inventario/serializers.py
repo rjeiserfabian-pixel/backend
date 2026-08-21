@@ -27,12 +27,44 @@ class AplicacionRepuestoSerializer(serializers.ModelSerializer):
         exclude = ('repuesto',)  # Se excluye porque se asociará al crear el repuesto
 
 
+class InventarioStockResumenSerializer(serializers.ModelSerializer):
+    """
+    Serializer ligero para mostrar el desglose de stock de un repuesto
+    anidado dentro de RepuestoDetalleSerializer.
+    Evita N+1 usando prefetch_related en la vista.
+    """
+    ubicacion_codigo = serializers.CharField(source='ubicacion.codigo', read_only=True)
+    almacen_nombre = serializers.CharField(source='ubicacion.almacen.nombre', read_only=True)
+    sucursal_nombre = serializers.CharField(source='ubicacion.almacen.sucursal.nombre', read_only=True)
+    stock_fisico_total = serializers.ReadOnlyField()
+    ubicacion_detalle = serializers.SerializerMethodField()
+
+    class Meta:
+        model = InventarioStock
+        fields = [
+            'id', 'ubicacion', 'ubicacion_codigo', 'almacen_nombre', 'sucursal_nombre',
+            'stock_disponible', 'stock_reservado', 'stock_merma', 'stock_fisico_total',
+            'stock_minimo', 'ubicacion_detalle',
+        ]
+
+    def get_ubicacion_detalle(self, obj):
+        partes = []
+        if obj.ubicacion.pasillo and obj.ubicacion.pasillo != "-" and obj.ubicacion.pasillo.lower() != "x": 
+            partes.append(f"Pasillo {obj.ubicacion.pasillo}")
+        if obj.ubicacion.estante and obj.ubicacion.estante != "-" and obj.ubicacion.estante.lower() != "x": 
+            partes.append(f"Estante {obj.ubicacion.estante}")
+        if obj.ubicacion.casillero and obj.ubicacion.casillero != "-" and obj.ubicacion.casillero.lower() != "x": 
+            partes.append(f"Casillero {obj.ubicacion.casillero}")
+        return " - ".join(partes) if partes else obj.ubicacion.codigo
+
+
 class RepuestoSerializer(serializers.ModelSerializer):
     aplicaciones = AplicacionRepuestoSerializer(many=True, required=False)
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
     marca_nombre = serializers.CharField(source='marca.nombre', read_only=True)
     stock_total_disponible = serializers.IntegerField(read_only=True)
     stock_minimo_global = serializers.IntegerField(read_only=True)
+    inventario_stock = InventarioStockResumenSerializer(many=True, read_only=True)
 
     class Meta:
         model = Repuesto
@@ -103,30 +135,21 @@ class InventarioStockSerializer(serializers.ModelSerializer):
     almacen_nombre = serializers.CharField(source='ubicacion.almacen.nombre', read_only=True)
     sucursal_nombre = serializers.CharField(source='ubicacion.almacen.sucursal.nombre', read_only=True)
     stock_fisico_total = serializers.ReadOnlyField()
+    ubicacion_detalle = serializers.SerializerMethodField()
 
     class Meta:
         model = InventarioStock
         fields = '__all__'
 
-
-class InventarioStockResumenSerializer(serializers.ModelSerializer):
-    """
-    Serializer ligero para mostrar el desglose de stock de un repuesto
-    anidado dentro de RepuestoDetalleSerializer.
-    Evita N+1 usando prefetch_related en la vista.
-    """
-    ubicacion_codigo = serializers.CharField(source='ubicacion.codigo', read_only=True)
-    almacen_nombre = serializers.CharField(source='ubicacion.almacen.nombre', read_only=True)
-    sucursal_nombre = serializers.CharField(source='ubicacion.almacen.sucursal.nombre', read_only=True)
-    stock_fisico_total = serializers.ReadOnlyField()
-
-    class Meta:
-        model = InventarioStock
-        fields = [
-            'id', 'ubicacion', 'ubicacion_codigo', 'almacen_nombre', 'sucursal_nombre',
-            'stock_disponible', 'stock_reservado', 'stock_merma', 'stock_fisico_total',
-            'stock_minimo',
-        ]
+    def get_ubicacion_detalle(self, obj):
+        partes = []
+        if obj.ubicacion.pasillo and obj.ubicacion.pasillo != "-" and obj.ubicacion.pasillo.lower() != "x": 
+            partes.append(f"Pasillo {obj.ubicacion.pasillo}")
+        if obj.ubicacion.estante and obj.ubicacion.estante != "-" and obj.ubicacion.estante.lower() != "x": 
+            partes.append(f"Estante {obj.ubicacion.estante}")
+        if obj.ubicacion.casillero and obj.ubicacion.casillero != "-" and obj.ubicacion.casillero.lower() != "x": 
+            partes.append(f"Casillero {obj.ubicacion.casillero}")
+        return " - ".join(partes) if partes else obj.ubicacion.codigo
 
 
 class RepuestoDetalleSerializer(serializers.ModelSerializer):
