@@ -1,11 +1,26 @@
-from rest_framework import viewsets
+import logging
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
-from django.db.models import Q
-from .models import Categoria, MarcaRepuesto, Repuesto
-from .serializers import CategoriaSerializer, MarcaRepuestoSerializer, RepuestoSerializer
+from django.db.models import Q, Prefetch
+from .models import (
+    Categoria, MarcaRepuesto, Repuesto, AplicacionRepuesto,
+    Sucursal, Almacen, UbicacionFisica, InventarioStock, MovimientoInventario,
+)
+from .serializers import (
+    CategoriaSerializer, MarcaRepuestoSerializer, RepuestoSerializer, RepuestoDetalleSerializer,
+    SucursalSerializer, AlmacenSerializer, UbicacionFisicaSerializer,
+    InventarioStockSerializer, MovimientoInventarioSerializer,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────────────────────────
+# VIEWSETS EXISTENTES (sin cambios en lógica)
+# ──────────────────────────────────────────────
 
 class CategoriaViewSet(viewsets.ModelViewSet):
     queryset = Categoria.objects.filter(estado=True).order_by('-id')
@@ -28,10 +43,34 @@ class MarcaRepuestoViewSet(viewsets.ModelViewSet):
 
 
 class RepuestoViewSet(viewsets.ModelViewSet):
-    # Usamos select_related y prefetch_related para evitar N+1
-    queryset = Repuesto.objects.filter(estado=True).select_related('categoria', 'marca').prefetch_related('aplicaciones').order_by('-id')
+    # select_related y prefetch_related para evitar N+1
+    queryset = (
+        Repuesto.objects
+        .filter(estado=True)
+        .select_related('categoria', 'marca')
+        .prefetch_related(
+            'aplicaciones',
+            # Prefetch del inventario con sus relaciones anidadas para el detalle
+            Prefetch(
+                'inventario_stock',
+                queryset=InventarioStock.objects.select_related(
+                    'ubicacion__almacen__sucursal'
+                )
+            )
+        )
+        .order_by('-id')
+    )
     serializer_class = RepuestoSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_serializer_class(self):
+        """
+        Usa el serializer detallado (con inventario anidado) para el retrieve (GET /id/).
+        Usa el serializer estándar para list/create/update para mantener compatibilidad.
+        """
+        if self.action == 'retrieve':
+            return RepuestoDetalleSerializer
+        return RepuestoSerializer
 
     @transaction.atomic
     def perform_create(self, serializer):
@@ -48,7 +87,7 @@ class RepuestoViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def compatibles(self, request):
         """
-        Endpoint dinamico para obtener repuestos compatibles con un vehiculo
+        Endpoint dinámico para obtener repuestos compatibles con un vehículo.
         Query Params esperados: marca, modelo, motor
         """
         marca = request.query_params.get('marca', None)
@@ -58,24 +97,16 @@ class RepuestoViewSet(viewsets.ModelViewSet):
         if not marca:
             return Response({'error': 'La marca del vehiculo es requerida'}, status=400)
 
-        # Iniciar query para buscar en las aplicaciones
-        # Se requiere coincidencia en marca. Modelo y motor son opcionales en la BD, 
-        # pero si existen, deben coincidir.
-        
-        # Obtenemos repuestos que tengan al menos una aplicación que coincida
         query = Q(aplicaciones__marca_vehiculo__iexact=marca)
-        
+
         if modelo:
-            # Si el vehiculo tiene modelo, la aplicación debe no tener modelo especificado (aplica a todos los modelos de la marca)
-            # O debe tener el mismo modelo
             query &= (Q(aplicaciones__modelo_vehiculo__isnull=True) | Q(aplicaciones__modelo_vehiculo__iexact=modelo))
-            
+
         if motor:
             query &= (Q(aplicaciones__motor__isnull=True) | Q(aplicaciones__motor__iexact=motor))
 
         repuestos = self.get_queryset().filter(query).distinct()
-        
-        # Paginacion manual si es requerida, o delegarla al paginador por defecto
+
         page = self.paginate_queryset(repuestos)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -83,3 +114,172 @@ class RepuestoViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(repuestos, many=True)
         return Response(serializer.data)
+
+
+# ──────────────────────────────────────────────
+# NUEVOS VIEWSETS: ESTRUCTURA FÍSICA
+# ──────────────────────────────────────────────
+
+class SucursalViewSet(viewsets.ModelViewSet):
+    """CRUD completo de Sucursales."""
+    queryset = Sucursal.objects.filter(estado=True).order_by('nombre')
+    serializer_class = SucursalSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_destroy(self, instance):
+        # Soft delete: no eliminar físicamente
+        instance.estado = False
+        instance.save()
+        logger.info(f"Sucursal desactivada: {instance.nombre} | Usuario: {self.request.user}")
+
+
+class AlmacenViewSet(viewsets.ModelViewSet):
+    """CRUD completo de Almacenes. Filtra por sucursal si se pasa ?sucursal=<id>."""
+    # select_related para evitar N+1 al mostrar sucursal_nombre
+    queryset = Almacen.objects.filter(estado=True).select_related('sucursal').order_by('sucursal__nombre', 'nombre')
+    serializer_class = AlmacenSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        sucursal_id = self.request.query_params.get('sucursal')
+        if sucursal_id:
+            qs = qs.filter(sucursal_id=sucursal_id)
+        return qs
+
+    def perform_destroy(self, instance):
+        instance.estado = False
+        instance.save()
+        logger.info(f"Almacén desactivado: {instance} | Usuario: {self.request.user}")
+
+
+class UbicacionFisicaViewSet(viewsets.ModelViewSet):
+    """CRUD completo de Ubicaciones Físicas. Filtra por almacen si se pasa ?almacen=<id>."""
+    # select_related para evitar N+1
+    queryset = (
+        UbicacionFisica.objects
+        .select_related('almacen__sucursal')
+        .order_by('almacen__sucursal__nombre', 'almacen__nombre', 'codigo')
+    )
+    serializer_class = UbicacionFisicaSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        almacen_id = self.request.query_params.get('almacen')
+        if almacen_id:
+            qs = qs.filter(almacen_id=almacen_id)
+        sucursal_id = self.request.query_params.get('sucursal')
+        if sucursal_id:
+            qs = qs.filter(almacen__sucursal_id=sucursal_id)
+        return qs
+
+
+# ──────────────────────────────────────────────
+# NUEVOS VIEWSETS: STOCK Y KARDEX
+# ──────────────────────────────────────────────
+
+class InventarioStockViewSet(viewsets.ModelViewSet):
+    """
+    Gestión del stock por ubicación.
+    - GET /inventario/stock/?repuesto=<id>  → Ver stock de un repuesto en todas las ubicaciones
+    - GET /inventario/stock/?ubicacion=<id> → Ver todos los repuestos en una ubicación
+    - PATCH /inventario/stock/<id>/         → Ajustar stock (crea automáticamente el movimiento de Kardex)
+    """
+    queryset = (
+        InventarioStock.objects
+        .select_related('repuesto', 'ubicacion__almacen__sucursal')
+        .order_by('repuesto__codigo')
+    )
+    serializer_class = InventarioStockSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        repuesto_id = self.request.query_params.get('repuesto')
+        if repuesto_id:
+            qs = qs.filter(repuesto_id=repuesto_id)
+        ubicacion_id = self.request.query_params.get('ubicacion')
+        if ubicacion_id:
+            qs = qs.filter(ubicacion_id=ubicacion_id)
+        return qs
+
+    @transaction.atomic
+    def perform_create(self, serializer):
+        """
+        Al asignar por primera vez un repuesto a una ubicación,
+        registramos el movimiento de 'INVENTARIO_INICIAL' en el Kardex.
+        """
+        instance = serializer.save()
+        if instance.stock_disponible > 0:
+            MovimientoInventario.objects.create(
+                repuesto=instance.repuesto,
+                ubicacion=instance.ubicacion,
+                tipo_movimiento=MovimientoInventario.TipoMovimiento.INVENTARIO_INICIAL,
+                cantidad=instance.stock_disponible,
+                stock_resultante=instance.stock_disponible,
+                motivo=self.request.data.get('motivo', 'Asignación inicial a ubicación'),
+                usuario=self.request.user,
+            )
+            logger.info(f"Kardex Inicial creado: {instance.repuesto} en {instance.ubicacion} con {instance.stock_disponible}")
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        """
+        Al actualizar el stock, registra automáticamente el movimiento de Kardex.
+        Usa transaction.atomic para que el ajuste y el movimiento sean indivisibles.
+        """
+        instance_antes = self.get_object()
+        stock_antes = instance_antes.stock_disponible
+
+        instance = serializer.save()
+        stock_despues = instance.stock_disponible
+        diferencia = stock_despues - stock_antes
+
+        if diferencia != 0:
+            tipo = (
+                MovimientoInventario.TipoMovimiento.AJUSTE_POSITIVO
+                if diferencia > 0
+                else MovimientoInventario.TipoMovimiento.AJUSTE_NEGATIVO
+            )
+            MovimientoInventario.objects.create(
+                repuesto=instance.repuesto,
+                ubicacion=instance.ubicacion,
+                tipo_movimiento=tipo,
+                cantidad=diferencia,
+                stock_resultante=stock_despues,
+                motivo=self.request.data.get('motivo', 'Ajuste manual desde el sistema'),
+                usuario=self.request.user,
+            )
+            logger.info(
+                f"Ajuste de stock: {instance.repuesto.codigo} | {diferencia:+d} unidades "
+                f"→ {stock_despues} | Ubicación: {instance.ubicacion.codigo} | Usuario: {self.request.user}"
+            )
+
+
+class MovimientoInventarioViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Kardex de inventario (solo lectura). El Kardex es inmutable.
+    Filtra por ?repuesto=<id> o ?ubicacion=<id>.
+    Paginado por defecto (25 registros). Los movimientos más recientes van primero.
+    """
+    queryset = (
+        MovimientoInventario.objects
+        .select_related('repuesto', 'ubicacion__almacen__sucursal', 'usuario')
+        .order_by('-fecha')
+    )
+    serializer_class = MovimientoInventarioSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        repuesto_id = self.request.query_params.get('repuesto')
+        if repuesto_id:
+            qs = qs.filter(repuesto_id=repuesto_id)
+        ubicacion_id = self.request.query_params.get('ubicacion')
+        if ubicacion_id:
+            qs = qs.filter(ubicacion_id=ubicacion_id)
+        tipo = self.request.query_params.get('tipo')
+        if tipo:
+            qs = qs.filter(tipo_movimiento=tipo)
+        return qs
