@@ -120,6 +120,7 @@ class Almacen(models.Model):
     sucursal = models.ForeignKey(Sucursal, on_delete=models.RESTRICT, related_name='almacenes')
     nombre = models.CharField(max_length=150, db_index=True)
     descripcion = models.CharField(max_length=255, null=True, blank=True)
+    direccion = models.CharField(max_length=255, null=True, blank=True)
     estado = models.BooleanField(default=True)
 
     class Meta:
