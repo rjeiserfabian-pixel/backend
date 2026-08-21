@@ -74,6 +74,11 @@ class Repuesto(models.Model):
             total += s.stock_disponible + s.stock_reservado + s.stock_merma
         return total
 
+    @property
+    def stock_minimo_global(self):
+        """Suma del stock mínimo requerido en todas las ubicaciones."""
+        return sum(s.stock_minimo for s in self.inventario_stock.all())
+
 
 class AplicacionRepuesto(models.Model):
     repuesto = models.ForeignKey(Repuesto, on_delete=models.CASCADE, related_name='aplicaciones')
@@ -166,6 +171,7 @@ class InventarioStock(models.Model):
     stock_disponible = models.IntegerField(default=0)   # Listo para vender/usar
     stock_reservado = models.IntegerField(default=0)    # Asignado a OT/ventas en curso
     stock_merma = models.IntegerField(default=0)        # Dañado o en cuarentena
+    stock_minimo = models.IntegerField(default=5)       # Nivel de alerta para reposición
     actualizado_en = models.DateTimeField(auto_now=True)
 
     class Meta:

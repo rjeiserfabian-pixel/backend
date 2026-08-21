@@ -14,6 +14,15 @@ from .serializers import (
     SucursalSerializer, AlmacenSerializer, UbicacionFisicaSerializer,
     InventarioStockSerializer, MovimientoInventarioSerializer,
 )
+from rest_framework import filters, pagination
+from django_filters.rest_framework import DjangoFilterBackend
+from django.http import HttpResponse
+from django.utils import timezone
+import openpyxl
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +51,11 @@ class MarcaRepuestoViewSet(viewsets.ModelViewSet):
         instance.save()
 
 
+class RepuestoPagination(pagination.PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 class RepuestoViewSet(viewsets.ModelViewSet):
     # select_related y prefetch_related para evitar N+1
     queryset = (
@@ -62,6 +76,11 @@ class RepuestoViewSet(viewsets.ModelViewSet):
     )
     serializer_class = RepuestoSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = RepuestoPagination
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['categoria', 'marca']
+    search_fields = ['codigo', 'nombre']
+    ordering_fields = ['codigo', 'nombre', 'precio_lista']
 
     def get_serializer_class(self):
         """
@@ -114,6 +133,74 @@ class RepuestoViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(repuestos, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def exportar_excel(self, request):
+        repuestos = self.filter_queryset(self.get_queryset())
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Repuestos"
+        
+        headers = ["Código", "Nombre", "Categoría", "Marca", "Stock Global", "P. Lista", "P. Compra"]
+        ws.append(headers)
+        
+        for r in repuestos:
+            ws.append([
+                r.codigo,
+                r.nombre,
+                r.categoria.nombre if r.categoria else '',
+                r.marca.nombre if r.marca else '',
+                r.stock_total_disponible,
+                float(r.precio_lista),
+                float(r.precio_compra),
+            ])
+            
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename=repuestos.xlsx'
+        wb.save(response)
+        return response
+
+    @action(detail=False, methods=['get'])
+    def exportar_pdf(self, request):
+        repuestos = self.filter_queryset(self.get_queryset())
+        
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename="reporte_repuestos.pdf"'
+        
+        doc = SimpleDocTemplate(response, pagesize=landscape(letter))
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        elements.append(Paragraph("Reporte de Inventario de Repuestos", styles['Title']))
+        elements.append(Paragraph(f"Generado el: {timezone.now().strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
+        elements.append(Spacer(1, 12))
+        
+        data = [["Código", "Nombre", "Categoría", "Marca", "Stock Global", "P. Lista"]]
+        for r in repuestos:
+            data.append([
+                r.codigo,
+                r.nombre[:30] + ('...' if len(r.nombre)>30 else ''),
+                r.categoria.nombre if r.categoria else '',
+                r.marca.nombre if r.marca else '',
+                str(r.stock_total_disponible),
+                f"S/ {r.precio_lista}"
+            ])
+            
+        table = Table(data, colWidths=[80, 200, 100, 100, 80, 80])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1976d2")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        elements.append(table)
+        doc.build(elements)
+        return response
 
 
 # ──────────────────────────────────────────────

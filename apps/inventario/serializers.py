@@ -32,6 +32,7 @@ class RepuestoSerializer(serializers.ModelSerializer):
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
     marca_nombre = serializers.CharField(source='marca.nombre', read_only=True)
     stock_total_disponible = serializers.IntegerField(read_only=True)
+    stock_minimo_global = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Repuesto
@@ -124,6 +125,7 @@ class InventarioStockResumenSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'ubicacion', 'ubicacion_codigo', 'almacen_nombre', 'sucursal_nombre',
             'stock_disponible', 'stock_reservado', 'stock_merma', 'stock_fisico_total',
+            'stock_minimo',
         ]
 
 
