@@ -13,4 +13,5 @@ urlpatterns = [
     # Nuevos Módulos
     path("api/inventario/", include("apps.inventario.urls")),
     path("api/vehiculos/", include("apps.vehiculos.urls")),
+    path("api/clientes/", include("apps.clientes.urls")),
 ]

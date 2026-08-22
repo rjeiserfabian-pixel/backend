@@ -4,9 +4,18 @@ class Vehiculo(models.Model):
     placa = models.CharField(max_length=15, unique=True, db_index=True)
     marca = models.CharField(max_length=100)
     modelo = models.CharField(max_length=100)
-    serie = models.CharField(max_length=100, null=True, blank=True)
+    clase = models.CharField(max_length=100, null=True, blank=True)
+    tipo = models.CharField(max_length=100, null=True, blank=True)
+    uso = models.CharField(max_length=100, null=True, blank=True)
+    anio_fabricacion = models.IntegerField(null=True, blank=True)
+    numero_asientos = models.IntegerField(null=True, blank=True)
+    numero_serie = models.CharField(max_length=100, null=True, blank=True)
     color = models.CharField(max_length=50, null=True, blank=True)
-    motor = models.CharField(max_length=100, null=True, blank=True)
+    numero_motor = models.CharField(max_length=100, null=True, blank=True)
+    
+    # Relación M:N con clientes para mantener trazabilidad histórica
+    clientes = models.ManyToManyField('clientes.Cliente', related_name='vehiculos', blank=True)
+    
     estado = models.BooleanField(default=True) # Soft delete
 
     class Meta:
