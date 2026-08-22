@@ -151,6 +151,13 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ---------------------------------------------------------------------------
+# TOKENS DE APIS EXTERNAS
+# ---------------------------------------------------------------------------
+TOKENPERU_TOKEN = os.environ.get("TOKENPERU_TOKEN")
+APISPERU_TOKEN = os.environ.get("APISPERU_TOKEN")
+YUPAY_TOKEN = os.environ.get("YUPAY_TOKEN")
+
+# ---------------------------------------------------------------------------
 # LOGGING — Nunca usar print(). Logs estructurados con contexto.
 # ---------------------------------------------------------------------------
 LOGGING = {
