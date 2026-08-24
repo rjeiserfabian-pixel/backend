@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import (
-    Caja, SesionCaja, MovimientoCaja, SerieComprobante, MetodoPago, 
+    Caja, SesionCaja, MovimientoCaja, TipoComprobante, SerieComprobante, MetodoPago, 
     Impuesto, Venta, DetalleVenta, PagoVenta, CuentaPorCobrar, CuotaCredito
 )
 from apps.inventario.serializers import RepuestoSerializer
@@ -24,7 +24,15 @@ class ImpuestoSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class TipoComprobanteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TipoComprobante
+        fields = '__all__'
+
+
 class SerieComprobanteSerializer(serializers.ModelSerializer):
+    tipo_comprobante_nombre = serializers.CharField(source='tipo_comprobante.nombre', read_only=True)
+
     class Meta:
         model = SerieComprobante
         fields = '__all__'

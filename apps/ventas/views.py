@@ -6,12 +6,12 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 
 from .models import (
-    Caja, SesionCaja, MovimientoCaja, SerieComprobante, MetodoPago, 
+    Caja, SesionCaja, MovimientoCaja, TipoComprobante, SerieComprobante, MetodoPago, 
     Impuesto, Venta, DetalleVenta, CuentaPorCobrar, CuotaCredito
 )
 from .serializers import (
     CajaSerializer, SesionCajaSerializer, MovimientoCajaSerializer,
-    SerieComprobanteSerializer, MetodoPagoSerializer, ImpuestoSerializer,
+    TipoComprobanteSerializer, SerieComprobanteSerializer, MetodoPagoSerializer, ImpuestoSerializer,
     VentaSerializer, TicketKioskoCreateSerializer, ProcesarVentaSerializer,
     CuentaPorCobrarSerializer
 )
@@ -34,6 +34,11 @@ class MetodoPagoViewSet(viewsets.ModelViewSet):
 class ImpuestoViewSet(viewsets.ModelViewSet):
     queryset = Impuesto.objects.all()
     serializer_class = ImpuestoSerializer
+
+
+class TipoComprobanteViewSet(viewsets.ModelViewSet):
+    queryset = TipoComprobante.objects.all()
+    serializer_class = TipoComprobanteSerializer
 
 
 class SerieComprobanteViewSet(viewsets.ModelViewSet):

@@ -50,15 +50,23 @@ class SesionCaja(models.Model):
         return f"Sesión {self.id} - {self.caja.nombre} ({self.usuario})"
 
 
-class SerieComprobante(models.Model):
-    class TipoComprobante(models.TextChoices):
-        FACTURA = 'FACTURA', 'Factura'
-        BOLETA = 'BOLETA', 'Boleta'
-        TICKET = 'TICKET', 'Ticket de Venta'
-        NOTA_CREDITO = 'NOTA_CREDITO', 'Nota de Crédito'
+class TipoComprobante(models.Model):
+    nombre = models.CharField(max_length=50, unique=True, db_index=True)
+    codigo_sunat = models.CharField(max_length=10, null=True, blank=True)
+    estado = models.BooleanField(default=True)
 
+    class Meta:
+        db_table = 'ventas_tipo_comprobante'
+        verbose_name = 'Tipo de Comprobante'
+        verbose_name_plural = 'Tipos de Comprobantes'
+
+    def __str__(self):
+        return self.nombre
+
+
+class SerieComprobante(models.Model):
     sucursal = models.ForeignKey(Sucursal, on_delete=models.RESTRICT, related_name='series_comprobantes')
-    tipo_comprobante = models.CharField(max_length=30, choices=TipoComprobante.choices, db_index=True)
+    tipo_comprobante = models.ForeignKey(TipoComprobante, on_delete=models.RESTRICT, null=True, blank=True, related_name='series')
     serie = models.CharField(max_length=10, db_index=True)  # Ej: F001, B001
     correlativo_actual = models.IntegerField(default=0)
     estado = models.BooleanField(default=True)
@@ -70,7 +78,8 @@ class SerieComprobante(models.Model):
         unique_together = [('sucursal', 'tipo_comprobante', 'serie')]
 
     def __str__(self):
-        return f"{self.serie} ({self.tipo_comprobante}) - {self.sucursal.nombre}"
+        tipo_nombre = self.tipo_comprobante.nombre if self.tipo_comprobante else 'N/A'
+        return f"{self.serie} ({tipo_nombre}) - {self.sucursal.nombre}"
 
     def generar_siguiente_correlativo(self) -> str:
         siguiente = self.correlativo_actual + 1
@@ -124,7 +133,7 @@ class Venta(models.Model):
     sesion_caja = models.ForeignKey(SesionCaja, on_delete=models.RESTRICT, related_name='ventas', null=True, blank=True)
     
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.PRE_VENTA, db_index=True)
-    tipo_comprobante = models.CharField(max_length=30, choices=SerieComprobante.TipoComprobante.choices, null=True, blank=True)
+    tipo_comprobante = models.ForeignKey(TipoComprobante, on_delete=models.RESTRICT, null=True, blank=True)
     serie_correlativo = models.CharField(max_length=50, null=True, blank=True, db_index=True)
     ticket_kiosko = models.CharField(max_length=20, null=True, blank=True, db_index=True)  # Ej: TK-482
 
