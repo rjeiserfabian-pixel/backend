@@ -47,3 +47,33 @@ class ClienteViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error interno inesperado al consultar DNI {dni}: {e}", exc_info=True)
             return Response({'error': 'Error interno del servidor al procesar la consulta.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'], url_path='consulta-ruc')
+    def consulta_ruc(self, request):
+        """
+        Endpoint que consulta el RUC en base de datos local y, si no existe,
+        utiliza el servicio orquestador para consultar APIs externas.
+        """
+        ruc = request.data.get('ruc')
+        if not ruc:
+            return Response({'error': 'El campo RUC es obligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            cliente = Cliente.objects.filter(ruc=ruc).first()
+            if cliente:
+                serializer = self.get_serializer(cliente)
+                return Response({'origen': 'local', 'data': serializer.data})
+                
+            orchestrator = ConsultaOrchestrator()
+            datos = orchestrator.consultar_ruc(ruc)
+            return Response({'origen': 'api', 'data': datos})
+            
+        except ValueError as e:
+            logger.warning(f"Error de API al consultar RUC {ruc}: {e}")
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except ConnectionError as e:
+            logger.error(f"Error de conexión al consultar RUC {ruc}: {e}")
+            return Response({'error': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except Exception as e:
+            logger.error(f"Error interno inesperado al consultar RUC {ruc}: {e}", exc_info=True)
+            return Response({'error': 'Error interno del servidor al procesar la consulta.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

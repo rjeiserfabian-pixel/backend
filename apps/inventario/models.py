@@ -40,6 +40,10 @@ class Repuesto(models.Model):
     nombre = models.CharField(max_length=200)
     categoria = models.ForeignKey(Categoria, on_delete=models.RESTRICT, related_name='repuestos')
     marca = models.ForeignKey(MarcaRepuesto, on_delete=models.RESTRICT, related_name='repuestos')
+    
+    # Impuesto asignado por defecto a este repuesto (ej. IGV 18%)
+    tipo_igv = models.ForeignKey('ventas.Impuesto', on_delete=models.RESTRICT, related_name='repuestos', null=True, blank=True)
+
 
     # Campo legacy mantenido para compatibilidad durante la migración.
     # Una vez ejecutado el script de datos iniciales, se puede deprecar.
