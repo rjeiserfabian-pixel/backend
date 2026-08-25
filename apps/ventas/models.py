@@ -1,6 +1,7 @@
 import logging
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 from apps.inventario.models import Sucursal, Almacen, Repuesto
 from apps.clientes.models import Cliente
 from apps.vehiculos.models import Vehiculo
@@ -59,6 +60,7 @@ class TipoComprobante(models.Model):
         db_table = 'ventas_tipo_comprobante'
         verbose_name = 'Tipo de Comprobante'
         verbose_name_plural = 'Tipos de Comprobantes'
+        ordering = ['id']
 
     def __str__(self):
         return self.nombre
@@ -76,6 +78,7 @@ class SerieComprobante(models.Model):
         verbose_name = 'Serie de Comprobante'
         verbose_name_plural = 'Series de Comprobantes'
         unique_together = [('sucursal', 'tipo_comprobante', 'serie')]
+        ordering = ['id']
 
     def __str__(self):
         tipo_nombre = self.tipo_comprobante.nombre if self.tipo_comprobante else 'N/A'
@@ -95,6 +98,7 @@ class MetodoPago(models.Model):
         db_table = 'ventas_metodo_pago'
         verbose_name = 'Método de Pago'
         verbose_name_plural = 'Métodos de Pago'
+        ordering = ['id']
 
     def __str__(self):
         return self.nombre
@@ -141,7 +145,7 @@ class Venta(models.Model):
     igv = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     total = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     
-    creado_en = models.DateTimeField(auto_now_add=True, db_index=True)
+    creado_en = models.DateTimeField(default=timezone.now, db_index=True)
     fecha_emision = models.DateTimeField(null=True, blank=True, db_index=True)
     anulado_en = models.DateTimeField(null=True, blank=True)
 

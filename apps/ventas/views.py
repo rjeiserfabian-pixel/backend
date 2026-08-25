@@ -204,6 +204,88 @@ class VentaViewSet(viewsets.ModelViewSet):
             logger.error(f"Error procesando venta {pk}: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=['post'], url_path='directa')
+    def procesar_venta_directa(self, request):
+        try:
+            # Para POS y Registro Manual
+            data = request.data
+            es_registro_manual = data.get('es_registro_manual', False)
+            fecha_manual = data.get('fecha_manual')
+            
+            cliente = Cliente.objects.get(id=data['cliente_id'])
+            sucursal = Sucursal.objects.get(id=data['sucursal_id'])
+            
+            # 1. Crear Venta
+            from django.utils import timezone
+            import uuid
+            
+            fecha_venta = timezone.now()
+            if es_registro_manual and fecha_manual:
+                from django.utils.dateparse import parse_datetime
+                parsed_date = parse_datetime(fecha_manual)
+                if parsed_date:
+                    fecha_venta = parsed_date
+
+            venta = Venta.objects.create(
+                cliente=cliente,
+                sucursal=sucursal,
+                estado=Venta.Estado.PRE_VENTA,
+                ticket_kiosko=f"POS-{str(uuid.uuid4())[:6].upper()}",
+                creado_en=fecha_venta
+            )
+            
+            # Detalles
+            subtotal_acumulado = 0
+            for item in data.get('detalles', []):
+                repuesto = Repuesto.objects.get(id=item['repuesto_id'])
+                cantidad = item['cantidad']
+                precio = float(item['precio_venta'])
+                sub = cantidad * precio
+                subtotal_acumulado += sub
+                DetalleVenta.objects.create(
+                    venta=venta, repuesto=repuesto, cantidad=cantidad, 
+                    precio_unitario=precio, subtotal_linea=sub
+                )
+                
+            venta.total = subtotal_acumulado
+            venta.subtotal = float(venta.total) / 1.18
+            venta.igv = float(venta.total) - float(venta.subtotal)
+            venta.save()
+            
+            # 2. Procesar (Caja, Stock, etc)
+            almacen_origen = sucursal.almacenes.first()
+            tipo_comprobante = TipoComprobante.objects.get(id=data['tipo_comprobante_id'])
+            
+            # Correlativo
+            serie_obj = SerieComprobante.objects.filter(id=data['serie_id']).first()
+            correlativo = serie_obj.generar_siguiente_correlativo()
+            serie_obj.correlativo_actual += 1
+            serie_obj.save()
+            
+            venta.estado = Venta.Estado.AL_CREDITO if data.get('condicion_pago') == 'CREDITO' else Venta.Estado.PAGADA
+            venta.tipo_comprobante = tipo_comprobante
+            venta.serie_correlativo = correlativo
+            venta.fecha_emision = fecha_venta
+            
+            # Movimientos de Caja (saltar si es registro manual)
+            if not es_registro_manual:
+                sesion_caja_id = data.get('sesion_caja_id')
+                sesion = SesionCaja.objects.filter(id=sesion_caja_id, estado=SesionCaja.Estado.ABIERTA).first()
+                if not sesion:
+                    return Response({"error": "Sesión de caja abierta requerida para venta normal."}, status=status.HTTP_400_BAD_REQUEST)
+                venta.sesion_caja = sesion
+                
+            venta.save()
+            
+            # 3. Descontar stock
+            for det in venta.detalles.all():
+                VentasService._descontar_stock(det.repuesto, almacen_origen, det.cantidad, f"Venta {venta.serie_correlativo}")
+                
+            return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            logger.error(f"Error procesando venta directa: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 class CuentaPorCobrarViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = CuentaPorCobrar.objects.all().order_by('-creado_en')
