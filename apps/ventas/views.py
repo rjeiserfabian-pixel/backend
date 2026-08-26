@@ -1,4 +1,5 @@
 import logging
+from django.db import transaction
 from django.db.models import Sum
 from rest_framework import viewsets, status, views
 from rest_framework.response import Response
@@ -7,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from .models import (
     Caja, SesionCaja, MovimientoCaja, TipoComprobante, SerieComprobante, MetodoPago, 
-    Impuesto, Venta, DetalleVenta, CuentaPorCobrar, CuotaCredito
+    Impuesto, Venta, DetalleVenta, CuentaPorCobrar, CuotaCredito, PagoVenta
 )
 from .serializers import (
     CajaSerializer, SesionCajaSerializer, MovimientoCajaSerializer,
@@ -16,7 +17,7 @@ from .serializers import (
     CuentaPorCobrarSerializer
 )
 from .services import VentasService, CreditoService
-from apps.inventario.models import Sucursal, Almacen
+from apps.inventario.models import Sucursal, Almacen, Repuesto
 from apps.clientes.models import Cliente
 from apps.vehiculos.models import Vehiculo
 
@@ -133,6 +134,25 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
             "estado": sesion.estado
         })
 
+    @action(detail=True, methods=['get'], url_path='detalle-activa')
+    def detalle_activa(self, request, pk=None):
+        sesion = self.get_object()
+        
+        ingresos = sesion.movimientos.filter(tipo=MovimientoCaja.Tipo.INGRESO).aggregate(t=Sum('monto'))['t'] or 0
+        egresos = sesion.movimientos.filter(tipo=MovimientoCaja.Tipo.EGRESO).aggregate(t=Sum('monto'))['t'] or 0
+        saldo_actual = float(sesion.saldo_inicial) + float(ingresos) - float(egresos)
+        
+        movimientos = sesion.movimientos.all().order_by('-fecha')
+        
+        return Response({
+            "sesion_id": sesion.id,
+            "estado": sesion.estado,
+            "saldo_inicial": float(sesion.saldo_inicial),
+            "ingresos": float(ingresos),
+            "egresos": float(egresos),
+            "saldo_actual": float(saldo_actual),
+            "movimientos": MovimientoCajaSerializer(movimientos, many=True).data
+        })
 
 # ──────────────────────────────────────────────
 # VENTAS Y KIOSKO
@@ -205,6 +225,7 @@ class VentaViewSet(viewsets.ModelViewSet):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['post'], url_path='directa')
+    @transaction.atomic
     def procesar_venta_directa(self, request):
         try:
             # Para POS y Registro Manual
@@ -253,7 +274,6 @@ class VentaViewSet(viewsets.ModelViewSet):
             venta.save()
             
             # 2. Procesar (Caja, Stock, etc)
-            almacen_origen = sucursal.almacenes.first()
             tipo_comprobante = TipoComprobante.objects.get(id=data['tipo_comprobante_id'])
             
             # Correlativo
@@ -268,18 +288,63 @@ class VentaViewSet(viewsets.ModelViewSet):
             venta.fecha_emision = fecha_venta
             
             # Movimientos de Caja (saltar si es registro manual)
+            sesion = None
             if not es_registro_manual:
                 sesion_caja_id = data.get('sesion_caja_id')
                 sesion = SesionCaja.objects.filter(id=sesion_caja_id, estado=SesionCaja.Estado.ABIERTA).first()
                 if not sesion:
                     return Response({"error": "Sesión de caja abierta requerida para venta normal."}, status=status.HTTP_400_BAD_REQUEST)
                 venta.sesion_caja = sesion
-                
+
             venta.save()
             
+            # Registrar pagos
+            if not es_registro_manual and sesion and data.get('pagos'):
+                for p in data['pagos']:
+                    monto_pago = p.get('monto', 0)
+                    if float(monto_pago) > 0:
+                        movimiento = MovimientoCaja.objects.create(
+                            sesion=sesion,
+                            tipo=MovimientoCaja.Tipo.INGRESO,
+                            concepto=MovimientoCaja.Concepto.VENTA,
+                            metodo_pago_id=p.get('metodo_id'),
+                            monto=monto_pago,
+                            referencia=p.get('referencia', '') or f"Ticket {venta.serie_correlativo}",
+                            venta_origen=venta,
+                            creado_por=request.user
+                        )
+                        PagoVenta.objects.create(
+                            venta=venta,
+                            movimiento_caja=movimiento,
+                            monto=monto_pago
+                        )
+            
+            # 2. Procesar (Stock, etc)
+            almacen_origen = None
+            almacen_origen_id = data.get('almacen_origen_id')
+            
+            if almacen_origen_id:
+                almacen_origen = Almacen.objects.filter(id=almacen_origen_id, sucursal=sucursal).first()
+            
+            if not almacen_origen:
+                if sesion and sesion.caja.almacen_defecto and sesion.caja.almacen_defecto.sucursal_id == sucursal.id:
+                    almacen_origen = sesion.caja.almacen_defecto
+                else:
+                    almacen_origen = sucursal.almacenes.first()
+                    
+            if not almacen_origen:
+                return Response({"error": "La sucursal no tiene almacenes configurados."}, status=status.HTTP_400_BAD_REQUEST)
+
             # 3. Descontar stock
             for det in venta.detalles.all():
-                VentasService._descontar_stock(det.repuesto, almacen_origen, det.cantidad, f"Venta {venta.serie_correlativo}")
+                VentasService._descontar_stock(
+                    repuesto=det.repuesto, 
+                    almacen=almacen_origen, 
+                    cantidad=det.cantidad, 
+                    motivo=f"Venta {venta.serie_correlativo}",
+                    usuario=request.user,
+                    referencia_id=venta.id
+                )
                 
             return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
         except Exception as e:

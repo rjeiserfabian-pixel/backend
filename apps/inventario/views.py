@@ -226,6 +226,14 @@ class SucursalViewSet(viewsets.ModelViewSet):
     serializer_class = SucursalSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if getattr(user, 'is_superuser', False) or user.usuario_roles.filter(id_rol__codigo='ADMINISTRADOR').exists():
+            return qs
+        sucursales_ids = user.sucursales_asignadas.values_list('sucursal_id', flat=True)
+        return qs.filter(id__in=sucursales_ids)
+
     def perform_destroy(self, instance):
         # Soft delete: no eliminar físicamente
         instance.estado = False
@@ -242,6 +250,12 @@ class AlmacenViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        
+        user = self.request.user
+        if not (getattr(user, 'is_superuser', False) or user.usuario_roles.filter(id_rol__codigo='ADMINISTRADOR').exists()):
+            sucursales_ids = user.sucursales_asignadas.values_list('sucursal_id', flat=True)
+            qs = qs.filter(sucursal_id__in=sucursales_ids)
+            
         sucursal_id = self.request.query_params.get('sucursal')
         if sucursal_id:
             qs = qs.filter(sucursal_id=sucursal_id)

@@ -39,6 +39,9 @@ class SerieComprobanteSerializer(serializers.ModelSerializer):
 
 
 class CajaSerializer(serializers.ModelSerializer):
+    sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)
+    almacen_nombre = serializers.CharField(source='almacen_defecto.nombre', read_only=True)
+
     class Meta:
         model = Caja
         fields = '__all__'

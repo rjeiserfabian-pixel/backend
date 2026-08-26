@@ -129,7 +129,8 @@ class UsuarioListCreateView(ListCreateAPIView):
         qs = Usuario.objects.filter(
             fecha_eliminacion__isnull=True  # excluir soft-deleted
         ).prefetch_related(
-            "usuario_roles__id_rol"  # evita N+1 al listar roles por usuario
+            "usuario_roles__id_rol",  # evita N+1 al listar roles por usuario
+            "sucursales_asignadas__sucursal"
         ).only(
             "id_usuario", "username", "email", "nombres",
             "apellidos", "estado", "ultimo_acceso",

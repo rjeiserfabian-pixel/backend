@@ -367,3 +367,33 @@ class Auditoria(models.Model):
 
     def __str__(self):
         return f"[{self.fecha:%Y-%m-%d %H:%M}] {self.modulo}.{self.accion} por {self.id_usuario}"
+
+
+class UsuarioSucursal(models.Model):
+    """
+    Relación que indica a qué sucursales tiene acceso un usuario.
+    Si un usuario es Administrador (rol), puede ignorar esto y ver todas.
+    """
+    id_usuario = models.ForeignKey(
+        Usuario,
+        on_delete=models.CASCADE,
+        related_name="sucursales_asignadas",
+        db_index=True,
+    )
+    sucursal = models.ForeignKey(
+        'inventario.Sucursal',
+        on_delete=models.CASCADE,
+        related_name="usuarios_asignados",
+        db_index=True,
+    )
+    estado = models.BooleanField(default=True)
+    fecha_asignacion = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "usuario_sucursales"
+        verbose_name = "Sucursal de Usuario"
+        verbose_name_plural = "Sucursales de Usuarios"
+        unique_together = [("id_usuario", "sucursal")]
+
+    def __str__(self):
+        return f"{self.id_usuario.username} → {self.sucursal}"

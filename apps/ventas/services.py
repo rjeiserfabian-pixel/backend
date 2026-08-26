@@ -127,37 +127,47 @@ class VentasService:
             detalle.almacen_origen = almacen_origen
             detalle.save()
             
-            # Buscar ubicación por defecto o primera disponible en ese almacén
-            ubicacion = almacen_origen.ubicaciones.first()
-            if not ubicacion:
-                continue # O lanzar error si es estricto
-                
-            stock_record = InventarioStock.objects.select_for_update().filter(
-                repuesto=detalle.repuesto, 
-                ubicacion=ubicacion
-            ).first()
-            
-            if stock_record:
-                if stock_record.stock_disponible < detalle.cantidad:
-                    logger.warning(f"Stock negativo forzado para {detalle.repuesto.codigo}")
-                
-                stock_record.stock_disponible -= detalle.cantidad
-                stock_record.save()
-                
-                # Registrar Kardex
-                MovimientoInventario.objects.create(
-                    repuesto=detalle.repuesto,
-                    ubicacion=ubicacion,
-                    tipo_movimiento=MovimientoInventario.TipoMovimiento.SALIDA,
-                    cantidad=-detalle.cantidad,
-                    stock_resultante=stock_record.stock_disponible,
-                    motivo=f"Venta {venta.serie_correlativo}",
-                    usuario=usuario,
-                    referencia_id=venta.id,
-                    referencia_tipo='VENTA'
-                )
+            VentasService._descontar_stock(detalle.repuesto, almacen_origen, detalle.cantidad, f"Venta {venta.serie_correlativo}", usuario, venta.id)
 
         return venta
+
+    @staticmethod
+    def _descontar_stock(repuesto, almacen, cantidad, motivo, usuario=None, referencia_id=None):
+        """
+        Descuenta stock usando lógica FIFO recorriendo las ubicaciones físicas del almacén
+        donde exista disponibilidad. Bloquea si no hay stock suficiente en el almacén.
+        """
+        stocks = InventarioStock.objects.select_for_update().filter(
+            repuesto=repuesto,
+            ubicacion__almacen=almacen,
+            stock_disponible__gt=0
+        ).order_by('ubicacion__codigo')
+
+        cantidad_restante = cantidad
+        for stock_record in stocks:
+            if cantidad_restante <= 0:
+                break
+                
+            descontar = min(stock_record.stock_disponible, cantidad_restante)
+            stock_record.stock_disponible -= descontar
+            stock_record.save()
+            
+            MovimientoInventario.objects.create(
+                repuesto=repuesto,
+                ubicacion=stock_record.ubicacion,
+                tipo_movimiento=MovimientoInventario.TipoMovimiento.SALIDA,
+                cantidad=-descontar,
+                stock_resultante=stock_record.stock_disponible,
+                motivo=motivo,
+                usuario=usuario,
+                referencia_id=referencia_id,
+                referencia_tipo='VENTA' if referencia_id else None
+            )
+            
+            cantidad_restante -= descontar
+            
+        if cantidad_restante > 0:
+            raise ValueError(f"Stock insuficiente para {repuesto.codigo} en el almacén {almacen.nombre}. Faltan {cantidad_restante} unidades.")
 
 
 class CreditoService:

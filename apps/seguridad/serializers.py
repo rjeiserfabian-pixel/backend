@@ -12,7 +12,9 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Usuario, Rol, Permiso, Modulo, RolPermiso, UsuarioRol, UsuarioPermiso
+from .models import (
+    Usuario, Rol, Permiso, Modulo, RolPermiso, UsuarioRol, UsuarioPermiso, UsuarioSucursal
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,12 +161,13 @@ class UsuarioListSerializer(serializers.ModelSerializer):
     """Serializer ligero para listas (solo campos necesarios — evitar SELECT *)."""
     nombre_completo = serializers.SerializerMethodField()
     roles = serializers.SerializerMethodField()
+    sucursales = serializers.SerializerMethodField()
 
     class Meta:
         model = Usuario
         fields = [
             "id_usuario", "username", "email", "nombres", "apellidos", "nombre_completo",
-            "estado", "ultimo_acceso", "roles",
+            "estado", "ultimo_acceso", "roles", "sucursales"
         ]
 
     def get_nombre_completo(self, obj):
@@ -178,11 +181,23 @@ class UsuarioListSerializer(serializers.ModelSerializer):
             if ur.esta_vigente() and ur.id_rol.estado
         ]
 
+    def get_sucursales(self, obj):
+        return [
+            {"id_sucursal": us.sucursal.id, "nombre": us.sucursal.nombre}
+            for us in obj.sucursales_asignadas.all()
+            if us.sucursal.estado
+        ]
+
 
 class UsuarioDetalleSerializer(serializers.ModelSerializer):
     """Serializer completo para crear/editar usuario."""
     password = serializers.CharField(write_only=True, required=False, min_length=8)
     roles_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False,
+    )
+    sucursales_ids = serializers.ListField(
         child=serializers.IntegerField(),
         write_only=True,
         required=False,
@@ -193,7 +208,7 @@ class UsuarioDetalleSerializer(serializers.ModelSerializer):
         fields = [
             "id_usuario", "username", "email", "nombres", "apellidos",
             "documento", "telefono", "avatar_url", "estado",
-            "requiere_cambio_password", "password", "roles_ids",
+            "requiere_cambio_password", "password", "roles_ids", "sucursales_ids"
         ]
         read_only_fields = ["id_usuario"]
         # Nunca exponemos: password_hash, intentos_fallidos, bloqueado_hasta
@@ -206,6 +221,7 @@ class UsuarioDetalleSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         roles_ids = validated_data.pop("roles_ids", [])
+        sucursales_ids = validated_data.pop("sucursales_ids", [])
         password = validated_data.pop("password", None)
 
         usuario = Usuario(**validated_data)
@@ -221,12 +237,19 @@ class UsuarioDetalleSerializer(serializers.ModelSerializer):
                 UsuarioRol(id_usuario=usuario, id_rol_id=rol_id)
                 for rol_id in roles_ids
             ])
+            
+        if sucursales_ids:
+            UsuarioSucursal.objects.bulk_create([
+                UsuarioSucursal(id_usuario=usuario, sucursal_id=sucursal_id)
+                for sucursal_id in sucursales_ids
+            ])
 
         logger.info("Usuario creado: %s", usuario.username)
         return usuario
 
     def update(self, instance, validated_data):
         roles_ids = validated_data.pop("roles_ids", None)
+        sucursales_ids = validated_data.pop("sucursales_ids", None)
         password = validated_data.pop("password", None)
 
         for attr, value in validated_data.items():
@@ -243,6 +266,13 @@ class UsuarioDetalleSerializer(serializers.ModelSerializer):
             UsuarioRol.objects.bulk_create([
                 UsuarioRol(id_usuario=instance, id_rol_id=rol_id)
                 for rol_id in roles_ids
+            ])
+            
+        if sucursales_ids is not None:
+            instance.sucursales_asignadas.all().delete()
+            UsuarioSucursal.objects.bulk_create([
+                UsuarioSucursal(id_usuario=instance, sucursal_id=sucursal_id)
+                for sucursal_id in sucursales_ids
             ])
 
         logger.info("Usuario actualizado: %s", instance.username)

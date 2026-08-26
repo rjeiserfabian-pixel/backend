@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 class Caja(models.Model):
     sucursal = models.ForeignKey(Sucursal, on_delete=models.RESTRICT, related_name='cajas')
+    almacen_defecto = models.ForeignKey(Almacen, on_delete=models.RESTRICT, related_name='cajas_defecto', null=True, blank=True)
     nombre = models.CharField(max_length=150, db_index=True)
     estado = models.BooleanField(default=True)
 
