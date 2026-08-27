@@ -106,8 +106,10 @@ class VentaSerializer(serializers.ModelSerializer):
 
 class TicketKioskoCreateSerializer(serializers.Serializer):
     cliente_id = serializers.IntegerField()
-    vehiculo_id = serializers.IntegerField()
+    vehiculo_id = serializers.IntegerField(required=False, allow_null=True)
     sucursal_id = serializers.IntegerField()
+    moneda = serializers.CharField(max_length=3, required=False, default='PEN')
+    tipo_cambio = serializers.DecimalField(max_digits=10, decimal_places=4, required=False, default=1.0000)
     detalles = serializers.ListField(
         child=serializers.DictField()
     )
@@ -116,6 +118,8 @@ class TicketKioskoCreateSerializer(serializers.Serializer):
 
 class ProcesarVentaSerializer(serializers.Serializer):
     tipo_comprobante = serializers.CharField(max_length=30)
+    moneda = serializers.CharField(max_length=3, required=False, default='PEN')
+    tipo_cambio = serializers.DecimalField(max_digits=10, decimal_places=4, required=False, default=1.0000)
     pagos = serializers.ListField(
         child=serializers.DictField()
     )
@@ -123,6 +127,7 @@ class ProcesarVentaSerializer(serializers.Serializer):
     credito = serializers.DictField(required=False)
     # credito format: {"frecuencia": "MENSUAL", "cuotas": 3}
     almacen_origen_id = serializers.IntegerField(required=False)
+    detalles = serializers.ListField(child=serializers.DictField(), required=False)
 
 
 # ──────────────────────────────────────────────

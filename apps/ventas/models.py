@@ -132,12 +132,19 @@ class Venta(models.Model):
         AL_CREDITO = 'AL_CREDITO', 'Al Crédito'
         ANULADA = 'ANULADA', 'Anulada'
 
+    class Moneda(models.TextChoices):
+        PEN = 'PEN', 'Soles (S/)'
+        USD = 'USD', 'Dólares ($)'
+        EUR = 'EUR', 'Euros (€)'
+
     cliente = models.ForeignKey(Cliente, on_delete=models.RESTRICT, related_name='ventas')
     vehiculo = models.ForeignKey(Vehiculo, on_delete=models.RESTRICT, related_name='ventas', null=True, blank=True)
     sucursal = models.ForeignKey(Sucursal, on_delete=models.RESTRICT, related_name='ventas')
     sesion_caja = models.ForeignKey(SesionCaja, on_delete=models.RESTRICT, related_name='ventas', null=True, blank=True)
     
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.PRE_VENTA, db_index=True)
+    moneda = models.CharField(max_length=3, choices=Moneda.choices, default=Moneda.PEN, db_index=True)
+    tipo_cambio = models.DecimalField(max_digits=10, decimal_places=4, default=1.0000)
     tipo_comprobante = models.ForeignKey(TipoComprobante, on_delete=models.RESTRICT, null=True, blank=True)
     serie_correlativo = models.CharField(max_length=50, null=True, blank=True, db_index=True)
     ticket_kiosko = models.CharField(max_length=20, null=True, blank=True, db_index=True)  # Ej: TK-482

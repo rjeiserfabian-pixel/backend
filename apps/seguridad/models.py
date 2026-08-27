@@ -397,3 +397,91 @@ class UsuarioSucursal(models.Model):
 
     def __str__(self):
         return f"{self.id_usuario.username} → {self.sucursal}"
+
+
+class Empresa(models.Model):
+    """
+    Configuración global de la empresa.
+    Se utiliza para la facturación, reportes y diseño de tickets.
+    """
+    razon_social = models.CharField(max_length=200)
+    ruc = models.CharField(max_length=20)
+    direccion = models.CharField(max_length=255)
+    departamento = models.CharField(max_length=100, blank=True, null=True)
+    provincia = models.CharField(max_length=100, blank=True, null=True)
+    distrito = models.CharField(max_length=100, blank=True, null=True)
+    telefono = models.CharField(max_length=50, blank=True, null=True)
+    logo = models.ImageField(upload_to='empresa/', null=True, blank=True)
+
+    class Meta:
+        db_table = "empresa"
+        verbose_name = "Empresa"
+        verbose_name_plural = "Empresa"
+
+    def __str__(self):
+        return self.razon_social
+
+
+class Departamento(models.Model):
+    """
+    Modelo para Departamentos
+    """
+    nombre = models.CharField(max_length=100, unique=True)
+    estado = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "departamentos"
+        verbose_name = "Departamento"
+        verbose_name_plural = "Departamentos"
+        ordering = ["nombre"]
+
+    def __str__(self):
+        return self.nombre
+
+
+class Provincia(models.Model):
+    """
+    Modelo para Provincias
+    """
+    departamento = models.ForeignKey(
+        Departamento,
+        on_delete=models.CASCADE,
+        related_name="provincias",
+        db_index=True
+    )
+    nombre = models.CharField(max_length=100)
+    estado = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "provincias"
+        verbose_name = "Provincia"
+        verbose_name_plural = "Provincias"
+        unique_together = [("departamento", "nombre")]
+        ordering = ["departamento__nombre", "nombre"]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.departamento.nombre})"
+
+
+class Distrito(models.Model):
+    """
+    Modelo para Distritos
+    """
+    provincia = models.ForeignKey(
+        Provincia,
+        on_delete=models.CASCADE,
+        related_name="distritos",
+        db_index=True
+    )
+    nombre = models.CharField(max_length=100)
+    estado = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "distritos"
+        verbose_name = "Distrito"
+        verbose_name_plural = "Distritos"
+        unique_together = [("provincia", "nombre")]
+        ordering = ["provincia__nombre", "nombre"]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.provincia.nombre})"

@@ -247,12 +247,17 @@ class VentaViewSet(viewsets.ModelViewSet):
                 if parsed_date:
                     fecha_venta = parsed_date
 
+            moneda = data.get('moneda', 'PEN')
+            tipo_cambio = data.get('tipo_cambio', 1.0000)
+
             venta = Venta.objects.create(
                 cliente=cliente,
                 sucursal=sucursal,
                 estado=Venta.Estado.PRE_VENTA,
                 ticket_kiosko=f"POS-{str(uuid.uuid4())[:6].upper()}",
-                creado_en=fecha_venta
+                creado_en=fecha_venta,
+                moneda=moneda,
+                tipo_cambio=tipo_cambio
             )
             
             # Detalles
@@ -355,3 +360,32 @@ class VentaViewSet(viewsets.ModelViewSet):
 class CuentaPorCobrarViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = CuentaPorCobrar.objects.all().order_by('-creado_en')
     serializer_class = CuentaPorCobrarSerializer
+
+
+import requests
+from django.conf import settings
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+
+class TipoCambioView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        token = getattr(settings, 'APISPERU_TOKEN', None)
+        if not token:
+            return Response({"error": "APISPERU_TOKEN no configurado"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        try:
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json"
+            }
+            url = "https://dniruc.apisperu.com/api/v1/tipo-de-cambio"
+            response = requests.get(url, headers=headers, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            # APIsPeru devuelve: {"compra": 3.75, "venta": 3.76, "origen": "SUNAT", "moneda": "USD", "fecha": "2023-10-10"}
+            return Response(data)
+        except Exception as e:
+            logger.error(f"Error consultando tipo de cambio: {str(e)}")
+            return Response({"error": "No se pudo obtener el tipo de cambio."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

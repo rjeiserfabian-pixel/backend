@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     CajaViewSet, SesionCajaViewSet, MetodoPagoViewSet, 
     ImpuestoViewSet, TipoComprobanteViewSet, SerieComprobanteViewSet, VentaViewSet,
-    CuentaPorCobrarViewSet
+    CuentaPorCobrarViewSet, TipoCambioView
 )
 
 router = DefaultRouter()
@@ -18,5 +18,6 @@ router.register(r'transacciones', VentaViewSet, basename='venta')
 router.register(r'cuentas-por-cobrar', CuentaPorCobrarViewSet, basename='cuentaporcobrar')
 
 urlpatterns = [
+    path('tipo-cambio/', TipoCambioView.as_view(), name='tipo-cambio'),
     path('', include(router.urls)),
 ]

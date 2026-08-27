@@ -39,7 +39,7 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from .models import Usuario, Rol, Permiso, Modulo, RolPermiso, UsuarioRol
+from .models import Usuario, Rol, Permiso, Modulo, RolPermiso, UsuarioRol, Empresa
 from .serializers import (
     LoginSerializer,
     UsuarioListSerializer,
@@ -48,6 +48,8 @@ from .serializers import (
     AsignarPermisosRolSerializer,
     PermisoSerializer,
     ModuloSerializer,
+    EmpresaSerializer,
+    MiPerfilSerializer,
 )
 from .permissions import TienePermiso
 
@@ -196,6 +198,27 @@ class UsuarioDetalleView(RetrieveUpdateDestroyAPIView):
         )
 
 
+class MiPerfilView(APIView):
+    """
+    GET /api/seguridad/mi-perfil/ → Detalle del usuario autenticado
+    PUT /api/seguridad/mi-perfil/ → Actualizar datos y contraseña
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = MiPerfilSerializer(request.user)
+        return Response({"success": True, "data": serializer.data})
+
+    def put(self, request):
+        serializer = MiPerfilSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({
+            "success": True, 
+            "data": serializer.data, 
+            "mensaje": "Perfil actualizado correctamente."
+        })
+
 # ==============================================================================
 # ROLES
 # ==============================================================================
@@ -331,3 +354,105 @@ class ModuloListView(APIView):
         ).prefetch_related("submodulos").order_by("orden")
         serializer = ModuloSerializer(modulos, many=True)
         return Response({"success": True, "data": serializer.data})
+
+
+# ==============================================================================
+# EMPRESA (CONFIGURACIÓN GLOBAL)
+# ==============================================================================
+
+class EmpresaView(APIView):
+    """
+    GET  /api/seguridad/empresa/ → Obtener la configuración de la empresa (Singleton)
+    PUT  /api/seguridad/empresa/ → Actualizar la configuración de la empresa
+    """
+    # Cambiar esto a IsAuthenticated u otro permiso según necesidad
+    permission_classes = [AllowAny] 
+
+    def get_object(self):
+        # Implementación singleton: Tomamos la primera empresa o creamos una vacía
+        empresa, created = Empresa.objects.get_or_create(id=1, defaults={
+            "razon_social": "Mi Empresa",
+            "ruc": "00000000000",
+            "direccion": "Dirección no configurada"
+        })
+        return empresa
+
+    def get(self, request):
+        empresa = self.get_object()
+        serializer = EmpresaSerializer(empresa)
+        return Response({"success": True, "data": serializer.data})
+
+    def put(self, request):
+        empresa = self.get_object()
+        serializer = EmpresaSerializer(empresa, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"success": True, "data": serializer.data, "mensaje": "Empresa actualizada correctamente."})
+
+
+# ==============================================================================
+# UBIGEO
+# ==============================================================================
+
+from rest_framework.viewsets import ModelViewSet
+from .models import Departamento, Provincia, Distrito
+from .serializers import DepartamentoSerializer, ProvinciaSerializer, DistritoSerializer
+
+class DepartamentoViewSet(ModelViewSet):
+    """
+    CRUD completo para Departamentos
+    GET, POST, PUT, DELETE /api/seguridad/departamentos/
+    """
+    queryset = Departamento.objects.all()
+    serializer_class = DepartamentoSerializer
+    permission_classes = [AllowAny] # Ajustar según seguridad
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if 'estado' in self.request.query_params:
+            qs = qs.filter(estado=self.request.query_params['estado'] == 'true')
+        return qs
+
+
+class ProvinciaViewSet(ModelViewSet):
+    """
+    CRUD completo para Provincias
+    GET, POST, PUT, DELETE /api/seguridad/provincias/
+    """
+    queryset = Provincia.objects.all().select_related('departamento')
+    serializer_class = ProvinciaSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        dep_id = self.request.query_params.get('departamento')
+        if dep_id:
+            qs = qs.filter(departamento_id=dep_id)
+        if 'estado' in self.request.query_params:
+            qs = qs.filter(estado=self.request.query_params['estado'] == 'true')
+        return qs
+
+
+class DistritoViewSet(ModelViewSet):
+    """
+    CRUD completo para Distritos
+    GET, POST, PUT, DELETE /api/seguridad/distritos/
+    """
+    queryset = Distrito.objects.all().select_related('provincia__departamento')
+    serializer_class = DistritoSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        prov_id = self.request.query_params.get('provincia')
+        if prov_id:
+            qs = qs.filter(provincia_id=prov_id)
+        dep_id = self.request.query_params.get('departamento')
+        if dep_id:
+            qs = qs.filter(provincia__departamento_id=dep_id)
+        if 'estado' in self.request.query_params:
+            qs = qs.filter(estado=self.request.query_params['estado'] == 'true')
+        return qs

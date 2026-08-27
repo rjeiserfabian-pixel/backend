@@ -13,7 +13,8 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import (
-    Usuario, Rol, Permiso, Modulo, RolPermiso, UsuarioRol, UsuarioPermiso, UsuarioSucursal
+    Usuario, Rol, Permiso, Modulo, RolPermiso, UsuarioRol, UsuarioPermiso, UsuarioSucursal, Empresa,
+    Departamento, Provincia, Distrito
 )
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,43 @@ class LoginSerializer(serializers.Serializer):
                 "requiere_cambio_password": usuario.requiere_cambio_password,
             },
         }
+
+
+# ==============================================================================
+# EMPRESA Y UBIGEO
+# ==============================================================================
+
+class EmpresaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Empresa
+        fields = '__all__'
+
+# ==============================================================================
+# UBIGEO
+# ==============================================================================
+
+class DepartamentoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Departamento
+        fields = '__all__'
+
+
+class ProvinciaSerializer(serializers.ModelSerializer):
+    departamento_nombre = serializers.CharField(source='departamento.nombre', read_only=True)
+
+    class Meta:
+        model = Provincia
+        fields = '__all__'
+
+
+class DistritoSerializer(serializers.ModelSerializer):
+    provincia_nombre = serializers.CharField(source='provincia.nombre', read_only=True)
+    departamento = serializers.IntegerField(source='provincia.departamento_id', read_only=True)
+    departamento_nombre = serializers.CharField(source='provincia.departamento.nombre', read_only=True)
+
+    class Meta:
+        model = Distrito
+        fields = '__all__'
 
 
 # ==============================================================================
@@ -276,4 +314,32 @@ class UsuarioDetalleSerializer(serializers.ModelSerializer):
             ])
 
         logger.info("Usuario actualizado: %s", instance.username)
+        return instance
+
+class MiPerfilSerializer(serializers.ModelSerializer):
+    """Serializer para que un usuario pueda actualizar su propio perfil."""
+    password = serializers.CharField(write_only=True, required=False, min_length=8)
+    
+    class Meta:
+        model = Usuario
+        fields = [
+            "id_usuario", "username", "email", "nombres", "apellidos",
+            "documento", "telefono", "avatar_url", "password"
+        ]
+        read_only_fields = ["id_usuario", "username"]
+
+    def validate_email(self, value):
+        return value.lower().strip()
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop("password", None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if password:
+            instance.set_password(password)
+
+        instance.save()
+        logger.info("El usuario [%s] ha actualizado su propio perfil.", instance.username)
         return instance
