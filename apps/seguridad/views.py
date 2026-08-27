@@ -210,7 +210,28 @@ class MiPerfilView(APIView):
         return Response({"success": True, "data": serializer.data})
 
     def put(self, request):
-        serializer = MiPerfilSerializer(request.user, data=request.data, partial=True)
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        
+        avatar_file = request.FILES.get('avatar')
+        if avatar_file:
+            from django.core.files.storage import default_storage
+            from django.conf import settings
+            import os
+            
+            ext = os.path.splitext(avatar_file.name)[1]
+            filename = f"avatars/user_{request.user.id_usuario}{ext}"
+            
+            if default_storage.exists(filename):
+                default_storage.delete(filename)
+                
+            saved_path = default_storage.save(filename, avatar_file)
+            # Aseguramos que la URL relativa se guarde
+            media_url_prefix = settings.MEDIA_URL
+            if not media_url_prefix.endswith('/'):
+                media_url_prefix += '/'
+            data['avatar_url'] = f"{media_url_prefix}{saved_path}"
+
+        serializer = MiPerfilSerializer(request.user, data=data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({
