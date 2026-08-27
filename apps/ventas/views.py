@@ -249,6 +249,8 @@ class VentaViewSet(viewsets.ModelViewSet):
 
             moneda = data.get('moneda', 'PEN')
             tipo_cambio = data.get('tipo_cambio', 1.0000)
+            monto_recibido = data.get('monto_recibido', 0.00)
+            vuelto = data.get('vuelto', 0.00)
 
             venta = Venta.objects.create(
                 cliente=cliente,
@@ -257,7 +259,9 @@ class VentaViewSet(viewsets.ModelViewSet):
                 ticket_kiosko=f"POS-{str(uuid.uuid4())[:6].upper()}",
                 creado_en=fecha_venta,
                 moneda=moneda,
-                tipo_cambio=tipo_cambio
+                tipo_cambio=tipo_cambio,
+                monto_recibido=monto_recibido,
+                vuelto=vuelto
             )
             
             # Detalles

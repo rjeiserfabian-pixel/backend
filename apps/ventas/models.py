@@ -157,6 +157,9 @@ class Venta(models.Model):
     fecha_emision = models.DateTimeField(null=True, blank=True, db_index=True)
     anulado_en = models.DateTimeField(null=True, blank=True)
 
+    monto_recibido = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    vuelto = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+
     class Meta:
         db_table = 'ventas_venta'
         verbose_name = 'Venta'
