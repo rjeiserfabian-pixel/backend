@@ -384,6 +384,7 @@ class MovimientoInventarioViewSet(viewsets.ReadOnlyModelViewSet):
     )
     serializer_class = MovimientoInventarioSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = RepuestoPagination
 
     def get_queryset(self):
         qs = super().get_queryset()

@@ -1,7 +1,7 @@
 import logging
 from django.db import transaction
 from django.db.models import Sum
-from rest_framework import viewsets, status, views
+from rest_framework import viewsets, status, views, pagination
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -158,9 +158,26 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
 # VENTAS Y KIOSKO
 # ──────────────────────────────────────────────
 
+class VentaPagination(pagination.PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 class VentaViewSet(viewsets.ModelViewSet):
     queryset = Venta.objects.all().order_by('-creado_en')
     serializer_class = VentaSerializer
+    pagination_class = VentaPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        estado = self.request.query_params.get('estado')
+        if estado == 'PENDIENTE':
+            qs = qs.filter(estado=Venta.Estado.PRE_VENTA)
+        elif estado == 'COMPLETADO':
+            qs = qs.filter(estado__in=[Venta.Estado.PAGADA, Venta.Estado.COMPLETADA])
+        elif estado:
+            qs = qs.filter(estado=estado)
+        return qs
 
     @action(detail=False, methods=['post'], url_path='kiosko/generar-ticket')
     def kiosko_generar_ticket(self, request):
