@@ -89,6 +89,8 @@ class AplicacionRepuesto(models.Model):
     marca_vehiculo = models.CharField(max_length=100, db_index=True)
     modelo_vehiculo = models.CharField(max_length=100, null=True, blank=True, db_index=True)
     motor = models.CharField(max_length=100, null=True, blank=True)
+    anio_desde = models.IntegerField(null=True, blank=True)   # Año inicial de compatibilidad (opcional)
+    anio_hasta = models.IntegerField(null=True, blank=True)   # Año final de compatibilidad (opcional)
 
     class Meta:
         db_table = 'aplicacion_repuesto'

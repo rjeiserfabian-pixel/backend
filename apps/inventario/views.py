@@ -120,11 +120,13 @@ class RepuestoViewSet(viewsets.ModelViewSet):
     def compatibles(self, request):
         """
         Endpoint dinámico para obtener repuestos compatibles con un vehículo.
-        Query Params esperados: marca, modelo, motor
+        Query Params esperados: marca (obligatorio), modelo (opcional), motor (opcional), anio (opcional)
+        Lógica: NULL en anio_desde/anio_hasta = sin restricción de año (aplica a todos).
         """
-        marca = request.query_params.get('marca', None)
-        modelo = request.query_params.get('modelo', None)
-        motor = request.query_params.get('motor', None)
+        marca = request.query_params.get('marca', '').strip()
+        modelo = request.query_params.get('modelo', '').strip()
+        motor = request.query_params.get('motor', '').strip()
+        anio = request.query_params.get('anio', None)
 
         if not marca:
             return Response({'error': 'La marca del vehiculo es requerida'}, status=400)
@@ -136,6 +138,16 @@ class RepuestoViewSet(viewsets.ModelViewSet):
 
         if motor:
             query &= (Q(aplicaciones__motor__isnull=True) | Q(aplicaciones__motor__iexact=motor))
+
+        # Filtro por año: si el año viene, se respetan los rangos.
+        # NULL en anio_desde o anio_hasta significa "sin límite en ese extremo".
+        if anio:
+            try:
+                anio_int = int(anio)
+                query &= (Q(aplicaciones__anio_desde__isnull=True) | Q(aplicaciones__anio_desde__lte=anio_int))
+                query &= (Q(aplicaciones__anio_hasta__isnull=True) | Q(aplicaciones__anio_hasta__gte=anio_int))
+            except (ValueError, TypeError):
+                logger.warning(f"Valor de año inválido recibido en /compatibles/: {anio}")
 
         repuestos = self.get_queryset().filter(query).distinct()
 
