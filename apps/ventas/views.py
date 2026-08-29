@@ -268,19 +268,31 @@ class VentaViewSet(viewsets.ModelViewSet):
             tipo_cambio = data.get('tipo_cambio', 1.0000)
             monto_recibido = data.get('monto_recibido', 0.00)
             vuelto = data.get('vuelto', 0.00)
-
-            venta = Venta.objects.create(
-                cliente=cliente,
-                sucursal=sucursal,
-                estado=Venta.Estado.PRE_VENTA,
-                ticket_kiosko=f"POS-{str(uuid.uuid4())[:6].upper()}",
-                creado_en=fecha_venta,
-                moneda=moneda,
-                tipo_cambio=tipo_cambio,
-                monto_recibido=monto_recibido,
-                vuelto=vuelto
-            )
             
+            venta_id = data.get('venta_id')
+            if venta_id:
+                venta = Venta.objects.get(id=venta_id)
+                venta.detalles.all().delete() # Limpiamos los detalles previos de la pre-venta
+                venta.cliente = cliente
+                venta.sucursal = sucursal
+                venta.moneda = moneda
+                venta.tipo_cambio = tipo_cambio
+                venta.monto_recibido = monto_recibido
+                venta.vuelto = vuelto
+                venta.creado_en = fecha_venta
+                venta.save()
+            else:
+                venta = Venta.objects.create(
+                    cliente=cliente,
+                    sucursal=sucursal,
+                    estado=Venta.Estado.PRE_VENTA,
+                    ticket_kiosko=f"POS-{str(uuid.uuid4())[:6].upper()}",
+                    creado_en=fecha_venta,
+                    moneda=moneda,
+                    tipo_cambio=tipo_cambio,
+                    monto_recibido=monto_recibido,
+                    vuelto=vuelto
+                )
             # Detalles
             subtotal_acumulado = 0
             for item in data.get('detalles', []):
