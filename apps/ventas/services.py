@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class VentasService:
     @staticmethod
     @transaction.atomic
-    def generar_ticket_kiosko(cliente, vehiculo, sucursal, detalles_data: list) -> Venta:
+    def generar_ticket_kiosko(cliente, vehiculo, sucursal, detalles_data: list, kilometraje: int = None) -> Venta:
         """
         Crea una venta en estado PRE_VENTA (Ticket) a partir de la selección del kiosko.
         No descuenta stock ni registra pagos aún.
@@ -28,8 +28,14 @@ class VentasService:
             vehiculo=vehiculo,
             sucursal=sucursal,
             estado=Venta.Estado.PRE_VENTA,
-            ticket_kiosko=ticket_code
+            ticket_kiosko=ticket_code,
+            kilometraje=kilometraje
         )
+        
+        # Actualizar el kilometraje actual del vehículo si se proporcionó
+        if vehiculo and kilometraje is not None:
+            vehiculo.kilometraje_actual = kilometraje
+            vehiculo.save(update_fields=['kilometraje_actual'])
         
         subtotal_acumulado = Decimal('0.00')
         igv_acumulado = Decimal('0.00')

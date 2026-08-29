@@ -12,6 +12,7 @@ class Vehiculo(models.Model):
     numero_serie = models.CharField(max_length=100, null=True, blank=True)
     color = models.CharField(max_length=50, null=True, blank=True)
     numero_motor = models.CharField(max_length=100, null=True, blank=True)
+    kilometraje_actual = models.IntegerField(null=True, blank=True)
     
     # Relación M:N con clientes para mantener trazabilidad histórica
     clientes = models.ManyToManyField('clientes.Cliente', related_name='vehiculos', blank=True)

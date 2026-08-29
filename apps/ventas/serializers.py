@@ -113,6 +113,7 @@ class TicketKioskoCreateSerializer(serializers.Serializer):
     sucursal_id = serializers.IntegerField()
     moneda = serializers.CharField(max_length=3, required=False, default='PEN')
     tipo_cambio = serializers.DecimalField(max_digits=10, decimal_places=4, required=False, default=1.0000)
+    kilometraje = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     detalles = serializers.ListField(
         child=serializers.DictField()
     )

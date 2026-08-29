@@ -148,6 +148,7 @@ class Venta(models.Model):
     tipo_comprobante = models.ForeignKey(TipoComprobante, on_delete=models.RESTRICT, null=True, blank=True)
     serie_correlativo = models.CharField(max_length=50, null=True, blank=True, db_index=True)
     ticket_kiosko = models.CharField(max_length=20, null=True, blank=True, db_index=True)  # Ej: TK-482
+    kilometraje = models.IntegerField(null=True, blank=True)  # Kilometraje del vehículo al momento del ingreso
 
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     igv = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)

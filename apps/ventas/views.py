@@ -186,15 +186,18 @@ class VentaViewSet(viewsets.ModelViewSet):
         
         data = serializer.validated_data
         cliente = Cliente.objects.get(id=data['cliente_id'])
-        vehiculo = Vehiculo.objects.get(id=data['vehiculo_id'])
+        vehiculo_id = data.get('vehiculo_id')
+        vehiculo = Vehiculo.objects.get(id=vehiculo_id) if vehiculo_id else None
         sucursal = Sucursal.objects.get(id=data['sucursal_id'])
+        kilometraje = data.get('kilometraje', None)
         
         try:
             venta = VentasService.generar_ticket_kiosko(
                 cliente=cliente,
                 vehiculo=vehiculo,
                 sucursal=sucursal,
-                detalles_data=data['detalles']
+                detalles_data=data['detalles'],
+                kilometraje=kilometraje
             )
             return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
         except Exception as e:
