@@ -42,7 +42,7 @@ class VentasService:
         
         for item in detalles_data:
             repuesto = Repuesto.objects.get(id=item['repuesto_id'])
-            cantidad = item['cantidad']
+            cantidad = Decimal(str(item['cantidad']))
             precio_unitario = Decimal(str(item['precio_unitario']))
             
             subtotal_linea = cantidad * precio_unitario

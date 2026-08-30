@@ -77,6 +77,7 @@ class MovimientoCajaSerializer(serializers.ModelSerializer):
 class DetalleVentaSerializer(serializers.ModelSerializer):
     repuesto_nombre = serializers.CharField(source='repuesto.nombre', read_only=True)
     repuesto_codigo = serializers.CharField(source='repuesto.codigo', read_only=True)
+    repuesto_unidad_medida = serializers.CharField(source='repuesto.unidad_medida.abreviatura', read_only=True)
     
     class Meta:
         model = DetalleVenta

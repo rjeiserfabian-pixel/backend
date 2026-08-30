@@ -5,6 +5,7 @@ from rest_framework import viewsets, status, views, pagination
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from decimal import Decimal
 
 from .models import (
     Caja, SesionCaja, MovimientoCaja, TipoComprobante, SerieComprobante, MetodoPago, 
@@ -297,11 +298,11 @@ class VentaViewSet(viewsets.ModelViewSet):
                     vuelto=vuelto
                 )
             # Detalles
-            subtotal_acumulado = 0
+            subtotal_acumulado = Decimal('0.00')
             for item in data.get('detalles', []):
                 repuesto = Repuesto.objects.get(id=item['repuesto_id'])
-                cantidad = item['cantidad']
-                precio = float(item['precio_venta'])
+                cantidad = Decimal(str(item['cantidad']))
+                precio = Decimal(str(item['precio_venta']))
                 sub = cantidad * precio
                 subtotal_acumulado += sub
                 DetalleVenta.objects.create(
@@ -310,8 +311,8 @@ class VentaViewSet(viewsets.ModelViewSet):
                 )
                 
             venta.total = subtotal_acumulado
-            venta.subtotal = float(venta.total) / 1.18
-            venta.igv = float(venta.total) - float(venta.subtotal)
+            venta.subtotal = venta.total / Decimal('1.18')
+            venta.igv = venta.total - venta.subtotal
             venta.save()
             
             # 2. Procesar (Caja, Stock, etc)
@@ -389,6 +390,7 @@ class VentaViewSet(viewsets.ModelViewSet):
                 
             return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
         except Exception as e:
+            transaction.set_rollback(True)
             logger.error(f"Error procesando venta directa: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
