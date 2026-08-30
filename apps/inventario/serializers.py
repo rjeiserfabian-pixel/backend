@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import (
-    Categoria, MarcaRepuesto, Repuesto, AplicacionRepuesto,
+    UnidadMedida, Categoria, MarcaRepuesto, Repuesto, AplicacionRepuesto,
     Sucursal, Almacen, UbicacionFisica, InventarioStock, MovimientoInventario,
 )
 
@@ -8,6 +8,12 @@ from .models import (
 # ──────────────────────────────────────────────
 # SERIALIZERS EXISTENTES (sin cambios)
 # ──────────────────────────────────────────────
+
+class UnidadMedidaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UnidadMedida
+        fields = '__all__'
+
 
 class CategoriaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -62,6 +68,9 @@ class RepuestoSerializer(serializers.ModelSerializer):
     aplicaciones = AplicacionRepuestoSerializer(many=True, required=False)
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
     marca_nombre = serializers.CharField(source='marca.nombre', read_only=True)
+    unidad_medida_nombre = serializers.CharField(source='unidad_medida.nombre', read_only=True)
+    unidad_medida_abreviatura = serializers.CharField(source='unidad_medida.abreviatura', read_only=True)
+    unidad_medida_permite_decimales = serializers.BooleanField(source='unidad_medida.permite_decimales', read_only=True)
     stock_total_disponible = serializers.IntegerField(read_only=True)
     stock_minimo_global = serializers.IntegerField(read_only=True)
     inventario_stock = InventarioStockResumenSerializer(many=True, read_only=True)
@@ -160,6 +169,9 @@ class RepuestoDetalleSerializer(serializers.ModelSerializer):
     aplicaciones = AplicacionRepuestoSerializer(many=True, read_only=True)
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
     marca_nombre = serializers.CharField(source='marca.nombre', read_only=True)
+    unidad_medida_nombre = serializers.CharField(source='unidad_medida.nombre', read_only=True)
+    unidad_medida_abreviatura = serializers.CharField(source='unidad_medida.abreviatura', read_only=True)
+    unidad_medida_permite_decimales = serializers.BooleanField(source='unidad_medida.permite_decimales', read_only=True)
     inventario = InventarioStockResumenSerializer(many=True, read_only=True, source='inventario_stock')
     stock_total_disponible = serializers.ReadOnlyField()
     stock_total_fisico = serializers.ReadOnlyField()

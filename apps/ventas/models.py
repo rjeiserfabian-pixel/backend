@@ -37,9 +37,9 @@ class SesionCaja(models.Model):
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, related_name='sesiones_caja')
     fecha_apertura = models.DateTimeField(auto_now_add=True, db_index=True)
     fecha_cierre = models.DateTimeField(null=True, blank=True)
-    saldo_inicial = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    saldo_cierre_esperado = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    saldo_cierre_real = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    saldo_inicial = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    saldo_cierre_esperado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    saldo_cierre_real = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.ABIERTA, db_index=True)
 
     class Meta:
@@ -150,16 +150,16 @@ class Venta(models.Model):
     ticket_kiosko = models.CharField(max_length=20, null=True, blank=True, db_index=True)  # Ej: TK-482
     kilometraje = models.IntegerField(null=True, blank=True)  # Kilometraje del vehículo al momento del ingreso
 
-    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
-    igv = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
-    total = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    igv = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     
     creado_en = models.DateTimeField(default=timezone.now, db_index=True)
     fecha_emision = models.DateTimeField(null=True, blank=True, db_index=True)
     anulado_en = models.DateTimeField(null=True, blank=True)
 
-    monto_recibido = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
-    vuelto = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    monto_recibido = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    vuelto = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     class Meta:
         db_table = 'ventas_venta'
@@ -176,12 +176,12 @@ class DetalleVenta(models.Model):
     repuesto = models.ForeignKey(Repuesto, on_delete=models.RESTRICT, related_name='detalles_venta')
     almacen_origen = models.ForeignKey(Almacen, on_delete=models.RESTRICT, related_name='despachos_venta', null=True, blank=True)
     
-    cantidad = models.PositiveIntegerField()
+    cantidad = models.DecimalField(max_digits=12, decimal_places=2)
     precio_unitario = models.DecimalField(max_digits=10, decimal_places=2)
-    descuento = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    descuento = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     
     impuesto_aplicado = models.ForeignKey(Impuesto, on_delete=models.RESTRICT, related_name='detalles_venta', null=True, blank=True)
-    monto_impuesto = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    monto_impuesto = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     subtotal_linea = models.DecimalField(max_digits=10, decimal_places=2)  # cantidad * precio_unitario - descuento
 
     class Meta:

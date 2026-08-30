@@ -6,11 +6,11 @@ from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
 from django.db.models import Q, Prefetch
 from .models import (
-    Categoria, MarcaRepuesto, Repuesto, AplicacionRepuesto,
+    UnidadMedida, Categoria, MarcaRepuesto, Repuesto, AplicacionRepuesto,
     Sucursal, Almacen, UbicacionFisica, InventarioStock, MovimientoInventario,
 )
 from .serializers import (
-    CategoriaSerializer, MarcaRepuestoSerializer, RepuestoSerializer, RepuestoDetalleSerializer,
+    UnidadMedidaSerializer, CategoriaSerializer, MarcaRepuestoSerializer, RepuestoSerializer, RepuestoDetalleSerializer,
     SucursalSerializer, AlmacenSerializer, UbicacionFisicaSerializer,
     InventarioStockSerializer, MovimientoInventarioSerializer,
 )
@@ -30,6 +30,16 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────
 # VIEWSETS EXISTENTES (sin cambios en lógica)
 # ──────────────────────────────────────────────
+
+class UnidadMedidaViewSet(viewsets.ModelViewSet):
+    queryset = UnidadMedida.objects.filter(estado=True).order_by('nombre')
+    serializer_class = UnidadMedidaSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_destroy(self, instance):
+        instance.estado = False
+        instance.save()
+
 
 class CategoriaViewSet(viewsets.ModelViewSet):
     queryset = Categoria.objects.filter(estado=True).order_by('-id')

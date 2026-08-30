@@ -6,8 +6,23 @@ logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────
-# MODELOS EXISTENTES (sin cambios estructurales)
+# MODELOS EXISTENTES (con cambios estructurales)
 # ──────────────────────────────────────────────
+
+class UnidadMedida(models.Model):
+    nombre = models.CharField(max_length=50, unique=True, db_index=True)
+    abreviatura = models.CharField(max_length=10)
+    permite_decimales = models.BooleanField(default=False)
+    estado = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'unidad_medida'
+        verbose_name = 'Unidad de Medida'
+        verbose_name_plural = 'Unidades de Medida'
+
+    def __str__(self):
+        return f"{self.nombre} ({self.abreviatura})"
+
 
 class Categoria(models.Model):
     nombre = models.CharField(max_length=100, unique=True, db_index=True)
@@ -40,14 +55,15 @@ class Repuesto(models.Model):
     nombre = models.CharField(max_length=200)
     categoria = models.ForeignKey(Categoria, on_delete=models.RESTRICT, related_name='repuestos')
     marca = models.ForeignKey(MarcaRepuesto, on_delete=models.RESTRICT, related_name='repuestos')
+    unidad_medida = models.ForeignKey(UnidadMedida, on_delete=models.RESTRICT, related_name='repuestos', null=True, blank=True)
+    viscosidad = models.CharField(max_length=50, null=True, blank=True)
+    es_granel = models.BooleanField(default=False)
     
     # Impuesto asignado por defecto a este repuesto (ej. IGV 18%)
     tipo_igv = models.ForeignKey('ventas.Impuesto', on_delete=models.RESTRICT, related_name='repuestos', null=True, blank=True)
 
 
-    # Campo legacy mantenido para compatibilidad durante la migración.
-    # Una vez ejecutado el script de datos iniciales, se puede deprecar.
-    stock = models.IntegerField(default=0)
+    # Campo legacy eliminado.
 
     # 4 Tipos de Precios (Globales para todas las sucursales)
     precio_compra = models.DecimalField(max_digits=10, decimal_places=2)
@@ -175,10 +191,10 @@ class InventarioStock(models.Model):
     """
     repuesto = models.ForeignKey(Repuesto, on_delete=models.RESTRICT, related_name='inventario_stock')
     ubicacion = models.ForeignKey(UbicacionFisica, on_delete=models.RESTRICT, related_name='inventario_stock')
-    stock_disponible = models.IntegerField(default=0)   # Listo para vender/usar
-    stock_reservado = models.IntegerField(default=0)    # Asignado a OT/ventas en curso
-    stock_merma = models.IntegerField(default=0)        # Dañado o en cuarentena
-    stock_minimo = models.IntegerField(default=5)       # Nivel de alerta para reposición
+    stock_disponible = models.DecimalField(max_digits=12, decimal_places=2, default=0)   # Listo para vender/usar
+    stock_reservado = models.DecimalField(max_digits=12, decimal_places=2, default=0)    # Asignado a OT/ventas en curso
+    stock_merma = models.DecimalField(max_digits=12, decimal_places=2, default=0)        # Dañado o en cuarentena
+    stock_minimo = models.DecimalField(max_digits=12, decimal_places=2, default=5)       # Nivel de alerta para reposición
     actualizado_en = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -222,8 +238,8 @@ class MovimientoInventario(models.Model):
     # db_index=True en ubicacion: se consulta frecuentemente por ubicación para ver el kardex local
     ubicacion = models.ForeignKey(UbicacionFisica, on_delete=models.RESTRICT, related_name='movimientos', db_index=True)
     tipo_movimiento = models.CharField(max_length=30, choices=TipoMovimiento.choices, db_index=True)
-    cantidad = models.IntegerField()  # Positivo = entrada, negativo = salida
-    stock_resultante = models.IntegerField()  # Stock disponible DESPUÉS del movimiento (snapshot)
+    cantidad = models.DecimalField(max_digits=12, decimal_places=2)  # Positivo = entrada, negativo = salida
+    stock_resultante = models.DecimalField(max_digits=12, decimal_places=2)  # Stock disponible DESPUÉS del movimiento (snapshot)
     motivo = models.CharField(max_length=255)  # Ej. "Venta #102", "OT #55", "Ajuste de inventario"
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
