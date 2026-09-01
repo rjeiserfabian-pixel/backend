@@ -58,6 +58,9 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             numero=numero_ot
         )
         
+        if orden.cliente:
+            orden.vehiculo.clientes.add(orden.cliente)
+        
         if orden.kilometraje_ingreso is not None:
             vehiculo = orden.vehiculo
             vehiculo.kilometraje_actual = orden.kilometraje_ingreso
@@ -77,8 +80,36 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             OrdenServicio.objects.filter(orden=orden, id__in=servicios_ids).update(aprobado_cliente=True)
             OrdenServicio.objects.filter(orden=orden).exclude(id__in=servicios_ids).update(aprobado_cliente=False)
             
-            # Actualizar repuestos
-            OrdenRepuesto.objects.filter(orden=orden, id__in=repuestos_ids).update(aprobado_cliente=True)
+            # Actualizar repuestos y reservar stock
+            repuestos_a_aprobar = OrdenRepuesto.objects.filter(orden=orden, id__in=repuestos_ids)
+            for orp in repuestos_a_aprobar:
+                if not orp.aprobado_cliente:  # Solo si no estaba aprobado antes
+                    orp.aprobado_cliente = True
+                    orp.save(update_fields=['aprobado_cliente'])
+                    
+                    # Reservar stock
+                    stock_record = InventarioStock.objects.filter(repuesto=orp.repuesto, stock_disponible__gte=orp.cantidad).first()
+                    if not stock_record:
+                        stock_record = InventarioStock.objects.filter(repuesto=orp.repuesto).first()
+                    
+                    if stock_record:
+                        stock_record.stock_disponible -= orp.cantidad
+                        stock_record.stock_reservado += orp.cantidad
+                        stock_record.save()
+                        
+                        MovimientoInventario.objects.create(
+                            repuesto=orp.repuesto,
+                            ubicacion=stock_record.ubicacion,
+                            tipo_movimiento=MovimientoInventario.TipoMovimiento.RESERVA,
+                            cantidad=-orp.cantidad,
+                            stock_resultante=stock_record.stock_disponible,
+                            motivo=f"Reserva para OT-{orden.numero}",
+                            usuario=request.user,
+                            referencia_id=orden.id,
+                            referencia_tipo='OT'
+                        )
+            
+            # Desaprobar los no seleccionados
             OrdenRepuesto.objects.filter(orden=orden).exclude(id__in=repuestos_ids).update(aprobado_cliente=False)
             
             orden.estado = OrdenTrabajo.Estado.APROBADO
@@ -87,6 +118,48 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             logger.info(f"OT-{orden.numero} aprobada por cliente. Servicios: {servicios_ids}, Repuestos: {repuestos_ids}")
             
         return Response({'status': 'ok', 'message': 'Aprobación registrada correctamente.'})
+
+    @action(detail=True, methods=['get'])
+    def generar_pdf(self, request, pk=None):
+        orden = self.get_object()
+        
+        # Calcular totales
+        total_servicios = sum(s.precio_estimado for s in orden.servicios.all())
+        total_repuestos = sum(r.cantidad * r.precio_unitario for r in orden.repuestos.all())
+        total_general = total_servicios + total_repuestos
+        
+        # Configurar contexto
+        context = {
+            'orden': orden,
+            'total_servicios': total_servicios,
+            'total_repuestos': total_repuestos,
+            'total_general': total_general,
+            'empresa': {
+                'nombre': 'OMEGA AUTOMOTRIZ',
+                'direccion': 'Av. Principal 123',
+                'ruc': '20123456789',
+                'telefono': '987-654-321'
+            }
+        }
+        
+        from django.template.loader import render_to_string
+        from django.http import HttpResponse
+        from xhtml2pdf import pisa
+        import io
+        
+        html_string = render_to_string('taller/proforma_pdf.html', context)
+        
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="cotizacion_OT_{orden.numero}.pdf"'
+        
+        pisa_status = pisa.CreatePDF(
+            html_string, dest=response
+        )
+        
+        if pisa_status.err:
+            return HttpResponse('Error generando PDF', status=500)
+            
+        return response
 
 class HallazgoViewSet(viewsets.ModelViewSet):
     queryset = Hallazgo.objects.all()
@@ -101,10 +174,43 @@ class OrdenServicioViewSet(viewsets.ModelViewSet):
     serializer_class = OrdenServicioSerializer
     permission_classes = [IsAuthenticated]
 
+    @action(detail=True, methods=['patch'])
+    def marcar_completado(self, request, pk=None):
+        servicio = self.get_object()
+        servicio.completado = not servicio.completado
+        servicio.save(update_fields=['completado'])
+        return Response({'status': 'ok', 'completado': servicio.completado})
+
 class OrdenRepuestoViewSet(viewsets.ModelViewSet):
     queryset = OrdenRepuesto.objects.select_related('repuesto')
     serializer_class = OrdenRepuestoSerializer
     permission_classes = [IsAuthenticated]
+
+    @action(detail=True, methods=['patch'])
+    def marcar_instalado(self, request, pk=None):
+        repuesto_orden = self.get_object()
+        repuesto_orden.instalado = not repuesto_orden.instalado
+        repuesto_orden.save(update_fields=['instalado'])
+        
+        # Convertir reserva en salida definitiva al instalar
+        if repuesto_orden.instalado:
+            stock_record = InventarioStock.objects.filter(repuesto=repuesto_orden.repuesto).first()
+            if stock_record:
+                stock_record.stock_reservado -= repuesto_orden.cantidad
+                stock_record.save()
+                MovimientoInventario.objects.create(
+                    repuesto=repuesto_orden.repuesto,
+                    ubicacion=stock_record.ubicacion,
+                    tipo_movimiento=MovimientoInventario.TipoMovimiento.SALIDA,
+                    cantidad=-repuesto_orden.cantidad,
+                    stock_resultante=stock_record.stock_disponible,
+                    motivo=f"Instalación en OT-{repuesto_orden.orden.numero}",
+                    usuario=request.user,
+                    referencia_id=repuesto_orden.orden.id,
+                    referencia_tipo='OT'
+                )
+                
+        return Response({'status': 'ok', 'instalado': repuesto_orden.instalado})
 
 class PlantillaPreventivaViewSet(viewsets.ModelViewSet):
     queryset = PlantillaPreventiva.objects.all()

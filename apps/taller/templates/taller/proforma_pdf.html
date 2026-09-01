@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Cotización OT-{{ orden.numero }}</title>
+    <style>
+        @page {
+            size: a4 portrait;
+            margin: 2cm;
+            @frame footer {
+                -pdf-frame-content: footer_content;
+                bottom: 1cm;
+                margin-left: 2cm;
+                margin-right: 2cm;
+                height: 1cm;
+            }
+        }
+        
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            color: #333;
+            line-height: 1.5;
+            font-size: 12px;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Encabezado usando tablas para xhtml2pdf */
+        .header-table {
+            width: 100%;
+            border-bottom: 2px solid #be123c;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .header-logo h1 {
+            color: #be123c;
+            margin: 0;
+            font-size: 24px;
+            text-transform: uppercase;
+        }
+        
+        .header-info {
+            text-align: right;
+        }
+        
+        .header-info h2 {
+            margin: 0;
+            color: #1e293b;
+            font-size: 20px;
+        }
+
+        .header-info p {
+            margin: 2px 0;
+            color: #64748b;
+        }
+
+        /* Secciones de Datos */
+        .info-section {
+            width: 100%;
+            margin-bottom: 20px;
+            border-collapse: collapse;
+        }
+        
+        .info-section td {
+            padding: 8px;
+            vertical-align: top;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .info-label {
+            font-weight: bold;
+            color: #475569;
+            background-color: #f8fafc;
+            width: 15%;
+        }
+
+        .info-value {
+            width: 35%;
+        }
+
+        /* Títulos de Sección */
+        .section-title {
+            background-color: #be123c;
+            color: white;
+            padding: 5px 10px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        /* Tablas Principales */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        .data-table th {
+            background-color: #f1f5f9;
+            color: #1e293b;
+            font-weight: bold;
+            padding: 10px;
+            text-align: left;
+            border: 1px solid #cbd5e1;
+        }
+
+        .data-table td {
+            padding: 10px;
+            border: 1px solid #cbd5e1;
+            color: #334155;
+        }
+
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+        
+        .totals-table {
+            width: 40%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            margin-bottom: 30px;
+        }
+
+        .totals-table td {
+            padding: 8px;
+            border: 1px solid #cbd5e1;
+        }
+
+        .totals-label {
+            font-weight: bold;
+            background-color: #f8fafc;
+        }
+
+        .grand-total {
+            background-color: #be123c !important;
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .signatures {
+            margin-top: 80px;
+            width: 100%;
+        }
+
+        .signatures-table {
+            width: 100%;
+            text-align: center;
+        }
+
+        .signatures-table td {
+            width: 50%;
+            padding: 10px;
+        }
+
+        .signature-box {
+            border-top: 1px solid #333;
+            padding-top: 5px;
+            width: 80%;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header usando tabla en lugar de flexbox -->
+    <table class="header-table">
+        <tr>
+            <td class="header-logo" style="width: 50%; vertical-align: top;">
+                <h1>{{ empresa.nombre|default:"MI TALLER AUTOMOTRIZ" }}</h1>
+                <p>{{ empresa.direccion|default:"Dirección Principal, Ciudad" }}</p>
+                <p>RUC: {{ empresa.ruc|default:"20000000000" }} | Tel: {{ empresa.telefono|default:"999-999-999" }}</p>
+            </td>
+            <td class="header-info" style="width: 50%; vertical-align: top;">
+                <h2>COTIZACIÓN</h2>
+                <p><strong>N° Orden:</strong> OT-{{ orden.numero }}</p>
+                <p><strong>Fecha:</strong> {% now "d/m/Y" %}</p>
+            </td>
+        </tr>
+    </table>
+
+    <!-- DATOS DEL CLIENTE Y VEHÍCULO -->
+    <table class="info-section">
+        <tr>
+            <td class="info-label">Cliente</td>
+            <td class="info-value">{{ orden.cliente.nombres }} {{ orden.cliente.apellidos|default:"" }}</td>
+            <td class="info-label">Placa</td>
+            <td class="info-value"><strong>{{ orden.vehiculo.placa }}</strong></td>
+        </tr>
+        <tr>
+            <td class="info-label">RUC/DNI</td>
+            <td class="info-value">{{ orden.cliente.dni|default:"-" }}</td>
+            <td class="info-label">Marca/Modelo</td>
+            <td class="info-value">{{ orden.vehiculo.marca }} {{ orden.vehiculo.modelo }}</td>
+        </tr>
+        <tr>
+            <td class="info-label">Teléfono</td>
+            <td class="info-value">{{ orden.cliente.telefono|default:"-" }}</td>
+            <td class="info-label">Kilometraje</td>
+            <td class="info-value">{{ orden.kilometraje_ingreso|default:"0" }} km</td>
+        </tr>
+        <tr>
+            <td class="info-label">Dirección</td>
+            <td class="info-value">{{ orden.cliente.direccion|default:"-" }}</td>
+            <td class="info-label">Asesor</td>
+            <td class="info-value">{{ orden.recepcionista.get_full_name }}</td>
+        </tr>
+    </table>
+
+    <!-- MOTIVOS DE INGRESO -->
+    {% if orden.motivo_ingreso %}
+    <div class="section-title">DETALLES Y MOTIVO DE INGRESO</div>
+    <div style="padding: 10px; border: 1px solid #cbd5e1; background-color: #f8fafc; margin-bottom: 20px;">
+        {{ orden.motivo_ingreso|linebreaksbr }}
+    </div>
+    {% endif %}
+
+    <!-- SERVICIOS -->
+    <div class="section-title">SERVICIOS / MANO DE OBRA</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 5%;">Item</th>
+                <th style="width: 75%;">Descripción del Servicio</th>
+                <th style="width: 20%; text-align: right;">Precio Estimado (S/)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for servicio in orden.servicios.all %}
+            <tr>
+                <td class="text-center">{{ forloop.counter }}</td>
+                <td>{{ servicio.descripcion }}</td>
+                <td class="text-right">{{ servicio.precio_estimado|floatformat:2 }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="3" class="text-center">No se registraron servicios.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- REPUESTOS -->
+    <div class="section-title">REPUESTOS Y MATERIALES</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 5%;">Item</th>
+                <th style="width: 15%;">Código</th>
+                <th style="width: 40%;">Descripción</th>
+                <th style="width: 10%; text-align: center;">Cant.</th>
+                <th style="width: 15%; text-align: right;">P. Unit (S/)</th>
+                <th style="width: 15%; text-align: right;">Total (S/)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for repuesto in orden.repuestos.all %}
+            <tr>
+                <td class="text-center">{{ forloop.counter }}</td>
+                <td>{{ repuesto.repuesto.codigo }}</td>
+                <td>{{ repuesto.repuesto.nombre }}</td>
+                <td class="text-center">{{ repuesto.cantidad|floatformat:2 }}</td>
+                <td class="text-right">{{ repuesto.precio_unitario|floatformat:2 }}</td>
+                <td class="text-right">{{ repuesto.total_precio|floatformat:2 }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6" class="text-center">No se registraron repuestos.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <table style="width: 100%;">
+        <tr>
+            <td style="width: 60%;"></td>
+            <td style="width: 40%; text-align: right;">
+                <table class="totals-table" align="right">
+                    <tr>
+                        <td class="totals-label">Total Servicios:</td>
+                        <td class="text-right">S/ {{ total_servicios|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td class="totals-label">Total Repuestos:</td>
+                        <td class="text-right">S/ {{ total_repuestos|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td class="totals-label grand-total">TOTAL GENERAL:</td>
+                        <td class="text-right grand-total">S/ {{ total_general|floatformat:2 }}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <div class="signatures">
+        <table class="signatures-table">
+            <tr>
+                <td>
+                    <div class="signature-box">Aprobación del Cliente</div>
+                </td>
+                <td>
+                    <div class="signature-box">Asesor de Servicio</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Paginación y pie de página en xhtml2pdf -->
+    <div id="footer_content" style="text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 10px;">
+        Este documento es una estimación referencial basada en la inspección inicial. Los precios finales pueden variar si se descubren fallas ocultas durante la reparación. Validez de la cotización: 7 días. | Página <pdf:pagenumber> de <pdf:pagecount>
+    </div>
+
+</body>
+</html>

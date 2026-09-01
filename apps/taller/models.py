@@ -22,6 +22,7 @@ class OrdenTrabajo(models.Model):
         AMBOS = 'AMBOS', 'Preventivo y Correctivo'
 
     numero = models.CharField(max_length=20, unique=True, db_index=True)
+    cliente = models.ForeignKey('clientes.Cliente', on_delete=models.RESTRICT, related_name='ordenes_trabajo', null=True, blank=False)
     vehiculo = models.ForeignKey(Vehiculo, on_delete=models.RESTRICT, related_name='ordenes_trabajo')
     recepcionista = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, related_name='ordenes_recepcionadas')
     mecanico_asignado = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, related_name='ordenes_asignadas', null=True, blank=True)

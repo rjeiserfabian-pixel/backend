@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva
 from apps.vehiculos.serializers import VehiculoSerializer
 from apps.inventario.serializers import RepuestoSerializer
+from apps.clientes.serializers import ClienteSerializer
 
 class HallazgoSerializer(serializers.ModelSerializer):
     registrado_por_nombre = serializers.CharField(source='registrado_por.nombre_completo', read_only=True)
@@ -30,15 +31,18 @@ class OrdenTrabajoListSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = OrdenTrabajo
-        fields = ['id', 'numero', 'vehiculo', 'vehiculo_placa', 'cliente_nombre', 'estado', 'tipo_servicio', 'fecha_ingreso', 'mecanico_nombre']
+        fields = ['id', 'numero', 'vehiculo', 'vehiculo_placa', 'cliente', 'cliente_nombre', 'estado', 'tipo_servicio', 'fecha_ingreso', 'mecanico_nombre', 'motivo_ingreso']
         
     def get_cliente_nombre(self, obj):
-        # Vehiculo tiene relacion M:N con clientes, asumimos el primero para listados rapidos
+        if obj.cliente:
+            return obj.cliente.nombres + " " + (obj.cliente.apellidos or "")
+        # Fallback to vehicle's first client for older records
         cliente = obj.vehiculo.clientes.first()
-        return cliente.nombres + " " + cliente.apellidos if cliente else "Sin Cliente"
+        return cliente.nombres + " " + (cliente.apellidos or "") if cliente else "Sin Cliente"
 
 class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
     vehiculo_detalle = VehiculoSerializer(source='vehiculo', read_only=True)
+    cliente_detalle = ClienteSerializer(source='cliente', read_only=True)
     hallazgos = HallazgoSerializer(many=True, read_only=True)
     servicios = OrdenServicioSerializer(many=True, read_only=True)
     repuestos = OrdenRepuestoSerializer(many=True, read_only=True)
@@ -48,9 +52,9 @@ class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrdenTrabajo
         fields = [
-            'id', 'numero', 'vehiculo', 'vehiculo_detalle', 'recepcionista', 'recepcionista_nombre',
+            'id', 'numero', 'vehiculo', 'vehiculo_detalle', 'cliente', 'cliente_detalle', 'recepcionista', 'recepcionista_nombre',
             'mecanico_asignado', 'mecanico_nombre', 'estado', 'tipo_servicio', 'kilometraje_ingreso',
-            'url_cotizacion_pdf', 'hallazgos', 'servicios', 'repuestos'
+            'motivo_ingreso', 'url_cotizacion_pdf', 'hallazgos', 'servicios', 'repuestos'
         ]
         read_only_fields = ['recepcionista', 'numero']
 

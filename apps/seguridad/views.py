@@ -153,6 +153,10 @@ class UsuarioListCreateView(ListCreateAPIView):
                 | Q(email__icontains=busqueda)
             )
 
+        rol_codigo = self.request.query_params.get("rol")
+        if rol_codigo:
+            qs = qs.filter(usuario_roles__id_rol__codigo=rol_codigo, usuario_roles__estado=True).distinct()
+
         return qs.order_by("apellidos", "nombres")
 
     def list(self, request, *args, **kwargs):
