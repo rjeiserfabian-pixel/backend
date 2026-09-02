@@ -173,7 +173,9 @@ class Venta(models.Model):
 
 class DetalleVenta(models.Model):
     venta = models.ForeignKey(Venta, on_delete=models.CASCADE, related_name='detalles')
-    repuesto = models.ForeignKey(Repuesto, on_delete=models.RESTRICT, related_name='detalles_venta')
+    repuesto = models.ForeignKey(Repuesto, on_delete=models.RESTRICT, related_name='detalles_venta', null=True, blank=True)
+    descripcion_servicio = models.CharField(max_length=255, null=True, blank=True)
+
     almacen_origen = models.ForeignKey(Almacen, on_delete=models.RESTRICT, related_name='despachos_venta', null=True, blank=True)
     
     cantidad = models.DecimalField(max_digits=12, decimal_places=2)
@@ -190,7 +192,8 @@ class DetalleVenta(models.Model):
         verbose_name_plural = 'Detalles de Venta'
 
     def __str__(self):
-        return f"{self.cantidad} x {self.repuesto.nombre} (Venta {self.venta_id})"
+        nombre = self.repuesto.nombre if self.repuesto else self.descripcion_servicio
+        return f"{self.cantidad} x {nombre} (Venta {self.venta_id})"
 
 
 class MovimientoCaja(models.Model):

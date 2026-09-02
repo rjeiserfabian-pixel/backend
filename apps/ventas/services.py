@@ -133,7 +133,21 @@ class VentasService:
             detalle.almacen_origen = almacen_origen
             detalle.save()
             
-            VentasService._descontar_stock(detalle.repuesto, almacen_origen, detalle.cantidad, f"Venta {venta.serie_correlativo}", usuario, venta.id)
+            if detalle.repuesto:
+                VentasService._descontar_stock(detalle.repuesto, almacen_origen, detalle.cantidad, f"Venta {venta.serie_correlativo}", usuario, venta.id)
+
+        # 5. Si viene de una Orden de Trabajo, cambiar estado a FACTURADO
+        if venta.ticket_kiosko and venta.ticket_kiosko.startswith('OT-'):
+            parts = venta.ticket_kiosko.split('-')
+            if len(parts) >= 2:
+                ot_id = parts[1]
+                from apps.taller.models import OrdenTrabajo
+                try:
+                    ot = OrdenTrabajo.objects.get(id=ot_id)
+                    ot.estado = OrdenTrabajo.Estado.FACTURADO
+                    ot.save(update_fields=['estado'])
+                except OrdenTrabajo.DoesNotExist:
+                    pass
 
         return venta
 

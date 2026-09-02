@@ -13,6 +13,8 @@ from .serializers import (
     PlantillaPreventivaSerializer
 )
 from apps.inventario.models import MovimientoInventario, InventarioStock
+from apps.ventas.models import Venta, DetalleVenta
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +120,113 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             logger.info(f"OT-{orden.numero} aprobada por cliente. Servicios: {servicios_ids}, Repuestos: {repuestos_ids}")
             
         return Response({'status': 'ok', 'message': 'Aprobación registrada correctamente.'})
+
+    @action(detail=True, methods=['post'])
+    def finalizar_orden(self, request, pk=None):
+        orden = self.get_object()
+        
+        if orden.estado != OrdenTrabajo.Estado.APROBADO:
+            return Response({'error': 'La orden debe estar en estado APROBADO para finalizarse.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Validar servicios aprobados completados
+        servicios_aprobados = orden.servicios.filter(aprobado_cliente=True)
+        if servicios_aprobados.filter(completado=False).exists():
+            return Response({'error': 'Todos los servicios aprobados deben estar marcados como Terminados.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Validar repuestos aprobados instalados
+        repuestos_aprobados = orden.repuestos.filter(aprobado_cliente=True)
+        if repuestos_aprobados.filter(instalado=False).exists():
+            return Response({'error': 'Todos los repuestos aprobados deben estar marcados como Instalados.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Cambiar estado
+        orden.estado = OrdenTrabajo.Estado.FINALIZADO
+        orden.fecha_finalizacion = timezone.now()
+        orden.save(update_fields=['estado', 'fecha_finalizacion'])
+        
+        return Response({'status': 'ok', 'message': 'Orden finalizada correctamente.', 'estado': orden.estado})
+
+    @action(detail=True, methods=['post'])
+    def enviar_a_pos(self, request, pk=None):
+        orden = self.get_object()
+        
+        if orden.estado != OrdenTrabajo.Estado.FINALIZADO:
+            return Response({'error': 'La orden debe estar en estado FINALIZADO para enviarse a POS.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        if not orden.cliente:
+            return Response({'error': 'La orden no tiene un cliente asignado. Asigne un cliente en los detalles de la orden antes de cobrar.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        sucursal_id = request.data.get('sucursal_id')
+        if not sucursal_id:
+            # Intentar obtener de request.user si es necesario o por defecto 1
+            sucursal_id = 1
+            
+        venta_existente = Venta.objects.filter(
+            ticket_kiosko__startswith=f"OT-{orden.id}-",
+            estado=Venta.Estado.PRE_VENTA
+        ).first()
+        
+        if venta_existente:
+            return Response({
+                'status': 'ok', 
+                'message': 'Ya existe un ticket en POS.', 
+                'venta_id': venta_existente.id,
+                'ticket': venta_existente.ticket_kiosko,
+                'estado_orden': orden.estado
+            })
+            
+        with transaction.atomic():
+            ticket_code = f"OT-{orden.id}-{str(uuid.uuid4())[:4].upper()}"
+            venta = Venta.objects.create(
+                cliente=orden.cliente,
+                vehiculo=orden.vehiculo,
+                sucursal_id=sucursal_id,
+                estado=Venta.Estado.PRE_VENTA,
+                ticket_kiosko=ticket_code,
+                kilometraje=orden.kilometraje_ingreso
+            )
+            
+            subtotal_acumulado = 0
+            
+            # Repuestos
+            for rep in orden.repuestos.filter(aprobado_cliente=True, instalado=True):
+                subtotal_linea = rep.cantidad * rep.precio_unitario
+                DetalleVenta.objects.create(
+                    venta=venta,
+                    repuesto=rep.repuesto,
+                    cantidad=rep.cantidad,
+                    precio_unitario=rep.precio_unitario,
+                    subtotal_linea=subtotal_linea
+                )
+                subtotal_acumulado += subtotal_linea
+                
+            # Servicios
+            for serv in orden.servicios.filter(aprobado_cliente=True, completado=True):
+                subtotal_linea = serv.precio_estimado
+                # Cantidad = 1, usando descripcion_servicio
+                DetalleVenta.objects.create(
+                    venta=venta,
+                    descripcion_servicio=serv.descripcion,
+                    cantidad=1,
+                    precio_unitario=serv.precio_estimado,
+                    subtotal_linea=subtotal_linea
+                )
+                subtotal_acumulado += subtotal_linea
+                
+            from decimal import Decimal
+            venta.total = subtotal_acumulado
+            venta.subtotal = venta.total / Decimal('1.18')  # TODO: usar tipo impuesto
+            venta.igv = venta.total - venta.subtotal
+            venta.save()
+            
+            # NOTA: Ya no cambiamos a FACTURADO aquí, se hará cuando se pague en POS.
+            
+        return Response({
+            'status': 'ok', 
+            'message': 'Enviado a POS correctamente.', 
+            'venta_id': venta.id,
+            'ticket': venta.ticket_kiosko,
+            'estado_orden': orden.estado
+        })
 
     @action(detail=True, methods=['get'])
     def generar_pdf(self, request, pk=None):

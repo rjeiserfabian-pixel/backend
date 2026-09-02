@@ -276,7 +276,9 @@ class VentaViewSet(viewsets.ModelViewSet):
             venta_id = data.get('venta_id')
             if venta_id:
                 venta = Venta.objects.get(id=venta_id)
-                venta.detalles.all().delete() # Limpiamos los detalles previos de la pre-venta
+                # IMPORTANTE: No borramos ni recreamos los detalles porque 
+                # pueden contener descripciones de servicios del Taller o Kiosko
+                # que son de solo lectura en el POS.
                 venta.cliente = cliente
                 venta.sucursal = sucursal
                 venta.moneda = moneda
@@ -297,23 +299,24 @@ class VentaViewSet(viewsets.ModelViewSet):
                     monto_recibido=monto_recibido,
                     vuelto=vuelto
                 )
-            # Detalles
-            subtotal_acumulado = Decimal('0.00')
-            for item in data.get('detalles', []):
-                repuesto = Repuesto.objects.get(id=item['repuesto_id'])
-                cantidad = Decimal(str(item['cantidad']))
-                precio = Decimal(str(item['precio_venta']))
-                sub = cantidad * precio
-                subtotal_acumulado += sub
-                DetalleVenta.objects.create(
-                    venta=venta, repuesto=repuesto, cantidad=cantidad, 
-                    precio_unitario=precio, subtotal_linea=sub
-                )
-                
-            venta.total = subtotal_acumulado
-            venta.subtotal = venta.total / Decimal('1.18')
-            venta.igv = venta.total - venta.subtotal
-            venta.save()
+            # Detalles (Solo para Venta Directa nueva)
+            if not venta_id:
+                subtotal_acumulado = Decimal('0.00')
+                for item in data.get('detalles', []):
+                    repuesto = Repuesto.objects.get(id=item['repuesto_id'])
+                    cantidad = Decimal(str(item['cantidad']))
+                    precio = Decimal(str(item['precio_venta']))
+                    sub = cantidad * precio
+                    subtotal_acumulado += sub
+                    DetalleVenta.objects.create(
+                        venta=venta, repuesto=repuesto, cantidad=cantidad, 
+                        precio_unitario=precio, subtotal_linea=sub
+                    )
+                    
+                venta.total = subtotal_acumulado
+                venta.subtotal = venta.total / Decimal('1.18')
+                venta.igv = venta.total - venta.subtotal
+                venta.save()
             
             # 2. Procesar (Caja, Stock, etc)
             tipo_comprobante = TipoComprobante.objects.get(id=data['tipo_comprobante_id'])
@@ -377,8 +380,10 @@ class VentaViewSet(viewsets.ModelViewSet):
             if not almacen_origen:
                 return Response({"error": "La sucursal no tiene almacenes configurados."}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 3. Descontar stock
+            # 3. Descontar stock (solo para repuestos físicos, no servicios)
             for det in venta.detalles.all():
+                if not det.repuesto:
+                    continue  # Los servicios no tienen stock físico
                 VentasService._descontar_stock(
                     repuesto=det.repuesto, 
                     almacen=almacen_origen, 
@@ -388,6 +393,19 @@ class VentaViewSet(viewsets.ModelViewSet):
                     referencia_id=venta.id
                 )
                 
+            # 4. Si viene de una Orden de Trabajo, cambiar estado a FACTURADO
+            if venta.ticket_kiosko and venta.ticket_kiosko.startswith('OT-'):
+                parts = venta.ticket_kiosko.split('-')
+                if len(parts) >= 2:
+                    ot_id = parts[1]
+                    from apps.taller.models import OrdenTrabajo
+                    try:
+                        ot = OrdenTrabajo.objects.get(id=ot_id)
+                        ot.estado = OrdenTrabajo.Estado.FACTURADO
+                        ot.save(update_fields=['estado'])
+                    except OrdenTrabajo.DoesNotExist:
+                        pass
+                        
             return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
         except Exception as e:
             transaction.set_rollback(True)
