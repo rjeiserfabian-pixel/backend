@@ -102,6 +102,10 @@ class OrdenRepuesto(models.Model):
     def __str__(self):
         return f"{self.cantidad}x {self.repuesto.nombre} (OT-{self.orden.numero})"
 
+    @property
+    def total(self):
+        return self.cantidad * self.precio_unitario
+
 class PlantillaPreventiva(models.Model):
     """Servicios estandarizados que se pueden sugerir o añadir dinámicamente en recepción."""
     nombre = models.CharField(max_length=150, unique=True, db_index=True)

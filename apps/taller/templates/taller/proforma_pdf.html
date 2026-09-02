@@ -6,310 +6,241 @@
     <style>
         @page {
             size: a4 portrait;
-            margin: 2cm;
+            margin: 1.5cm;
             @frame footer {
                 -pdf-frame-content: footer_content;
                 bottom: 1cm;
-                margin-left: 2cm;
-                margin-right: 2cm;
+                margin-left: 1.5cm;
+                margin-right: 1.5cm;
                 height: 1cm;
             }
         }
+        body { 
+            font-family: 'Helvetica', 'Arial', sans-serif; 
+            font-size: 10px; 
+            color: #1e293b; 
+            line-height: 1.4;
+        }
+        .bold { font-weight: bold; color: #000000; }
+        .text-orange { color: #ea580c; }
+        .text-navy { color: #0f172a; }
+        .uppercase { text-transform: uppercase; }
         
-        body {
-            font-family: 'Helvetica', 'Arial', sans-serif;
-            color: #333;
-            line-height: 1.5;
-            font-size: 12px;
-            margin: 0;
-            padding: 0;
-        }
-
-        /* Encabezado usando tablas para xhtml2pdf */
-        .header-table {
-            width: 100%;
-            border-bottom: 2px solid #be123c;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
-        }
+        table { width: 100%; border-collapse: collapse; }
+        td { vertical-align: top; }
         
-        .header-logo h1 {
-            color: #be123c;
-            margin: 0;
-            font-size: 24px;
-            text-transform: uppercase;
-        }
+        .header-title { font-size: 30px; font-weight: bold; letter-spacing: 0.5px; }
+        .header-subtitle { font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; font-weight: bold; }
+        .header-info-text { font-size: 11px; color: #334155; margin-top: 10px; line-height: 1.4; }
         
-        .header-info {
-            text-align: right;
-        }
+        .section-title { font-size: 10px; font-weight: bold; color: #ea580c; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
         
-        .header-info h2 {
-            margin: 0;
-            color: #1e293b;
-            font-size: 20px;
-        }
+        .info-table td { padding: 4px 0; }
+        .info-label { color: #334155; width: 28%; font-size: 10px; font-weight: bold; }
+        .info-value { color: #000000; font-weight: bold; font-size: 10px; }
 
-        .header-info p {
-            margin: 2px 0;
-            color: #64748b;
-        }
-
-        /* Secciones de Datos */
-        .info-section {
-            width: 100%;
-            margin-bottom: 20px;
-            border-collapse: collapse;
-        }
+        .items-table { margin-top: 10px; border: 1px solid #94a3b8; }
+        .items-table th { background-color: #0f172a; color: white; padding: 7px; font-size: 9px; font-weight: bold; text-align: left; border: 1px solid #0f172a; }
+        .items-table td { padding: 7px; border-bottom: 1px solid #cbd5e1; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; color: #000000; font-size: 10px; }
         
-        .info-section td {
-            padding: 8px;
-            vertical-align: top;
-            border: 1px solid #e2e8f0;
-        }
-        
-        .info-label {
-            font-weight: bold;
-            color: #475569;
-            background-color: #f8fafc;
-            width: 15%;
-        }
-
-        .info-value {
-            width: 35%;
-        }
-
-        /* Títulos de Sección */
-        .section-title {
-            background-color: #be123c;
-            color: white;
-            padding: 5px 10px;
-            font-size: 14px;
-            font-weight: bold;
-            margin-top: 20px;
-            margin-bottom: 10px;
-        }
-
-        /* Tablas Principales */
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }
-
-        .data-table th {
-            background-color: #f1f5f9;
-            color: #1e293b;
-            font-weight: bold;
-            padding: 10px;
-            text-align: left;
-            border: 1px solid #cbd5e1;
-        }
-
-        .data-table td {
-            padding: 10px;
-            border: 1px solid #cbd5e1;
-            color: #334155;
-        }
-
-        .text-right { text-align: right; }
-        .text-center { text-align: center; }
-        
-        .totals-table {
-            width: 40%;
-            border-collapse: collapse;
-            margin-top: 10px;
-            margin-bottom: 30px;
-        }
-
-        .totals-table td {
-            padding: 8px;
-            border: 1px solid #cbd5e1;
-        }
-
-        .totals-label {
-            font-weight: bold;
-            background-color: #f8fafc;
-        }
-
-        .grand-total {
-            background-color: #be123c !important;
-            color: white;
-            font-weight: bold;
-            font-size: 16px;
-        }
-
-        .signatures {
-            margin-top: 80px;
-            width: 100%;
-        }
-
-        .signatures-table {
-            width: 100%;
-            text-align: center;
-        }
-
-        .signatures-table td {
-            width: 50%;
-            padding: 10px;
-        }
-
-        .signature-box {
-            border-top: 1px solid #333;
-            padding-top: 5px;
-            width: 80%;
-            margin: 0 auto;
-        }
+        .footer-note { font-size: 9px; color: #64748b; text-align: center; padding-top: 15px; border-top: 1px solid #cbd5e1; }
     </style>
 </head>
 <body>
 
-    <!-- Header usando tabla en lugar de flexbox -->
-    <table class="header-table">
+    <!-- Header -->
+    <table style="margin-bottom: 20px;">
         <tr>
-            <td class="header-logo" style="width: 50%; vertical-align: top;">
-                <h1>{{ empresa.nombre|default:"MI TALLER AUTOMOTRIZ" }}</h1>
-                <p>{{ empresa.direccion|default:"Dirección Principal, Ciudad" }}</p>
-                <p>RUC: {{ empresa.ruc|default:"20000000000" }} | Tel: {{ empresa.telefono|default:"999-999-999" }}</p>
+            <td style="width: 8%; vertical-align: middle;">
+                <!-- Modern Omega logo usando CSS -->
+                <div style="font-family: serif; font-size: 42px; color: #ea580c; line-height: 1; font-weight: normal;">&Omega;</div>
             </td>
-            <td class="header-info" style="width: 50%; vertical-align: top;">
-                <h2>COTIZACIÓN</h2>
-                <p><strong>N° Orden:</strong> OT-{{ orden.numero }}</p>
-                <p><strong>Fecha:</strong> {% now "d/m/Y" %}</p>
+            <td style="width: 56%; vertical-align: middle; padding-top: 5px;">
+                <div class="header-title"><span class="text-navy">OMEGA</span> <span class="text-orange">AUTOMOTRIZ</span></div>
+                <div class="header-subtitle">SERVICIO AUTOMOTRIZ & MANTENIMIENTO PREVENTIVO</div>
+                <div class="header-info-text">
+                    <span class="bold">OMEGA AUTOMOTRIZ E.I.R.L.</span> — Jr. Martinez de Compagnon N° 1576<br>
+                    Telf: 987 070 538 - 942 940 538 | automotrizomega@gmail.com
+                </div>
+            </td>
+            <td style="width: 36%; vertical-align: top;">
+                <table style="width: 70%; float: right;">
+                    <tr>
+                        <td style="text-align: center; padding-bottom: 5px;">
+                            <span style="color: #64748b; font-size: 11px; font-weight: bold; letter-spacing: 1px;">R.U.C. 20601042381</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <table style="width: 100%; background-color: #0f172a; padding: 6px 10px; border-radius: 4px;">
+                                <tr><td style="color: #ffffff; text-align: center; font-size: 10px; letter-spacing: 2px;">COTIZACIÓN</td></tr>
+                                <tr><td style="color: #ffffff; text-align: center; font-size: 16px; font-weight: bold; padding-top: 2px;">N.° {{ orden.numero|default:"0000" }}</td></tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+    
+    <div style="height: 2px; background-color: #0f172a; margin-bottom: 15px;"></div>
+
+    <!-- DATOS CLIENTE Y EMISION -->
+    <table>
+        <tr>
+            <td style="width: 48%; padding: 12px; border: 1px solid #cbd5e1; background-color: #f8fafc; border-radius: 4px;">
+                <div class="section-title">DATOS DEL CLIENTE</div>
+                <table class="info-table">
+                    <tr><td class="info-label">RUC / DNI:</td><td class="info-value">{{ orden.cliente.dni|default:"-" }}</td></tr>
+                    <tr><td class="info-label">Cliente:</td><td class="info-value">{{ orden.cliente.nombres }} {{ orden.cliente.apellidos|default:"" }}</td></tr>
+                    <tr><td class="info-label">Dirección:</td><td class="info-value">{{ orden.cliente.direccion|default:"-" }}</td></tr>
+                    <tr><td class="info-label">Celular:</td><td class="info-value">{{ orden.cliente.telefono|default:"-" }}</td></tr>
+                </table>
+            </td>
+            <td style="width: 4%;"></td>
+            <td style="width: 48%; padding: 12px; border: 1px solid #cbd5e1; background-color: #f8fafc; border-radius: 4px;">
+                <div class="section-title">DETALLE DE EMISIÓN</div>
+                <table class="info-table">
+                    <tr><td class="info-label">Fecha emisión:</td><td class="info-value">{% now "d/m/Y" %}</td></tr>
+                    <tr><td class="info-label">Fecha venc.:</td><td class="info-value">{% now "d/m/Y" %}</td></tr>
+                    <tr><td class="info-label">Moneda:</td><td class="info-value">Soles (S/)</td></tr>
+                    <tr><td class="info-label">Tipo atención:</td><td class="info-value">{{ orden.tipo_servicio|default:"Preventivo" }}</td></tr>
+                </table>
+            </td>
+        </tr>
+        <tr><td colspan="3" style="height: 10px;"></td></tr>
+        <tr>
+            <td style="width: 48%; padding: 12px; border: 1px solid #cbd5e1; background-color: #f8fafc; border-radius: 4px;">
+                <div class="section-title">DATOS DEL VEHÍCULO</div>
+                <table class="info-table">
+                    <tr>
+                        <td class="info-label" style="width: 14%;">Placa:</td><td class="info-value" style="width: 18%;">{{ orden.vehiculo.placa }}</td>
+                        <td class="info-label" style="width: 14%;">Marca:</td><td class="info-value" style="width: 20%;">{{ orden.vehiculo.marca }}</td>
+                        <td class="info-label" style="width: 16%;">Modelo:</td><td class="info-value" style="width: 18%;">{{ orden.vehiculo.modelo }}</td>
+                    </tr>
+                    <tr>
+                        <td class="info-label">Año:</td><td class="info-value">{{ orden.vehiculo.anio_fabricacion|default:"-" }}</td>
+                        <td class="info-label" colspan="2">Kilometraje:</td><td class="info-value" colspan="2">{{ orden.kilometraje_ingreso|default:"-" }} km</td>
+                    </tr>
+                </table>
+            </td>
+            <td style="width: 4%;"></td>
+            <td style="width: 48%; padding: 12px; border: 1px solid #cbd5e1; background-color: #f8fafc; border-radius: 4px;">
+                <div class="section-title">ESTADO DOCUMENTARIO</div>
+                <table class="info-table">
+                    <tr><td class="info-label">SOAT:</td><td class="info-value">No registrado</td></tr>
+                    <tr><td class="info-label">Revisión técnica:</td><td class="info-value">No registrado</td></tr>
+                </table>
             </td>
         </tr>
     </table>
 
-    <!-- DATOS DEL CLIENTE Y VEHÍCULO -->
-    <table class="info-section">
-        <tr>
-            <td class="info-label">Cliente</td>
-            <td class="info-value">{{ orden.cliente.nombres }} {{ orden.cliente.apellidos|default:"" }}</td>
-            <td class="info-label">Placa</td>
-            <td class="info-value"><strong>{{ orden.vehiculo.placa }}</strong></td>
-        </tr>
-        <tr>
-            <td class="info-label">RUC/DNI</td>
-            <td class="info-value">{{ orden.cliente.dni|default:"-" }}</td>
-            <td class="info-label">Marca/Modelo</td>
-            <td class="info-value">{{ orden.vehiculo.marca }} {{ orden.vehiculo.modelo }}</td>
-        </tr>
-        <tr>
-            <td class="info-label">Teléfono</td>
-            <td class="info-value">{{ orden.cliente.telefono|default:"-" }}</td>
-            <td class="info-label">Kilometraje</td>
-            <td class="info-value">{{ orden.kilometraje_ingreso|default:"0" }} km</td>
-        </tr>
-        <tr>
-            <td class="info-label">Dirección</td>
-            <td class="info-value">{{ orden.cliente.direccion|default:"-" }}</td>
-            <td class="info-label">Asesor</td>
-            <td class="info-value">{{ orden.recepcionista.get_full_name }}</td>
-        </tr>
-    </table>
-
-    <!-- MOTIVOS DE INGRESO -->
-    {% if orden.motivo_ingreso %}
-    <div class="section-title">DETALLES Y MOTIVO DE INGRESO</div>
-    <div style="padding: 10px; border: 1px solid #cbd5e1; background-color: #f8fafc; margin-bottom: 20px;">
-        {{ orden.motivo_ingreso|linebreaksbr }}
-    </div>
-    {% endif %}
-
-    <!-- SERVICIOS -->
-    <div class="section-title">SERVICIOS / MANO DE OBRA</div>
-    <table class="data-table">
+    <!-- TABLA DE DETALLES -->
+    <table class="items-table">
         <thead>
             <tr>
-                <th style="width: 5%;">Item</th>
-                <th style="width: 75%;">Descripción del Servicio</th>
-                <th style="width: 20%; text-align: right;">Precio Estimado (S/)</th>
+                <th style="width: 5%; text-align: center;">#</th>
+                <th style="width: 45%;">DESCRIPCIÓN</th>
+                <th style="width: 10%; text-align: center;">U.M.</th>
+                <th style="width: 10%; text-align: right;">CANT.</th>
+                <th style="width: 15%; text-align: right;">P. UNIT.</th>
+                <th style="width: 15%; text-align: right;">TOTAL</th>
             </tr>
         </thead>
         <tbody>
-            {% for servicio in orden.servicios.all %}
+            {% for r in orden.repuestos.all %}
             <tr>
-                <td class="text-center">{{ forloop.counter }}</td>
-                <td>{{ servicio.descripcion }}</td>
-                <td class="text-right">{{ servicio.precio_estimado|floatformat:2 }}</td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="3" class="text-center">No se registraron servicios.</td>
+                <td style="text-align: center; color: #000000;">{{ forloop.counter }}</td>
+                <td>{{ r.repuesto_detalle.nombre|default:r.repuesto.nombre|default:"Repuesto Genérico" }}</td>
+                <td style="text-align: center; color: #000000;">NIU</td>
+                <td style="text-align: right;">{{ r.cantidad|floatformat:2 }}</td>
+                <td style="text-align: right;">{{ r.precio_unitario|floatformat:2 }}</td>
+                <td style="text-align: right; color: #0f172a; font-weight: bold;">{{ r.total|floatformat:2 }}</td>
             </tr>
             {% endfor %}
+
+            {% if orden.servicios.count > 0 %}
+            <tr>
+                <td colspan="6" style="padding: 10px 6px 5px 6px;">
+                    <span class="section-title" style="margin: 0; font-size: 8px;">SERVICIOS</span>
+                </td>
+            </tr>
+            {% for s in orden.servicios.all %}
+            <tr>
+                <td style="text-align: center; color: #000000;">{{ forloop.counter|add:orden.repuestos.count }}</td>
+                <td>{{ s.descripcion|capfirst }}</td>
+                <td style="text-align: center; color: #000000;">ZZ</td>
+                <td style="text-align: right;">1.00</td>
+                <td style="text-align: right;">{{ s.precio_estimado|floatformat:2 }}</td>
+                <td style="text-align: right; color: #0f172a; font-weight: bold;">{{ s.precio_estimado|floatformat:2 }}</td>
+            </tr>
+            {% endfor %}
+            {% endif %}
         </tbody>
     </table>
 
-    <!-- REPUESTOS -->
-    <div class="section-title">REPUESTOS Y MATERIALES</div>
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th style="width: 5%;">Item</th>
-                <th style="width: 15%;">Código</th>
-                <th style="width: 40%;">Descripción</th>
-                <th style="width: 10%; text-align: center;">Cant.</th>
-                <th style="width: 15%; text-align: right;">P. Unit (S/)</th>
-                <th style="width: 15%; text-align: right;">Total (S/)</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for repuesto in orden.repuestos.all %}
-            <tr>
-                <td class="text-center">{{ forloop.counter }}</td>
-                <td>{{ repuesto.repuesto.codigo }}</td>
-                <td>{{ repuesto.repuesto.nombre }}</td>
-                <td class="text-center">{{ repuesto.cantidad|floatformat:2 }}</td>
-                <td class="text-right">{{ repuesto.precio_unitario|floatformat:2 }}</td>
-                <td class="text-right">{{ repuesto.total_precio|floatformat:2 }}</td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="6" class="text-center">No se registraron repuestos.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-
-    <table style="width: 100%;">
+    <!-- TOTALES Y FOOTER -->
+    <table style="width: 100%; margin-top: 15px;">
         <tr>
-            <td style="width: 60%;"></td>
-            <td style="width: 40%; text-align: right;">
-                <table class="totals-table" align="right">
+            <td style="width: 60%; padding-right: 15px;">
+                <table style="width: 100%; background-color: #f8fafc; border-left: 3px solid #ea580c; margin-bottom: 10px;">
                     <tr>
-                        <td class="totals-label">Total Servicios:</td>
-                        <td class="text-right">S/ {{ total_servicios|floatformat:2 }}</td>
+                        <td style="padding: 10px 10px 5px 10px;">
+                            <span style="font-size: 10px; font-weight: bold; color: #ea580c; text-transform: uppercase; letter-spacing: 0.5px;">OBSERVACIONES</span><br>
+                            <span style="color: #1e293b; font-size: 10px; line-height: 1.2;">{{ orden.motivo_ingreso|default:"Sin observaciones registradas."|linebreaksbr }}</span>
+                        </td>
                     </tr>
                     <tr>
-                        <td class="totals-label">Total Repuestos:</td>
-                        <td class="text-right">S/ {{ total_repuestos|floatformat:2 }}</td>
+                        <td style="padding: 5px 10px 10px 10px;">
+                            <span style="font-size: 10px; font-weight: bold; color: #ea580c; text-transform: uppercase; letter-spacing: 0.5px;">ASESOR DE SERVICIO</span><br>
+                            <span style="color: #1e293b; font-size: 10px;">{{ orden.recepcionista.first_name|default:"Asesor" }} {{ orden.recepcionista.last_name|default:"" }}</span>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+            <td style="width: 40%;">
+                <table style="width: 100%;">
+                    <tr>
+                        <td style="text-align: right; color: #64748b; padding: 5px; font-size: 10px;">Subtotal</td>
+                        <td style="text-align: right; color: #64748b; padding: 5px; font-size: 10px;">S/ {{ total_general|floatformat:2|default:"0.00" }}</td>
                     </tr>
                     <tr>
-                        <td class="totals-label grand-total">TOTAL GENERAL:</td>
-                        <td class="text-right grand-total">S/ {{ total_general|floatformat:2 }}</td>
+                        <td colspan="2">
+                            <table style="width: 100%; background-color: #0f172a; color: white; border-radius: 4px;">
+                                <tr>
+                                    <td style="padding: 12px 15px; font-size: 10px; color: #94a3b8; vertical-align: middle;">TOTAL</td>
+                                    <td style="padding: 12px 15px; text-align: right; font-size: 16px; font-weight: bold; color: #ea580c; vertical-align: middle;">S/ {{ total_general|floatformat:2|default:"0.00" }}</td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: right; font-size: 9px; color: #64748b; padding-top: 5px;">
+                            Precios no incluyen IGV
+                        </td>
                     </tr>
                 </table>
             </td>
         </tr>
     </table>
 
-    <div class="signatures">
-        <table class="signatures-table">
-            <tr>
-                <td>
-                    <div class="signature-box">Aprobación del Cliente</div>
-                </td>
-                <td>
-                    <div class="signature-box">Asesor de Servicio</div>
-                </td>
-            </tr>
-        </table>
-    </div>
+    <table style="width: 100%; margin-top: 15px;">
+        <tr>
+            <td style="width: 48%; padding: 12px; border: 1px solid #cbd5e1; background-color: #ffffff; border-radius: 4px;">
+                <span style="font-size: 11px; font-weight: bold; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">CUENTAS BANCARIAS — OMEGA AUTOMOTRIZ E.I.R.L.</span><br>
+                <span style="color: #000000; font-size: 10px; font-weight: bold;">BCP Cuenta Corriente Soles:</span> <span style="color: #000000; font-size: 10px;">5502482402021</span><br>
+                <span style="color: #000000; font-size: 10px; font-weight: bold;">CCI:</span> <span style="color: #000000; font-size: 10px;">00255000248240202128</span>
+            </td>
+            <td style="width: 4%;"></td>
+            <td style="width: 48%; padding: 12px; border: 1px solid #cbd5e1; background-color: #ffffff; border-radius: 4px;">
+                <span style="font-size: 11px; font-weight: bold; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">CONDICIONES</span><br>
+                <span style="color: #000000; font-size: 10px; line-height: 1.4;">Esta cotización tiene una validez de 10 días calendario desde su fecha de emisión. Por favor, revisar los detalles del producto, cantidad y precio unitario.</span>
+            </td>
+        </tr>
+    </table>
 
-    <!-- Paginación y pie de página en xhtml2pdf -->
-    <div id="footer_content" style="text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 10px;">
-        Este documento es una estimación referencial basada en la inspección inicial. Los precios finales pueden variar si se descubren fallas ocultas durante la reparación. Validez de la cotización: 7 días. | Página <pdf:pagenumber> de <pdf:pagecount>
+    <div id="footer_content" class="footer-note">
+        OMEGA AUTOMOTRIZ E.I.R.L. — RUC 20601042381 — Documento generado electrónicamente
     </div>
 
 </body>
