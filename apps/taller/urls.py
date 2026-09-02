@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     OrdenTrabajoViewSet, HallazgoViewSet, 
     OrdenServicioViewSet, OrdenRepuestoViewSet,
-    PlantillaPreventivaViewSet
+    PlantillaPreventivaViewSet, ConsultaVehiculoPublicaView
 )
 
 router = DefaultRouter()
@@ -14,5 +14,6 @@ router.register(r'repuestos', OrdenRepuestoViewSet, basename='repuesto')
 router.register(r'plantillas', PlantillaPreventivaViewSet, basename='plantilla')
 
 urlpatterns = [
+    path('public/consulta-vehiculo/', ConsultaVehiculoPublicaView.as_view(), name='consulta_vehiculo_publica'),
     path('', include(router.urls)),
 ]
