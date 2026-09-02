@@ -481,3 +481,41 @@ class DistritoViewSet(ModelViewSet):
         if 'estado' in self.request.query_params:
             qs = qs.filter(estado=self.request.query_params['estado'] == 'true')
         return qs
+
+# ==============================================================================
+# CUENTAS BANCARIAS
+# ==============================================================================
+
+from .models import TipoCuentaBancaria, CuentaBancaria
+from .serializers import TipoCuentaBancariaSerializer, CuentaBancariaSerializer
+
+class TipoCuentaBancariaViewSet(ModelViewSet):
+    """
+    CRUD para Tipos de Cuenta Bancaria
+    """
+    queryset = TipoCuentaBancaria.objects.all()
+    serializer_class = TipoCuentaBancariaSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if 'estado' in self.request.query_params:
+            qs = qs.filter(estado=self.request.query_params['estado'] == 'true')
+        return qs
+
+
+class CuentaBancariaViewSet(ModelViewSet):
+    """
+    CRUD para Cuentas Bancarias
+    """
+    queryset = CuentaBancaria.objects.all().select_related('tipo_cuenta')
+    serializer_class = CuentaBancariaSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if 'estado' in self.request.query_params:
+            qs = qs.filter(estado=self.request.query_params['estado'] == 'true')
+        return qs

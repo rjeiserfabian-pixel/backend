@@ -14,7 +14,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import (
     Usuario, Rol, Permiso, Modulo, RolPermiso, UsuarioRol, UsuarioPermiso, UsuarioSucursal, Empresa,
-    Departamento, Provincia, Distrito
+    Departamento, Provincia, Distrito, TipoCuentaBancaria, CuentaBancaria
 )
 
 logger = logging.getLogger(__name__)
@@ -84,6 +84,24 @@ class LoginSerializer(serializers.Serializer):
 class EmpresaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Empresa
+        fields = '__all__'
+
+
+# ==============================================================================
+# CUENTAS BANCARIAS
+# ==============================================================================
+
+class TipoCuentaBancariaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TipoCuentaBancaria
+        fields = '__all__'
+
+
+class CuentaBancariaSerializer(serializers.ModelSerializer):
+    tipo_cuenta_nombre = serializers.CharField(source='tipo_cuenta.nombre', read_only=True)
+
+    class Meta:
+        model = CuentaBancaria
         fields = '__all__'
 
 # ==============================================================================

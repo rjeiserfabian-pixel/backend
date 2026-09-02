@@ -12,6 +12,8 @@ router = DefaultRouter()
 router.register(r'departamentos', views.DepartamentoViewSet, basename='departamentos')
 router.register(r'provincias', views.ProvinciaViewSet, basename='provincias')
 router.register(r'distritos', views.DistritoViewSet, basename='distritos')
+router.register(r'tipos-cuenta-bancaria', views.TipoCuentaBancariaViewSet, basename='tipos_cuenta_bancaria')
+router.register(r'cuentas-bancarias', views.CuentaBancariaViewSet, basename='cuentas_bancarias')
 
 urlpatterns = [
     path("", include(router.urls)),

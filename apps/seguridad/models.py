@@ -411,6 +411,8 @@ class Empresa(models.Model):
     provincia = models.CharField(max_length=100, blank=True, null=True)
     distrito = models.CharField(max_length=100, blank=True, null=True)
     telefono = models.CharField(max_length=50, blank=True, null=True)
+    email = models.EmailField(max_length=150, blank=True, null=True)
+    web = models.URLField(max_length=255, blank=True, null=True)
     logo = models.ImageField(upload_to='empresa/', null=True, blank=True)
 
     class Meta:
@@ -485,3 +487,51 @@ class Distrito(models.Model):
 
     def __str__(self):
         return f"{self.nombre} ({self.provincia.nombre})"
+
+
+class TipoCuentaBancaria(models.Model):
+    """
+    Catálogo de tipos de cuentas bancarias (Corriente, Ahorros, etc.)
+    """
+    nombre = models.CharField(max_length=100, unique=True)
+    estado = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "tipos_cuenta_bancaria"
+        verbose_name = "Tipo de Cuenta Bancaria"
+        verbose_name_plural = "Tipos de Cuenta Bancaria"
+        ordering = ["nombre"]
+
+    def __str__(self):
+        return self.nombre
+
+
+class CuentaBancaria(models.Model):
+    """
+    Cuentas bancarias de la empresa.
+    """
+    MONEDA_CHOICES = [
+        ('PEN', 'Soles (S/)'),
+        ('USD', 'Dólares ($)'),
+    ]
+
+    banco = models.CharField(max_length=100)
+    tipo_cuenta = models.ForeignKey(
+        TipoCuentaBancaria,
+        on_delete=models.PROTECT,
+        related_name="cuentas_bancarias"
+    )
+    numero_cuenta = models.CharField(max_length=100)
+    cci = models.CharField(max_length=100, blank=True, null=True)
+    moneda = models.CharField(max_length=3, choices=MONEDA_CHOICES, default='PEN')
+    titular = models.CharField(max_length=200)
+    estado = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "cuentas_bancarias"
+        verbose_name = "Cuenta Bancaria"
+        verbose_name_plural = "Cuentas Bancarias"
+        ordering = ["banco", "moneda"]
+
+    def __str__(self):
+        return f"{self.banco} - {self.numero_cuenta}"
