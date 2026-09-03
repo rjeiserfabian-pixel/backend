@@ -1,8 +1,13 @@
 from rest_framework import serializers
-from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva
+from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva, TipoServicio
 from apps.vehiculos.serializers import VehiculoSerializer
 from apps.inventario.serializers import RepuestoSerializer
 from apps.clientes.serializers import ClienteSerializer
+
+class TipoServicioSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TipoServicio
+        fields = '__all__'
 
 class HallazgoSerializer(serializers.ModelSerializer):
     registrado_por_nombre = serializers.CharField(source='registrado_por.nombre_completo', read_only=True)
@@ -28,10 +33,11 @@ class OrdenTrabajoListSerializer(serializers.ModelSerializer):
     vehiculo_placa = serializers.CharField(source='vehiculo.placa', read_only=True)
     cliente_nombre = serializers.SerializerMethodField()
     mecanico_nombre = serializers.CharField(source='mecanico_asignado.nombre_completo', read_only=True)
+    tipo_servicio_detalle = TipoServicioSerializer(source='tipo_servicio', read_only=True)
     
     class Meta:
         model = OrdenTrabajo
-        fields = ['id', 'numero', 'vehiculo', 'vehiculo_placa', 'cliente', 'cliente_nombre', 'estado', 'tipo_servicio', 'fecha_ingreso', 'mecanico_nombre', 'motivo_ingreso']
+        fields = ['id', 'numero', 'vehiculo', 'vehiculo_placa', 'cliente', 'cliente_nombre', 'estado', 'tipo_servicio', 'tipo_servicio_detalle', 'fecha_ingreso', 'mecanico_nombre', 'motivo_ingreso', 'fecha_vencimiento_cotizacion']
         
     def get_cliente_nombre(self, obj):
         if obj.cliente:
@@ -43,6 +49,7 @@ class OrdenTrabajoListSerializer(serializers.ModelSerializer):
 class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
     vehiculo_detalle = VehiculoSerializer(source='vehiculo', read_only=True)
     cliente_detalle = ClienteSerializer(source='cliente', read_only=True)
+    tipo_servicio_detalle = TipoServicioSerializer(source='tipo_servicio', read_only=True)
     hallazgos = HallazgoSerializer(many=True, read_only=True)
     servicios = OrdenServicioSerializer(many=True, read_only=True)
     repuestos = OrdenRepuestoSerializer(many=True, read_only=True)
@@ -53,8 +60,8 @@ class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
         model = OrdenTrabajo
         fields = [
             'id', 'numero', 'vehiculo', 'vehiculo_detalle', 'cliente', 'cliente_detalle', 'recepcionista', 'recepcionista_nombre',
-            'mecanico_asignado', 'mecanico_nombre', 'estado', 'tipo_servicio', 'kilometraje_ingreso',
-            'motivo_ingreso', 'url_cotizacion_pdf', 'hallazgos', 'servicios', 'repuestos'
+            'mecanico_asignado', 'mecanico_nombre', 'estado', 'tipo_servicio', 'tipo_servicio_detalle', 'kilometraje_ingreso',
+            'motivo_ingreso', 'url_cotizacion_pdf', 'fecha_vencimiento_cotizacion', 'hallazgos', 'servicios', 'repuestos'
         ]
         read_only_fields = ['recepcionista', 'numero']
 

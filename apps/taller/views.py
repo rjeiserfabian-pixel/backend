@@ -7,18 +7,23 @@ from rest_framework.views import APIView
 from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
-from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva
+from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva, TipoServicio
 from apps.vehiculos.models import Vehiculo
 from .serializers import (
     OrdenTrabajoListSerializer, OrdenTrabajoDetailSerializer,
     HallazgoSerializer, OrdenServicioSerializer, OrdenRepuestoSerializer,
-    PlantillaPreventivaSerializer
+    PlantillaPreventivaSerializer, TipoServicioSerializer
 )
 from apps.inventario.models import MovimientoInventario, InventarioStock
 from apps.ventas.models import Venta, DetalleVenta
 import uuid
 
 logger = logging.getLogger(__name__)
+
+class TipoServicioViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    queryset = TipoServicio.objects.all()
+    serializer_class = TipoServicioSerializer
 
 class OrdenTrabajoViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -70,10 +75,31 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             vehiculo.kilometraje_actual = orden.kilometraje_ingreso
             vehiculo.save(update_fields=['kilometraje_actual'])
 
+    def perform_update(self, serializer):
+        orden_anterior = self.get_object()
+        estado_anterior = orden_anterior.estado
+        
+        orden = serializer.save()
+        
+        # Transición a ESPERANDO_APROBACION: Calcular fecha de vencimiento si no tiene o si recién entra al estado
+        if estado_anterior != OrdenTrabajo.Estado.ESPERANDO_APROBACION and orden.estado == OrdenTrabajo.Estado.ESPERANDO_APROBACION:
+            from apps.seguridad.models import Empresa
+            empresa = Empresa.objects.first()
+            dias = empresa.dias_validez_cotizacion if empresa else 15
+            orden.fecha_vencimiento_cotizacion = timezone.now() + timezone.timedelta(days=dias)
+            orden.save(update_fields=['fecha_vencimiento_cotizacion'])
+
     @action(detail=True, methods=['post'])
     def aprobar_servicios(self, request, pk=None):
         """Endpoint para aprobar masivamente servicios y repuestos luego que el cliente revisa."""
         orden = self.get_object()
+        
+        # Validar vencimiento de la cotización
+        if orden.fecha_vencimiento_cotizacion and timezone.now() > orden.fecha_vencimiento_cotizacion:
+            return Response(
+                {'error': 'La cotización ha expirado. Por favor, actualice la fecha de vencimiento en los detalles de la orden para proceder.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         # Validar payload
         servicios_ids = request.data.get('servicios_aprobados', [])
@@ -239,12 +265,16 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         total_repuestos = sum(r.cantidad * r.precio_unitario for r in orden.repuestos.all())
         total_general = total_servicios + total_repuestos
         
+        from apps.seguridad.models import CuentaBancaria
+        cuentas = CuentaBancaria.objects.filter(estado=True)
+        
         # Configurar contexto
         context = {
             'orden': orden,
             'total_servicios': total_servicios,
             'total_repuestos': total_repuestos,
             'total_general': total_general,
+            'cuentas_bancarias': cuentas,
             'empresa': {
                 'nombre': 'OMEGA AUTOMOTRIZ',
                 'direccion': 'Av. Principal 123',

@@ -62,7 +62,7 @@ def run():
     )
     
     if created:
-        print("Submódulo Plantillas de Servicio creado.")
+        print("Submódulo Plantillas creado.")
         
         # Crear permisos base
         acciones = ['VER', 'CREAR', 'EDITAR', 'ELIMINAR']
@@ -72,8 +72,32 @@ def run():
                 codigo=f'PLANTILLAS_TALLER.{accion}',
                 defaults={'nombre': f'{accion} Plantillas', 'accion': accion}
             )
-        print("Permisos para Plantillas creados.")
+
+    # Módulo de Tipos de Servicio
+    modulo_tipos_servicio, created = Modulo.objects.get_or_create(
+        codigo='TIPOS_SERVICIO',
+        defaults={
+            'id_modulo_padre': modulo_taller,
+            'nombre': 'Tipos de Servicio',
+            'icono': 'tags', 
+            'ruta': '/taller/tipos-servicio',
+            'orden': 30,
+            'visible_menu': True
+        }
+    )
+    
+    if created:
+        print("Submódulo Tipos de Servicio creado.")
         
+        # Crear permisos base
+        acciones = ['VER', 'CREAR', 'EDITAR', 'ELIMINAR']
+        for accion in acciones:
+            Permiso.objects.get_or_create(
+                id_modulo=modulo_tipos_servicio,
+                codigo=f'TIPOS_SERVICIO.{accion}',
+                defaults={'nombre': f'{accion} Tipos de Servicio', 'accion': accion}
+            )
+    
     print("Módulos de Taller insertados correctamente.")
 
 if __name__ == '__main__':

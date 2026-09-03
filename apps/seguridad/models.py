@@ -414,6 +414,12 @@ class Empresa(models.Model):
     email = models.EmailField(max_length=150, blank=True, null=True)
     web = models.URLField(max_length=255, blank=True, null=True)
     logo = models.ImageField(upload_to='empresa/', null=True, blank=True)
+    
+    # Parámetros globales
+    dias_validez_cotizacion = models.PositiveIntegerField(
+        default=15, 
+        help_text="Días de validez por defecto para las cotizaciones generadas."
+    )
 
     class Meta:
         db_table = "empresa"

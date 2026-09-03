@@ -6,6 +6,20 @@ from apps.inventario.models import Repuesto
 
 logger = logging.getLogger(__name__)
 
+class TipoServicio(models.Model):
+    nombre = models.CharField(max_length=50, unique=True, db_index=True)
+    estado = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'taller_tipo_servicio'
+        verbose_name = 'Tipo de Servicio'
+        verbose_name_plural = 'Tipos de Servicio'
+        ordering = ['nombre']
+
+    def __str__(self):
+        return self.nombre
+
+
 class OrdenTrabajo(models.Model):
     class Estado(models.TextChoices):
         RECEPCIONADO = 'RECEPCIONADO', 'Recepcionado'
@@ -16,11 +30,6 @@ class OrdenTrabajo(models.Model):
         FACTURADO = 'FACTURADO', 'Facturado'
         CANCELADO = 'CANCELADO', 'Cancelado'
 
-    class TipoServicio(models.TextChoices):
-        PREVENTIVO = 'PREVENTIVO', 'Mantenimiento Preventivo'
-        CORRECTIVO = 'CORRECTIVO', 'Mantenimiento Correctivo'
-        AMBOS = 'AMBOS', 'Preventivo y Correctivo'
-
     numero = models.CharField(max_length=20, unique=True, db_index=True)
     cliente = models.ForeignKey('clientes.Cliente', on_delete=models.RESTRICT, related_name='ordenes_trabajo', null=True, blank=False)
     vehiculo = models.ForeignKey(Vehiculo, on_delete=models.RESTRICT, related_name='ordenes_trabajo')
@@ -28,7 +37,9 @@ class OrdenTrabajo(models.Model):
     mecanico_asignado = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, related_name='ordenes_asignadas', null=True, blank=True)
     
     estado = models.CharField(max_length=30, choices=Estado.choices, default=Estado.RECEPCIONADO, db_index=True)
-    tipo_servicio = models.CharField(max_length=20, choices=TipoServicio.choices, default=TipoServicio.PREVENTIVO)
+    
+    # Nuevo campo dinámico
+    tipo_servicio = models.ForeignKey(TipoServicio, on_delete=models.RESTRICT, related_name='ordenes', null=True, blank=True)
     
     kilometraje_ingreso = models.IntegerField(null=True, blank=True)
     motivo_ingreso = models.TextField(help_text="Motivo principal o correctivo reportado por el cliente", null=True, blank=True)
@@ -39,6 +50,13 @@ class OrdenTrabajo(models.Model):
     
     # Campo para almacenar temporalmente el PDF generado de la cotización/hallazgos
     url_cotizacion_pdf = models.URLField(max_length=500, null=True, blank=True)
+    
+    # Nivel transaccional: Fecha límite para aprobar la cotización
+    fecha_vencimiento_cotizacion = models.DateTimeField(
+        null=True, 
+        blank=True,
+        help_text="Nivel transaccional: Fecha límite para que el cliente apruebe la cotización."
+    )
 
     class Meta:
         db_table = 'taller_orden_trabajo'

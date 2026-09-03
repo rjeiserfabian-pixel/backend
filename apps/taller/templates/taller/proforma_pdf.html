@@ -101,8 +101,8 @@
             <td style="width: 48%; padding: 12px; border: 1px solid #cbd5e1; background-color: #f8fafc; border-radius: 4px;">
                 <div class="section-title">DETALLE DE EMISIÓN</div>
                 <table class="info-table">
-                    <tr><td class="info-label">Fecha emisión:</td><td class="info-value">{% now "d/m/Y" %}</td></tr>
-                    <tr><td class="info-label">Fecha venc.:</td><td class="info-value">{% now "d/m/Y" %}</td></tr>
+                    <tr><td class="info-label">Fecha emisión:</td><td class="info-value">{{ orden.fecha_ingreso|date:"d/m/Y" }}</td></tr>
+                    <tr><td class="info-label">Fecha venc.:</td><td class="info-value">{% if orden.fecha_vencimiento_cotizacion %}{{ orden.fecha_vencimiento_cotizacion|date:"d/m/Y" }}{% else %}No definida{% endif %}</td></tr>
                     <tr><td class="info-label">Moneda:</td><td class="info-value">Soles (S/)</td></tr>
                     <tr><td class="info-label">Tipo atención:</td><td class="info-value">{{ orden.tipo_servicio|default:"Preventivo" }}</td></tr>
                 </table>
@@ -152,7 +152,7 @@
             <tr>
                 <td style="text-align: center; color: #000000;">{{ forloop.counter }}</td>
                 <td>{{ r.repuesto_detalle.nombre|default:r.repuesto.nombre|default:"Repuesto Genérico" }}</td>
-                <td style="text-align: center; color: #000000;">NIU</td>
+                <td style="text-align: center; color: #000000;">{{ r.repuesto.unidad_medida.abreviatura|default:"NIU" }}</td>
                 <td style="text-align: right;">{{ r.cantidad|floatformat:2 }}</td>
                 <td style="text-align: right;">{{ r.precio_unitario|floatformat:2 }}</td>
                 <td style="text-align: right; color: #0f172a; font-weight: bold;">{{ r.total|floatformat:2 }}</td>
@@ -201,8 +201,8 @@
             <td style="width: 40%;">
                 <table style="width: 100%;">
                     <tr>
-                        <td style="text-align: right; color: #64748b; padding: 5px; font-size: 10px;">Subtotal</td>
-                        <td style="text-align: right; color: #64748b; padding: 5px; font-size: 10px;">S/ {{ total_general|floatformat:2|default:"0.00" }}</td>
+                        <td style="text-align: right; color: #000000; padding: 5px; font-size: 10px; font-weight: bold;">Subtotal</td>
+                        <td style="text-align: right; color: #000000; padding: 5px; font-size: 10px; font-weight: bold;">S/ {{ total_general|floatformat:2|default:"0.00" }}</td>
                     </tr>
                     <tr>
                         <td colspan="2">
@@ -215,7 +215,7 @@
                         </td>
                     </tr>
                     <tr>
-                        <td colspan="2" style="text-align: right; font-size: 9px; color: #64748b; padding-top: 5px;">
+                        <td colspan="2" style="text-align: right; font-size: 9px; color: #000000; font-weight: bold; padding-top: 5px;">
                             Precios no incluyen IGV
                         </td>
                     </tr>
@@ -227,14 +227,21 @@
     <table style="width: 100%; margin-top: 15px;">
         <tr>
             <td style="width: 48%; padding: 12px; border: 1px solid #cbd5e1; background-color: #ffffff; border-radius: 4px;">
-                <span style="font-size: 11px; font-weight: bold; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">CUENTAS BANCARIAS — OMEGA AUTOMOTRIZ E.I.R.L.</span><br>
-                <span style="color: #000000; font-size: 10px; font-weight: bold;">BCP Cuenta Corriente Soles:</span> <span style="color: #000000; font-size: 10px;">5502482402021</span><br>
-                <span style="color: #000000; font-size: 10px; font-weight: bold;">CCI:</span> <span style="color: #000000; font-size: 10px;">00255000248240202128</span>
+                <span style="font-size: 11px; font-weight: bold; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">CUENTAS BANCARIAS</span><br>
+                {% for cuenta in cuentas_bancarias %}
+                <span style="color: #000000; font-size: 10px; font-weight: bold;">{{ cuenta.banco }} {{ cuenta.tipo_cuenta.nombre }} {{ cuenta.get_moneda_display }}:</span> <span style="color: #000000; font-size: 10px;">{{ cuenta.numero_cuenta }}</span><br>
+                {% if cuenta.cci %}
+                <span style="color: #000000; font-size: 10px; font-weight: bold;">CCI:</span> <span style="color: #000000; font-size: 10px;">{{ cuenta.cci }}</span><br>
+                {% endif %}
+                <span style="color: #475569; font-size: 9px; font-style: italic;">Titular: {{ cuenta.titular }}</span><br>
+                {% empty %}
+                <span style="color: #000000; font-size: 10px;">Consulte las cuentas bancarias en caja.</span>
+                {% endfor %}
             </td>
             <td style="width: 4%;"></td>
             <td style="width: 48%; padding: 12px; border: 1px solid #cbd5e1; background-color: #ffffff; border-radius: 4px;">
                 <span style="font-size: 11px; font-weight: bold; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">CONDICIONES</span><br>
-                <span style="color: #000000; font-size: 10px; line-height: 1.4;">Esta cotización tiene una validez de 10 días calendario desde su fecha de emisión. Por favor, revisar los detalles del producto, cantidad y precio unitario.</span>
+                <span style="color: #000000; font-size: 10px; line-height: 1.4;">Esta cotización es válida hasta el {% if orden.fecha_vencimiento_cotizacion %}{{ orden.fecha_vencimiento_cotizacion|date:"d/m/Y" }}{% else %}vencimiento indicado{% endif %}. Por favor, revisar los detalles del producto, cantidad y precio unitario.</span>
             </td>
         </tr>
     </table>
