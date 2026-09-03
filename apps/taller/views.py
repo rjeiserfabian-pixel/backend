@@ -415,12 +415,12 @@ class ConsultaVehiculoPublicaView(APIView):
         
         repuestos = [
             {
-                'descripcion': r.repuesto_detalle['nombre'] if r.repuesto_detalle else r.repuesto.nombre if r.repuesto else 'Repuesto',
+                'descripcion': r.repuesto.nombre if r.repuesto else 'Repuesto',
                 'instalado': r.instalado,
-                'precio': r.precio_estimado,
+                'precio': r.precio_unitario,
                 'cantidad': r.cantidad
             }
-            for r in orden.repuestos.filter(aprobado_cliente=True)
+            for r in orden.repuestos.select_related('repuesto').filter(aprobado_cliente=True)
         ]
         
         total_estimado = sum([float(s['precio']) for s in servicios]) + sum([float(r['precio']) * float(r['cantidad']) for r in repuestos])
