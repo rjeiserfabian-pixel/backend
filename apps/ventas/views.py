@@ -498,6 +498,7 @@ class CuentaPorCobrarViewSet(viewsets.ModelViewSet):
                         monto=monto,
                         concepto=f"Cobro Cuota {cuota.numero_cuota} - Crédito {cuota.cuenta_cobrar.codigo_credito}",
                         metodo_pago=metodo_pago,
+                        referencia=pago_data.get('referencia', ''),
                         creado_por=request.user
                     )
                 
