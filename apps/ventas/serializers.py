@@ -102,6 +102,8 @@ class VentaSerializer(serializers.ModelSerializer):
     cliente_dni = serializers.CharField(source='cliente.dni', read_only=True)
     vehiculo_placa = serializers.CharField(source='vehiculo.placa', read_only=True)
     tipo_comprobante_nombre = serializers.CharField(source='tipo_comprobante.nombre', read_only=True)
+    vendedor_nombre = serializers.CharField(source='sesion_caja.usuario.nombre_completo', read_only=True)
+    caja_nombre = serializers.CharField(source='sesion_caja.caja.nombre', read_only=True)
     
     class Meta:
         model = Venta

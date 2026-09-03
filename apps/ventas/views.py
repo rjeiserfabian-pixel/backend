@@ -175,7 +175,7 @@ class VentaViewSet(viewsets.ModelViewSet):
         if estado == 'PENDIENTE':
             qs = qs.filter(estado=Venta.Estado.PRE_VENTA)
         elif estado == 'COMPLETADO':
-            qs = qs.filter(estado__in=[Venta.Estado.PAGADA, Venta.Estado.COMPLETADA])
+            qs = qs.filter(estado__in=[Venta.Estado.PAGADA, Venta.Estado.AL_CREDITO])
         elif estado:
             qs = qs.filter(estado=estado)
         return qs
