@@ -343,8 +343,8 @@ class VentaViewSet(viewsets.ModelViewSet):
 
             venta.save()
             
-            # Registrar pagos
-            if not es_registro_manual and sesion and data.get('pagos'):
+            # Registrar pagos (ignorar si es venta al crédito, ya que los pagos se harán por cuotas)
+            if not es_registro_manual and sesion and data.get('pagos') and venta.estado != Venta.Estado.AL_CREDITO:
                 for p in data['pagos']:
                     monto_pago = p.get('monto', 0)
                     if float(monto_pago) > 0:
@@ -405,17 +405,20 @@ class VentaViewSet(viewsets.ModelViewSet):
                         ot.save(update_fields=['estado'])
                     except OrdenTrabajo.DoesNotExist:
                         pass
+            
+            # 5. Si la venta es al crédito, generar CuentaPorCobrar
+            if venta.estado == Venta.Estado.AL_CREDITO:
+                CreditoService.generar_credito(
+                    venta=venta,
+                    frecuencia=CuentaPorCobrar.Frecuencia.MENSUAL,
+                    num_cuotas=1
+                )
                         
             return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
         except Exception as e:
             transaction.set_rollback(True)
             logger.error(f"Error procesando venta directa: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-
-class CuentaPorCobrarViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = CuentaPorCobrar.objects.all().order_by('-creado_en')
-    serializer_class = CuentaPorCobrarSerializer
 
 
 import requests
@@ -445,3 +448,74 @@ class TipoCambioView(APIView):
         except Exception as e:
             logger.error(f"Error consultando tipo de cambio: {str(e)}")
             return Response({"error": "No se pudo obtener el tipo de cambio."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class CuentaPorCobrarViewSet(viewsets.ModelViewSet):
+    queryset = CuentaPorCobrar.objects.select_related('venta__cliente').prefetch_related('cuotas').all()
+    serializer_class = CuentaPorCobrarSerializer
+    pagination_class = VentaPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        estado = self.request.query_params.get('estado')
+        cliente_id = self.request.query_params.get('cliente_id')
+        if estado:
+            qs = qs.filter(estado=estado)
+        if cliente_id:
+            qs = qs.filter(venta__cliente_id=cliente_id)
+        return qs.order_by('-creado_en')
+
+    @action(detail=False, methods=['post'], url_path='pagar-cuota/(?P<cuota_id>[^/.]+)')
+    def pagar_cuota(self, request, cuota_id=None):
+        from django.utils import timezone
+        try:
+            with transaction.atomic():
+                cuota = CuotaCredito.objects.select_for_update().get(id=cuota_id)
+                if cuota.estado == CuotaCredito.Estado.PAGADA:
+                    return Response({"error": "Esta cuota ya está pagada."}, status=400)
+                
+                sesion = SesionCaja.objects.filter(usuario=request.user, fecha_cierre__isnull=True).first()
+                if not sesion:
+                    return Response({"error": "Debes abrir una caja antes de registrar un cobro."}, status=400)
+                
+                pagos = request.data.get('pagos', [])
+                if not pagos:
+                    return Response({"error": "Debe enviar al menos un método de pago y monto."}, status=400)
+                
+                total_pagado = sum(float(p.get('monto', 0)) for p in pagos)
+                if total_pagado > cuota.saldo_pendiente:
+                    return Response({"error": "El monto pagado supera el saldo pendiente de la cuota."}, status=400)
+
+                for pago_data in pagos:
+                    monto = float(pago_data.get('monto', 0))
+                    metodo_pago_id = pago_data.get('metodo_pago_id')
+                    metodo_pago = MetodoPago.objects.get(id=metodo_pago_id)
+                    
+                    MovimientoCaja.objects.create(
+                        caja=sesion.caja,
+                        sesion_caja=sesion,
+                        tipo=MovimientoCaja.Tipo.INGRESO,
+                        monto=monto,
+                        concepto=f"Cobro Cuota {cuota.numero_cuota} - Crédito {cuota.cuenta_cobrar.codigo_credito}",
+                        metodo_pago=metodo_pago,
+                        creado_por=request.user
+                    )
+                
+                cuota.saldo_pendiente -= Decimal(str(total_pagado))
+                if cuota.saldo_pendiente <= 0:
+                    cuota.saldo_pendiente = 0
+                    cuota.estado = CuotaCredito.Estado.PAGADA
+                    cuota.fecha_pago = timezone.now().date()
+                cuota.save()
+
+                cuenta = cuota.cuenta_cobrar
+                cuenta.saldo_pendiente -= Decimal(str(total_pagado))
+                if cuenta.saldo_pendiente <= 0:
+                    cuenta.saldo_pendiente = 0
+                    cuenta.estado = CuentaPorCobrar.Estado.PAGADO
+                cuenta.save()
+
+                return Response({"message": "Pago registrado exitosamente."})
+        except Exception as e:
+            logger.error(f"Error al pagar cuota: {str(e)}")
+            return Response({"error": "Ocurrió un error al procesar el pago."}, status=500)

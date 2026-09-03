@@ -150,6 +150,10 @@ class CuotaCreditoSerializer(serializers.ModelSerializer):
 class CuentaPorCobrarSerializer(serializers.ModelSerializer):
     cuotas = CuotaCreditoSerializer(many=True, read_only=True)
     cliente_nombre = serializers.CharField(source='venta.cliente.nombres', read_only=True)
+    cliente_apellidos = serializers.CharField(source='venta.cliente.apellidos', read_only=True)
+    cliente_dni = serializers.CharField(source='venta.cliente.dni', read_only=True)
+    venta_serie = serializers.CharField(source='venta.serie_correlativo', read_only=True)
+    venta_fecha = serializers.DateTimeField(source='venta.creado_en', read_only=True)
 
     class Meta:
         model = CuentaPorCobrar
