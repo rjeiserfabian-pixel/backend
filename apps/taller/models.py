@@ -68,6 +68,24 @@ class OrdenTrabajo(models.Model):
         return f"OT-{self.numero} | {self.vehiculo.placa}"
 
 
+class OrdenHistorialEstado(models.Model):
+    orden = models.ForeignKey(OrdenTrabajo, on_delete=models.CASCADE, related_name='historial_estados')
+    estado = models.CharField(max_length=30, choices=OrdenTrabajo.Estado.choices)
+    fecha_registro = models.DateTimeField(auto_now_add=True, db_index=True)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT)
+    observaciones = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'taller_orden_historial_estado'
+        verbose_name = 'Historial de Estado'
+        verbose_name_plural = 'Historial de Estados'
+        ordering = ['fecha_registro']
+
+    def __str__(self):
+        return f"OT-{self.orden.numero} -> {self.get_estado_display()} ({self.fecha_registro.strftime('%d/%m/%Y %H:%M')})"
+
+
+
 class Hallazgo(models.Model):
     orden = models.ForeignKey(OrdenTrabajo, on_delete=models.CASCADE, related_name='hallazgos')
     descripcion = models.CharField(max_length=255)

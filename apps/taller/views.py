@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
-from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva, TipoServicio
+from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva, TipoServicio, OrdenHistorialEstado
 from apps.vehiculos.models import Vehiculo
 from .serializers import (
     OrdenTrabajoListSerializer, OrdenTrabajoDetailSerializer,
@@ -74,12 +74,27 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             vehiculo = orden.vehiculo
             vehiculo.kilometraje_actual = orden.kilometraje_ingreso
             vehiculo.save(update_fields=['kilometraje_actual'])
+            
+        # Generar primer historial de estado
+        OrdenHistorialEstado.objects.create(
+            orden=orden,
+            estado=orden.estado,
+            usuario=self.request.user
+        )
 
     def perform_update(self, serializer):
         orden_anterior = self.get_object()
         estado_anterior = orden_anterior.estado
         
         orden = serializer.save()
+        
+        # Guardar en el historial si el estado cambió
+        if estado_anterior != orden.estado:
+            OrdenHistorialEstado.objects.create(
+                orden=orden,
+                estado=orden.estado,
+                usuario=self.request.user
+            )
         
         # Transición a ESPERANDO_APROBACION: Calcular fecha de vencimiento si no tiene o si recién entra al estado
         if estado_anterior != OrdenTrabajo.Estado.ESPERANDO_APROBACION and orden.estado == OrdenTrabajo.Estado.ESPERANDO_APROBACION:

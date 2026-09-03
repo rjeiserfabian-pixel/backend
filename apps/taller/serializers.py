@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva, TipoServicio
+from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva, TipoServicio, OrdenHistorialEstado
 from apps.vehiculos.serializers import VehiculoSerializer
 from apps.inventario.serializers import RepuestoSerializer
 from apps.clientes.serializers import ClienteSerializer
@@ -8,6 +8,14 @@ class TipoServicioSerializer(serializers.ModelSerializer):
     class Meta:
         model = TipoServicio
         fields = '__all__'
+
+class OrdenHistorialEstadoSerializer(serializers.ModelSerializer):
+    usuario_nombre = serializers.CharField(source='usuario.nombre_completo', read_only=True)
+    estado_display = serializers.CharField(source='get_estado_display', read_only=True)
+
+    class Meta:
+        model = OrdenHistorialEstado
+        fields = ['id', 'estado', 'estado_display', 'fecha_registro', 'usuario', 'usuario_nombre', 'observaciones']
 
 class HallazgoSerializer(serializers.ModelSerializer):
     registrado_por_nombre = serializers.CharField(source='registrado_por.nombre_completo', read_only=True)
@@ -55,13 +63,14 @@ class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
     repuestos = OrdenRepuestoSerializer(many=True, read_only=True)
     recepcionista_nombre = serializers.CharField(source='recepcionista.nombre_completo', read_only=True)
     mecanico_nombre = serializers.CharField(source='mecanico_asignado.nombre_completo', read_only=True)
+    historial_estados = OrdenHistorialEstadoSerializer(many=True, read_only=True)
 
     class Meta:
         model = OrdenTrabajo
         fields = [
             'id', 'numero', 'vehiculo', 'vehiculo_detalle', 'cliente', 'cliente_detalle', 'recepcionista', 'recepcionista_nombre',
             'mecanico_asignado', 'mecanico_nombre', 'estado', 'tipo_servicio', 'tipo_servicio_detalle', 'kilometraje_ingreso',
-            'motivo_ingreso', 'url_cotizacion_pdf', 'fecha_vencimiento_cotizacion', 'hallazgos', 'servicios', 'repuestos'
+            'motivo_ingreso', 'url_cotizacion_pdf', 'fecha_vencimiento_cotizacion', 'fecha_ingreso', 'fecha_finalizacion', 'hallazgos', 'servicios', 'repuestos', 'historial_estados'
         ]
         read_only_fields = ['recepcionista', 'numero']
 
