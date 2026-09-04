@@ -151,6 +151,11 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
         
         movimientos = sesion.movimientos.all().order_by('-fecha')
         
+        paginator = pagination.PageNumberPagination()
+        paginator.page_size = request.query_params.get('page_size', 10)
+        page_obj = paginator.paginate_queryset(movimientos, request)
+        movimientos_data = paginator.get_paginated_response(MovimientoCajaSerializer(page_obj, many=True).data).data
+        
         return Response({
             "sesion_id": sesion.id,
             "estado": sesion.estado,
@@ -158,7 +163,7 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
             "ingresos": float(ingresos),
             "egresos": float(egresos),
             "saldo_actual": float(saldo_actual),
-            "movimientos": MovimientoCajaSerializer(movimientos, many=True).data
+            "movimientos": movimientos_data
         })
 
 # ──────────────────────────────────────────────
@@ -480,6 +485,28 @@ class CuentaPorCobrarViewSet(viewsets.ModelViewSet):
         if cliente_id:
             qs = qs.filter(venta__cliente_id=cliente_id)
         return qs.order_by('-creado_en')
+
+    @action(detail=False, methods=['get'], url_path='resumen-clientes')
+    def resumen_clientes(self, request):
+        from django.db.models import Sum, Count, Q
+        
+        # Filtramos primero base query para no afectar eliminados lógicos si los hubiera
+        qs = CuentaPorCobrar.objects.values(
+            'venta__cliente__id',
+            'venta__cliente__dni',
+            'venta__cliente__nombres',
+            'venta__cliente__apellidos'
+        ).annotate(
+            total_deuda=Sum('monto_financiado'),
+            saldo_pendiente_total=Sum('saldo_pendiente'),
+            tiene_atrasos=Count('id', filter=Q(estado=CuentaPorCobrar.Estado.ATRASADO))
+        ).order_by('-saldo_pendiente_total')
+
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            return self.get_paginated_response(page)
+            
+        return Response(qs)
 
     @action(detail=False, methods=['post'], url_path='pagar-cuota/(?P<cuota_id>[^/.]+)')
     def pagar_cuota(self, request, cuota_id=None):
