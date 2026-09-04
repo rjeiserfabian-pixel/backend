@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     CajaViewSet, SesionCajaViewSet, MetodoPagoViewSet, 
     ImpuestoViewSet, TipoComprobanteViewSet, SerieComprobanteViewSet, VentaViewSet,
-    CuentaPorCobrarViewSet, TipoCambioView
+    CuentaPorCobrarViewSet, TipoCambioView, SerieDocumentoInternoViewSet
 )
 
 router = DefaultRouter()
@@ -14,6 +14,7 @@ router.register(r'metodos-pago', MetodoPagoViewSet, basename='metodopago')
 router.register(r'impuestos', ImpuestoViewSet, basename='impuesto')
 router.register(r'tipos-comprobante', TipoComprobanteViewSet, basename='tipocomprobante')
 router.register(r'series-comprobante', SerieComprobanteViewSet, basename='seriecomprobante')
+router.register(r'series-internas', SerieDocumentoInternoViewSet, basename='serieinterna')
 router.register(r'transacciones', VentaViewSet, basename='venta')
 router.register(r'cuentas-por-cobrar', CuentaPorCobrarViewSet, basename='cuentaporcobrar')
 

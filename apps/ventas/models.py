@@ -90,6 +90,33 @@ class SerieComprobante(models.Model):
         return f"{self.serie}-{str(siguiente).zfill(6)}"
 
 
+class SerieDocumentoInterno(models.Model):
+    class TipoDocumento(models.TextChoices):
+        RECIBO_INGRESO = 'RECIBO_INGRESO', 'Recibo de Ingreso'
+        CREDITO = 'CREDITO', 'Código de Crédito'
+        
+    sucursal = models.ForeignKey(Sucursal, on_delete=models.RESTRICT, related_name='series_internas')
+    tipo_documento = models.CharField(max_length=50, choices=TipoDocumento.choices)
+    prefijo = models.CharField(max_length=10, db_index=True)
+    correlativo_actual = models.IntegerField(default=0)
+    longitud_correlativo = models.IntegerField(default=6)
+    estado = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'ventas_serie_interna'
+        verbose_name = 'Serie Interna'
+        verbose_name_plural = 'Series Internas'
+        unique_together = [('sucursal', 'tipo_documento')]
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.get_tipo_documento_display()} ({self.prefijo}) - {self.sucursal.nombre}"
+
+    def generar_siguiente_correlativo(self) -> str:
+        siguiente = self.correlativo_actual + 1
+        return f"{self.prefijo}-{str(siguiente).zfill(self.longitud_correlativo)}"
+
+
 class MetodoPago(models.Model):
     nombre = models.CharField(max_length=50, unique=True, db_index=True)
     requiere_referencia = models.BooleanField(default=False)
@@ -214,6 +241,7 @@ class MovimientoCaja(models.Model):
     metodo_pago = models.ForeignKey(MetodoPago, on_delete=models.RESTRICT, related_name='movimientos_caja')
     
     monto = models.DecimalField(max_digits=10, decimal_places=2)
+    numero_recibo = models.CharField(max_length=50, null=True, blank=True, db_index=True)
     referencia = models.CharField(max_length=100, null=True, blank=True)  # Nro de operación, etc.
     venta_origen = models.ForeignKey(Venta, on_delete=models.SET_NULL, null=True, blank=True, related_name='movimientos_caja')
     
@@ -228,6 +256,32 @@ class MovimientoCaja(models.Model):
 
     def __str__(self):
         return f"[{self.tipo}] {self.monto} - {self.concepto} ({self.metodo_pago.nombre})"
+
+    def save(self, *args, **kwargs):
+        if not self.numero_recibo and self.tipo == self.Tipo.INGRESO:
+            from .models import SerieDocumentoInterno
+            # Intenta obtener la sucursal desde la sesión de caja
+            if hasattr(self, 'sesion') and self.sesion and self.sesion.caja and self.sesion.caja.sucursal:
+                sucursal = self.sesion.caja.sucursal
+                serie = SerieDocumentoInterno.objects.filter(
+                    sucursal=sucursal,
+                    tipo_documento=SerieDocumentoInterno.TipoDocumento.RECIBO_INGRESO,
+                    estado=True
+                ).select_for_update().first()
+                if serie:
+                    self.numero_recibo = serie.generar_siguiente_correlativo()
+                    serie.correlativo_actual += 1
+                    serie.save(update_fields=['correlativo_actual'])
+            
+            if not self.numero_recibo:
+                # Si no hay serie configurada, generamos un genérico
+                from django.db.models import Max
+                # Usamos id+1 o count() para no colisionar tan fácil,
+                # pero idealmente el cliente debe configurar su serie
+                max_id = MovimientoCaja.objects.aggregate(max_id=Max('id'))['max_id'] or 0
+                self.numero_recibo = f"RI-{(max_id + 1):06d}"
+                
+        super().save(*args, **kwargs)
 
 
 class PagoVenta(models.Model):
@@ -284,6 +338,7 @@ class CuentaPorCobrar(models.Model):
 class CuotaCredito(models.Model):
     class Estado(models.TextChoices):
         PENDIENTE = 'PENDIENTE', 'Pendiente'
+        PARCIAL = 'PARCIAL', 'Parcial'
         PAGADA = 'PAGADA', 'Pagada'
         ATRASADA = 'ATRASADA', 'Atrasada'
 
@@ -306,3 +361,21 @@ class CuotaCredito(models.Model):
 
     def __str__(self):
         return f"Cuota {self.numero_cuota} - {self.cuenta_cobrar.codigo_credito}"
+
+import uuid
+
+class PagoCuota(models.Model):
+    cuota = models.ForeignKey(CuotaCredito, on_delete=models.CASCADE, related_name='pagos')
+    movimiento_caja = models.OneToOneField(MovimientoCaja, on_delete=models.RESTRICT, related_name='pago_cuota_rel')
+    operacion_id = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True)
+    monto = models.DecimalField(max_digits=10, decimal_places=2)
+    fecha_pago = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = 'ventas_pago_cuota'
+        verbose_name = 'Pago de Cuota'
+        verbose_name_plural = 'Pagos de Cuota'
+        ordering = ['-fecha_pago']
+
+    def __str__(self):
+        return f"Pago {self.monto} - Cuota {self.cuota.numero_cuota}"

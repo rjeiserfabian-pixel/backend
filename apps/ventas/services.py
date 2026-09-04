@@ -216,8 +216,21 @@ class CreditoService:
 
     @staticmethod
     @transaction.atomic
-    def generar_credito(venta: Venta, frecuencia: str, num_cuotas: int, dia_pago: int = None) -> CuentaPorCobrar:
-        codigo_credito = f"CRED-{str(venta.id).zfill(5)}"
+    def generar_credito(venta: Venta, frecuencia: str, num_cuotas: int, dia_pago: int = None, fecha_limite: datetime.date = None):
+        from .models import CuentaPorCobrar, CuotaCredito, SerieDocumentoInterno
+        
+        serie_credito = SerieDocumentoInterno.objects.filter(
+            sucursal=venta.sucursal,
+            tipo_documento=SerieDocumentoInterno.TipoDocumento.CREDITO,
+            estado=True
+        ).select_for_update().first()
+        
+        if serie_credito:
+            codigo_credito = serie_credito.generar_siguiente_correlativo()
+            serie_credito.correlativo_actual += 1
+            serie_credito.save(update_fields=['correlativo_actual'])
+        else:
+            codigo_credito = f"CRED-{str(venta.id).zfill(5)}"
         
         cuenta = CuentaPorCobrar.objects.create(
             venta=venta,
@@ -240,7 +253,9 @@ class CreditoService:
                 base_date = CreditoService.get_last_day_of_month(base_date)
         
         for i in range(1, num_cuotas + 1):
-            if frecuencia == CuentaPorCobrar.Frecuencia.DIARIO:
+            if num_cuotas == 1 and fecha_limite:
+                fecha_venc = fecha_limite
+            elif frecuencia == CuentaPorCobrar.Frecuencia.DIARIO:
                 fecha_venc = base_date + datetime.timedelta(days=i)
             elif frecuencia == CuentaPorCobrar.Frecuencia.SEMANAL:
                 fecha_venc = base_date + datetime.timedelta(weeks=i)

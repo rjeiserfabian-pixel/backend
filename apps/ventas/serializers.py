@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     Caja, SesionCaja, MovimientoCaja, TipoComprobante, SerieComprobante, MetodoPago, 
-    Impuesto, Venta, DetalleVenta, PagoVenta, CuentaPorCobrar, CuotaCredito
+    Impuesto, Venta, DetalleVenta, PagoVenta, CuentaPorCobrar, CuotaCredito, PagoCuota
 )
 from apps.inventario.serializers import RepuestoSerializer
 from apps.clientes.serializers import ClienteSerializer
@@ -141,7 +141,20 @@ class ProcesarVentaSerializer(serializers.Serializer):
 # CRÉDITOS Y COBRANZAS
 # ──────────────────────────────────────────────
 
+class PagoCuotaSerializer(serializers.ModelSerializer):
+    cajero_nombre = serializers.CharField(source='movimiento_caja.creado_por.username', read_only=True)
+    metodo_pago_nombre = serializers.CharField(source='movimiento_caja.metodo_pago.nombre', read_only=True)
+    referencia = serializers.CharField(source='movimiento_caja.referencia', read_only=True)
+    numero_recibo = serializers.CharField(source='movimiento_caja.numero_recibo', read_only=True)
+    
+    class Meta:
+        model = PagoCuota
+        fields = '__all__'
+
+
 class CuotaCreditoSerializer(serializers.ModelSerializer):
+    pagos = PagoCuotaSerializer(many=True, read_only=True)
+    
     class Meta:
         model = CuotaCredito
         fields = '__all__'
@@ -161,4 +174,14 @@ class CuentaPorCobrarSerializer(serializers.ModelSerializer):
     class Meta:
         model = CuentaPorCobrar
         fields = '__all__'
+
+from .models import SerieDocumentoInterno
+
+class SerieDocumentoInternoSerializer(serializers.ModelSerializer):
+    sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)
+
+    class Meta:
+        model = SerieDocumentoInterno
+        fields = '__all__'
+
 

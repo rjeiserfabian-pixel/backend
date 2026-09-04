@@ -9,13 +9,13 @@ from decimal import Decimal
 
 from .models import (
     Caja, SesionCaja, MovimientoCaja, TipoComprobante, SerieComprobante, MetodoPago, 
-    Impuesto, Venta, DetalleVenta, CuentaPorCobrar, CuotaCredito, PagoVenta
+    Impuesto, Venta, DetalleVenta, CuentaPorCobrar, CuotaCredito, PagoVenta, SerieDocumentoInterno
 )
 from .serializers import (
     CajaSerializer, SesionCajaSerializer, MovimientoCajaSerializer,
     TipoComprobanteSerializer, SerieComprobanteSerializer, MetodoPagoSerializer, ImpuestoSerializer,
     VentaSerializer, TicketKioskoCreateSerializer, ProcesarVentaSerializer,
-    CuentaPorCobrarSerializer
+    CuentaPorCobrarSerializer, SerieDocumentoInternoSerializer
 )
 from .services import VentasService, CreditoService
 from apps.inventario.models import Sucursal, Almacen, Repuesto
@@ -44,8 +44,14 @@ class TipoComprobanteViewSet(viewsets.ModelViewSet):
 
 
 class SerieComprobanteViewSet(viewsets.ModelViewSet):
-    queryset = SerieComprobante.objects.all()
+    queryset = SerieComprobante.objects.select_related('sucursal', 'tipo_comprobante').all()
     serializer_class = SerieComprobanteSerializer
+    filterset_fields = ['sucursal', 'tipo_comprobante', 'estado']
+
+class SerieDocumentoInternoViewSet(viewsets.ModelViewSet):
+    queryset = SerieDocumentoInterno.objects.select_related('sucursal').all()
+    serializer_class = SerieDocumentoInternoSerializer
+    filterset_fields = ['sucursal', 'tipo_documento', 'estado']
 
 
 class CajaViewSet(viewsets.ModelViewSet):
@@ -408,10 +414,20 @@ class VentaViewSet(viewsets.ModelViewSet):
             
             # 5. Si la venta es al crédito, generar CuentaPorCobrar
             if venta.estado == Venta.Estado.AL_CREDITO:
+                fecha_limite_str = request.data.get('fecha_limite')
+                fecha_limite = None
+                if fecha_limite_str:
+                    from datetime import datetime
+                    try:
+                        fecha_limite = datetime.strptime(fecha_limite_str, '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
+                        
                 CreditoService.generar_credito(
                     venta=venta,
                     frecuencia=CuentaPorCobrar.Frecuencia.MENSUAL,
-                    num_cuotas=1
+                    num_cuotas=1,
+                    fecha_limite=fecha_limite
                 )
                         
             return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
@@ -468,6 +484,8 @@ class CuentaPorCobrarViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='pagar-cuota/(?P<cuota_id>[^/.]+)')
     def pagar_cuota(self, request, cuota_id=None):
         from django.utils import timezone
+        from decimal import Decimal
+        from apps.ventas.models import PagoCuota, MovimientoCaja
         try:
             with transaction.atomic():
                 cuota = CuotaCredito.objects.select_for_update().get(id=cuota_id)
@@ -482,41 +500,58 @@ class CuentaPorCobrarViewSet(viewsets.ModelViewSet):
                 if not pagos:
                     return Response({"error": "Debe enviar al menos un método de pago y monto."}, status=400)
                 
-                total_pagado = sum(float(p.get('monto', 0)) for p in pagos)
+                total_pagado = sum(Decimal(str(p.get('monto', 0))) for p in pagos)
                 if total_pagado > cuota.saldo_pendiente:
                     return Response({"error": "El monto pagado supera el saldo pendiente de la cuota."}, status=400)
 
+                import uuid
+                operacion_uuid = uuid.uuid4()
+                nuevos_pagos = []
                 for pago_data in pagos:
-                    monto = float(pago_data.get('monto', 0))
+                    monto_decimal = Decimal(str(pago_data.get('monto', 0)))
                     metodo_pago_id = pago_data.get('metodo_pago_id')
                     metodo_pago = MetodoPago.objects.get(id=metodo_pago_id)
                     
-                    MovimientoCaja.objects.create(
-                        caja=sesion.caja,
-                        sesion_caja=sesion,
+                    movimiento = MovimientoCaja.objects.create(
+                        sesion=sesion,
                         tipo=MovimientoCaja.Tipo.INGRESO,
-                        monto=monto,
-                        concepto=f"Cobro Cuota {cuota.numero_cuota} - Crédito {cuota.cuenta_cobrar.codigo_credito}",
+                        concepto=MovimientoCaja.Concepto.COBRO_CUOTA,
                         metodo_pago=metodo_pago,
+                        monto=monto_decimal,
                         referencia=pago_data.get('referencia', ''),
                         creado_por=request.user
                     )
+                    pago_obj = PagoCuota.objects.create(
+                        cuota=cuota,
+                        movimiento_caja=movimiento,
+                        operacion_id=operacion_uuid,
+                        monto=monto_decimal
+                    )
+                    nuevos_pagos.append(pago_obj)
                 
-                cuota.saldo_pendiente -= Decimal(str(total_pagado))
+                cuota.saldo_pendiente -= total_pagado
                 if cuota.saldo_pendiente <= 0:
                     cuota.saldo_pendiente = 0
                     cuota.estado = CuotaCredito.Estado.PAGADA
                     cuota.fecha_pago = timezone.now().date()
+                else:
+                    cuota.estado = CuotaCredito.Estado.PARCIAL
                 cuota.save()
 
                 cuenta = cuota.cuenta_cobrar
-                cuenta.saldo_pendiente -= Decimal(str(total_pagado))
+                cuenta.saldo_pendiente -= total_pagado
                 if cuenta.saldo_pendiente <= 0:
                     cuenta.saldo_pendiente = 0
                     cuenta.estado = CuentaPorCobrar.Estado.PAGADO
                 cuenta.save()
+                
+                from apps.ventas.serializers import PagoCuotaSerializer
+                pagos_data = PagoCuotaSerializer(nuevos_pagos, many=True).data
 
-                return Response({"message": "Pago registrado exitosamente."})
+                return Response({
+                    "message": "Pago registrado exitosamente.",
+                    "pagos": pagos_data
+                })
         except Exception as e:
             logger.error(f"Error al pagar cuota: {str(e)}")
-            return Response({"error": "Ocurrió un error al procesar el pago."}, status=500)
+            return Response({"error": str(e)}, status=500)
