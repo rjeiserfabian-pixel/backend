@@ -12,3 +12,10 @@ class ProveedorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Proveedor
         fields = '__all__'
+
+from .models import Transportista
+
+class TransportistaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Transportista
+        fields = '__all__'

@@ -26,3 +26,23 @@ class Vehiculo(models.Model):
 
     def __str__(self):
         return f"{self.placa} - {self.marca} {self.modelo}"
+
+
+class VehiculoTransporte(models.Model):
+    placa = models.CharField(max_length=15, unique=True, db_index=True)
+    marca = models.CharField(max_length=100)
+    modelo = models.CharField(max_length=100, null=True, blank=True)
+    certificado_inscripcion = models.CharField(max_length=50, null=True, blank=True)
+    configuracion_vehicular = models.CharField(max_length=50, null=True, blank=True)
+    carga_util = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    peso_bruto = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    estado = models.BooleanField(default=True) # Soft delete
+
+    class Meta:
+        db_table = 'vehiculo_transporte'
+        verbose_name = 'Vehículo de Transporte'
+        verbose_name_plural = 'Vehículos de Transporte'
+        ordering = ['-id']
+
+    def __str__(self):
+        return f"{self.placa} - {self.marca} {self.modelo}"
