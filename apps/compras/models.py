@@ -3,6 +3,19 @@ from django.conf import settings
 from apps.clientes.models import Proveedor
 from apps.inventario.models import Repuesto
 
+class TipoComprobanteCompra(models.Model):
+    nombre = models.CharField(max_length=50, unique=True)
+    estado_activo = models.BooleanField(default=True, db_index=True)
+    
+    class Meta:
+        db_table = 'tipo_comprobante_compra'
+        verbose_name = 'Tipo de Comprobante de Compra'
+        verbose_name_plural = 'Tipos de Comprobantes de Compras'
+        ordering = ['nombre']
+
+    def __str__(self):
+        return self.nombre
+
 class Compra(models.Model):
     TIPO_COMPROBANTE_CHOICES = [
         ('Factura', 'Factura'),
@@ -21,7 +34,9 @@ class Compra(models.Model):
 
     proveedor = models.ForeignKey(Proveedor, on_delete=models.RESTRICT, related_name='compras')
     fecha_emision = models.DateField(db_index=True)
-    tipo_comprobante = models.CharField(max_length=20, choices=TIPO_COMPROBANTE_CHOICES)
+    tipo_comprobante_fk = models.ForeignKey(TipoComprobanteCompra, on_delete=models.RESTRICT, null=True, blank=True, related_name='compras')
+    # Conservamos este campo temporalmente para migración
+    tipo_comprobante = models.CharField(max_length=20, choices=TIPO_COMPROBANTE_CHOICES, null=True, blank=True)
     serie = models.CharField(max_length=10)
     numero_comprobante = models.CharField(max_length=20, db_index=True)
     tipo_pago = models.CharField(max_length=15, choices=TIPO_PAGO_CHOICES, default='Contado')

@@ -4,9 +4,14 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from .models import Compra, DetalleCompra, CuentaPorPagar, PagoCuenta
-from .serializers import CompraSerializer, CuentaPorPagarSerializer, PagoCuentaSerializer
+from .models import Compra, DetalleCompra, CuentaPorPagar, PagoCuenta, TipoComprobanteCompra
+from .serializers import CompraSerializer, CuentaPorPagarSerializer, PagoCuentaSerializer, TipoComprobanteCompraSerializer
 from apps.inventario.models import Repuesto, InventarioStock, MovimientoInventario, UbicacionFisica
+
+class TipoComprobanteCompraViewSet(viewsets.ModelViewSet):
+    queryset = TipoComprobanteCompra.objects.all()
+    serializer_class = TipoComprobanteCompraSerializer
+    permission_classes = [IsAuthenticated]
 
 class CompraViewSet(viewsets.ModelViewSet):
     queryset = Compra.objects.all().select_related('proveedor', 'usuario')
@@ -17,16 +22,21 @@ class CompraViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         data = request.data
         detalles_data = data.pop('detalles', [])
-        ubicacion_id = data.pop('ubicacion_id', None) # Ubicación donde ingresa la mercadería
+        almacen_id = data.pop('almacen_id', None) # Almacén donde ingresa la mercadería
         
-        # Validar ubicación
-        if not ubicacion_id:
-            return Response({"error": "Debe especificar la ubicación de destino (ubicacion_id)."}, status=status.HTTP_400_BAD_REQUEST)
+        # Validar almacén
+        if not almacen_id:
+            return Response({"error": "Debe especificar el almacén de destino (almacen_id)."}, status=status.HTTP_400_BAD_REQUEST)
         
+        from apps.inventario.models import Almacen, UbicacionFisica
         try:
-            ubicacion = UbicacionFisica.objects.get(id=ubicacion_id)
-        except UbicacionFisica.DoesNotExist:
-            return Response({"error": "La ubicación especificada no existe."}, status=status.HTTP_400_BAD_REQUEST)
+            almacen = Almacen.objects.get(id=almacen_id)
+        except Almacen.DoesNotExist:
+            return Response({"error": "El almacén especificado no existe."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        ubicacion = UbicacionFisica.objects.filter(almacen=almacen).first()
+        if not ubicacion:
+            ubicacion = UbicacionFisica.objects.create(almacen=almacen, codigo="GENERAL", descripcion="Ubicación general")
 
         # Crear Compra
         serializer = self.get_serializer(data=data)
