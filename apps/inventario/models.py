@@ -26,6 +26,12 @@ class UnidadMedida(models.Model):
 
 class Categoria(models.Model):
     nombre = models.CharField(max_length=100, unique=True, db_index=True)
+    margen_minimo_esperado = models.DecimalField(
+        max_digits=5, 
+        decimal_places=2, 
+        default=20.00,
+        help_text="Margen mínimo esperado en porcentaje (ej. 20.00 para 20%)"
+    )
     estado = models.BooleanField(default=True)
 
     class Meta:
@@ -71,6 +77,10 @@ class Repuesto(models.Model):
     precio_cash = models.DecimalField(max_digits=10, decimal_places=2)
     precio_lista = models.DecimalField(max_digits=10, decimal_places=2)
 
+    alerta_precio = models.BooleanField(
+        default=False,
+        help_text="Se marca automáticamente si el margen cae por debajo del mínimo de la categoría al registrar una compra"
+    )
     estado = models.BooleanField(default=True)
 
     class Meta:
