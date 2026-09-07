@@ -30,7 +30,7 @@ class CompraSerializer(serializers.ModelSerializer):
         
     def to_representation(self, instance):
         repr = super().to_representation(instance)
-        repr['tipo_comprobante_nombre'] = instance.tipo_comprobante_fk.nombre if instance.tipo_comprobante_fk else instance.tipo_comprobante
+        repr['tipo_comprobante_nombre'] = instance.tipo_comprobante_fk.nombre if instance.tipo_comprobante_fk else 'Comprobante'
         return repr
 
 
@@ -46,6 +46,7 @@ class PagoCuentaSerializer(serializers.ModelSerializer):
 class CuentaPorPagarSerializer(serializers.ModelSerializer):
     pagos = PagoCuentaSerializer(many=True, read_only=True)
     proveedor_nombre = serializers.ReadOnlyField(source='proveedor.nombre_o_razon_social')
+    proveedor_documento = serializers.ReadOnlyField(source='proveedor.numero_documento')
     compra_comprobante = serializers.SerializerMethodField()
 
     class Meta:
@@ -54,5 +55,5 @@ class CuentaPorPagarSerializer(serializers.ModelSerializer):
         read_only_fields = ('actualizado_en', 'creado_en')
 
     def get_compra_comprobante(self, obj):
-        tipo_nombre = obj.compra.tipo_comprobante_fk.nombre if obj.compra.tipo_comprobante_fk else obj.compra.tipo_comprobante
+        tipo_nombre = obj.compra.tipo_comprobante_fk.nombre if obj.compra.tipo_comprobante_fk else 'Comprobante'
         return f"{tipo_nombre} {obj.compra.serie}-{obj.compra.numero_comprobante}"

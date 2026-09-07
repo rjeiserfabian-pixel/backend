@@ -75,7 +75,7 @@ class CompraViewSet(viewsets.ModelViewSet):
                 tipo_movimiento=MovimientoInventario.TipoMovimiento.ENTRADA,
                 cantidad=cantidad,
                 stock_resultante=inventario.stock_disponible,
-                motivo=f"Compra {compra.tipo_comprobante} {compra.serie}-{compra.numero_comprobante}",
+                motivo=f"Compra {compra.tipo_comprobante_fk.nombre if compra.tipo_comprobante_fk else 'Comprobante'} {compra.serie}-{compra.numero_comprobante}",
                 usuario=request.user,
                 referencia_id=compra.id,
                 referencia_tipo='COMPRA'
@@ -111,9 +111,9 @@ class CompraViewSet(viewsets.ModelViewSet):
 
         # Si es al crédito, crear Cuenta por Pagar
         if compra.tipo_pago == 'Credito':
-            dias_credito = int(data.get('dias_credito', 30))
-            from datetime import timedelta
-            vencimiento = compra.fecha_emision + timedelta(days=dias_credito)
+            fecha_vencimiento = data.get('fecha_vencimiento')
+            if not fecha_vencimiento:
+                fecha_vencimiento = compra.fecha_emision
             
             CuentaPorPagar.objects.create(
                 compra=compra,
@@ -121,7 +121,7 @@ class CompraViewSet(viewsets.ModelViewSet):
                 monto_total=compra.total,
                 monto_pagado=0,
                 saldo_pendiente=compra.total,
-                fecha_vencimiento=vencimiento,
+                fecha_vencimiento=fecha_vencimiento,
                 estado='Pendiente'
             )
 
@@ -141,7 +141,7 @@ class CuentaPorPagarViewSet(viewsets.ModelViewSet):
         proveedor_id = self.request.query_params.get('proveedor_id')
         if proveedor_id:
             qs = qs.filter(proveedor_id=proveedor_id)
-        return qs.order_by('-fecha_creacion')
+        return qs.order_by('-creado_en')
 
     @action(detail=False, methods=['get'], url_path='resumen-proveedores')
     def resumen_proveedores(self, request):
@@ -170,6 +170,13 @@ class PagoCuentaViewSet(viewsets.ModelViewSet):
     queryset = PagoCuenta.objects.all()
     serializer_class = PagoCuentaSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        cuenta_id = self.request.query_params.get('cuenta_id')
+        if cuenta_id:
+            qs = qs.filter(cuenta_por_pagar_id=cuenta_id)
+        return qs.order_by('-fecha_pago', '-id')
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):

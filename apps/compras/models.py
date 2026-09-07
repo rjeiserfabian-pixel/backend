@@ -17,12 +17,7 @@ class TipoComprobanteCompra(models.Model):
         return self.nombre
 
 class Compra(models.Model):
-    TIPO_COMPROBANTE_CHOICES = [
-        ('Factura', 'Factura'),
-        ('Boleta', 'Boleta'),
-        ('Guia', 'Guía de Remisión'),
-        ('Ticket', 'Ticket'),
-    ]
+
     TIPO_PAGO_CHOICES = [
         ('Contado', 'Contado'),
         ('Credito', 'Crédito'),
@@ -35,8 +30,6 @@ class Compra(models.Model):
     proveedor = models.ForeignKey(Proveedor, on_delete=models.RESTRICT, related_name='compras')
     fecha_emision = models.DateField(db_index=True)
     tipo_comprobante_fk = models.ForeignKey(TipoComprobanteCompra, on_delete=models.RESTRICT, null=True, blank=True, related_name='compras')
-    # Conservamos este campo temporalmente para migración
-    tipo_comprobante = models.CharField(max_length=20, choices=TIPO_COMPROBANTE_CHOICES, null=True, blank=True)
     serie = models.CharField(max_length=10)
     numero_comprobante = models.CharField(max_length=20, db_index=True)
     tipo_pago = models.CharField(max_length=15, choices=TIPO_PAGO_CHOICES, default='Contado')
@@ -58,7 +51,8 @@ class Compra(models.Model):
         ordering = ['-fecha_emision', '-id']
 
     def __str__(self):
-        return f"{self.tipo_comprobante} {self.serie}-{self.numero_comprobante} | {self.proveedor.nombre_o_razon_social}"
+        tipo_nombre = self.tipo_comprobante_fk.nombre if self.tipo_comprobante_fk else 'Comprobante'
+        return f"{tipo_nombre} {self.serie}-{self.numero_comprobante} | {self.proveedor.nombre_o_razon_social}"
 
 
 class DetalleCompra(models.Model):
