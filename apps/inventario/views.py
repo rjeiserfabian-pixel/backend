@@ -463,9 +463,10 @@ class TrasladoInventarioViewSet(viewsets.ModelViewSet):
             ubicacion_destino_id = detalle['ubicacion_destino']
             cantidad = detalle['cantidad']
             
+            from decimal import Decimal, InvalidOperation
             try:
-                cantidad = float(cantidad)
-            except ValueError:
+                cantidad = Decimal(str(cantidad))
+            except InvalidOperation:
                 return Response({'error': 'Cantidad inválida'}, status=status.HTTP_400_BAD_REQUEST)
                 
             if cantidad <= 0:
@@ -536,7 +537,7 @@ class TrasladoInventarioViewSet(viewsets.ModelViewSet):
                 cantidad=cantidad
             )
 
-        headers = self.get_success_headers(serializer.data)
-        response_serializer = TrasladoInventarioSerializer(traslado)
+        response_serializer = TrasladoInventarioSerializer(traslado, context={'request': request})
+        headers = self.get_success_headers(response_serializer.data)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
