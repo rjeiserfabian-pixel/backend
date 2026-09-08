@@ -275,3 +275,47 @@ class MovimientoInventario(models.Model):
 
     def __str__(self):
         return f"[{self.tipo_movimiento}] {self.repuesto.codigo} | {self.cantidad:+d} → {self.motivo}"
+
+
+class TrasladoInventario(models.Model):
+    """
+    Cabecera de un traslado de mercadería entre dos almacenes/ubicaciones.
+    """
+    fecha_traslado = models.DateTimeField(auto_now_add=True)
+    almacen_origen = models.ForeignKey(Almacen, on_delete=models.RESTRICT, related_name='traslados_origen')
+    almacen_destino = models.ForeignKey(Almacen, on_delete=models.RESTRICT, related_name='traslados_destino')
+    observaciones = models.TextField(null=True, blank=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.RESTRICT,
+        related_name='traslados_realizados'
+    )
+    estado = models.CharField(max_length=20, default='COMPLETADO')
+
+    class Meta:
+        db_table = 'traslado_inventario'
+        verbose_name = 'Traslado de Inventario'
+        verbose_name_plural = 'Traslados de Inventario'
+        ordering = ['-fecha_traslado']
+
+    def __str__(self):
+        return f"Traslado #{self.id} | {self.almacen_origen.nombre} -> {self.almacen_destino.nombre}"
+
+
+class TrasladoInventarioDetalle(models.Model):
+    """
+    Detalle de los repuestos trasladados, incluyendo de qué ubicación exacta salieron y a cuál entraron.
+    """
+    traslado = models.ForeignKey(TrasladoInventario, on_delete=models.CASCADE, related_name='detalles')
+    repuesto = models.ForeignKey(Repuesto, on_delete=models.RESTRICT, related_name='traslados_detalle')
+    ubicacion_origen = models.ForeignKey(UbicacionFisica, on_delete=models.RESTRICT, related_name='detalles_traslado_origen')
+    ubicacion_destino = models.ForeignKey(UbicacionFisica, on_delete=models.RESTRICT, related_name='detalles_traslado_destino')
+    cantidad = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        db_table = 'traslado_inventario_detalle'
+        verbose_name = 'Detalle de Traslado'
+        verbose_name_plural = 'Detalles de Traslado'
+
+    def __str__(self):
+        return f"Detalle Traslado #{self.traslado.id} - {self.repuesto.nombre} ({self.cantidad})"

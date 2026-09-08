@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import (
     UnidadMedida, Categoria, MarcaRepuesto, Repuesto, AplicacionRepuesto,
     Sucursal, Almacen, UbicacionFisica, InventarioStock, MovimientoInventario,
+    TrasladoInventario, TrasladoInventarioDetalle
 )
 
 
@@ -204,3 +205,44 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
         if obj.usuario:
             return getattr(obj.usuario, 'get_full_name', lambda: str(obj.usuario))()
         return 'Sistema'
+
+
+class TrasladoInventarioDetalleSerializer(serializers.ModelSerializer):
+    repuesto_nombre = serializers.CharField(source='repuesto.nombre', read_only=True)
+    repuesto_codigo = serializers.CharField(source='repuesto.codigo', read_only=True)
+    ubicacion_origen_nombre = serializers.CharField(source='ubicacion_origen.codigo', read_only=True)
+    ubicacion_destino_nombre = serializers.CharField(source='ubicacion_destino.codigo', read_only=True)
+
+    class Meta:
+        model = TrasladoInventarioDetalle
+        fields = '__all__'
+        read_only_fields = ('traslado',)
+
+
+class TrasladoInventarioSerializer(serializers.ModelSerializer):
+    detalles = TrasladoInventarioDetalleSerializer(many=True, read_only=True)
+    almacen_origen_nombre = serializers.CharField(source='almacen_origen.nombre', read_only=True)
+    almacen_destino_nombre = serializers.CharField(source='almacen_destino.nombre', read_only=True)
+    usuario_nombre = serializers.SerializerMethodField()
+    
+    # Write only fields for creation
+    detalles_datos = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=True
+    )
+
+    class Meta:
+        model = TrasladoInventario
+        fields = [
+            'id', 'fecha_traslado', 'almacen_origen', 'almacen_origen_nombre', 
+            'almacen_destino', 'almacen_destino_nombre', 'observaciones', 
+            'usuario', 'usuario_nombre', 'estado', 'detalles', 'detalles_datos'
+        ]
+        read_only_fields = ('usuario', 'estado')
+
+    def get_usuario_nombre(self, obj):
+        if obj.usuario:
+            return getattr(obj.usuario, 'get_full_name', lambda: str(obj.usuario))()
+        return 'Sistema'
+

@@ -8,11 +8,12 @@ from django.db.models import Q, Prefetch
 from .models import (
     UnidadMedida, Categoria, MarcaRepuesto, Repuesto, AplicacionRepuesto,
     Sucursal, Almacen, UbicacionFisica, InventarioStock, MovimientoInventario,
+    TrasladoInventario, TrasladoInventarioDetalle
 )
 from .serializers import (
     UnidadMedidaSerializer, CategoriaSerializer, MarcaRepuestoSerializer, RepuestoSerializer, RepuestoDetalleSerializer,
     SucursalSerializer, AlmacenSerializer, UbicacionFisicaSerializer,
-    InventarioStockSerializer, MovimientoInventarioSerializer,
+    InventarioStockSerializer, MovimientoInventarioSerializer, TrasladoInventarioSerializer
 )
 from rest_framework import filters, pagination
 from django_filters.rest_framework import DjangoFilterBackend
@@ -338,6 +339,9 @@ class InventarioStockViewSet(viewsets.ModelViewSet):
         ubicacion_id = self.request.query_params.get('ubicacion')
         if ubicacion_id:
             qs = qs.filter(ubicacion_id=ubicacion_id)
+        almacen_id = self.request.query_params.get('almacen')
+        if almacen_id:
+            qs = qs.filter(ubicacion__almacen_id=almacen_id)
         return qs
 
     @transaction.atomic
@@ -420,3 +424,119 @@ class MovimientoInventarioViewSet(viewsets.ReadOnlyModelViewSet):
         if tipo:
             qs = qs.filter(tipo_movimiento=tipo)
         return qs
+
+
+class TrasladoInventarioViewSet(viewsets.ModelViewSet):
+    """
+    Gestiona los traslados de mercadería entre ubicaciones físicas.
+    La creación procesa el stock y genera Kardex atómicamente.
+    """
+    queryset = TrasladoInventario.objects.all().select_related('almacen_origen', 'almacen_destino', 'usuario').prefetch_related('detalles__repuesto', 'detalles__ubicacion_origen', 'detalles__ubicacion_destino').order_by('-fecha_traslado')
+    serializer_class = TrasladoInventarioSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = RepuestoPagination
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        detalles_datos = serializer.validated_data.pop('detalles_datos')
+        almacen_origen = serializer.validated_data['almacen_origen']
+        almacen_destino = serializer.validated_data['almacen_destino']
+        
+        # Validar y procesar detalles
+        if not detalles_datos:
+            return Response({'error': 'Debe enviar al menos un producto.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 1. Crear Cabecera del Traslado
+        traslado = TrasladoInventario.objects.create(
+            almacen_origen=almacen_origen,
+            almacen_destino=almacen_destino,
+            observaciones=serializer.validated_data.get('observaciones', ''),
+            usuario=request.user
+        )
+
+        for detalle in detalles_datos:
+            repuesto_id = detalle['repuesto']
+            ubicacion_origen_id = detalle['ubicacion_origen']
+            ubicacion_destino_id = detalle['ubicacion_destino']
+            cantidad = detalle['cantidad']
+            
+            try:
+                cantidad = float(cantidad)
+            except ValueError:
+                return Response({'error': 'Cantidad inválida'}, status=status.HTTP_400_BAD_REQUEST)
+                
+            if cantidad <= 0:
+                return Response({'error': 'La cantidad debe ser mayor a 0'}, status=status.HTTP_400_BAD_REQUEST)
+                
+            # Validar y obtener registros origen
+            try:
+                repuesto = Repuesto.objects.get(id=repuesto_id)
+                ubi_origen = UbicacionFisica.objects.get(id=ubicacion_origen_id, almacen=almacen_origen)
+                ubi_destino = UbicacionFisica.objects.get(id=ubicacion_destino_id, almacen=almacen_destino)
+                
+                stock_origen = InventarioStock.objects.get(repuesto=repuesto, ubicacion=ubi_origen)
+            except Repuesto.DoesNotExist:
+                return Response({'error': f'Repuesto ID {repuesto_id} no existe.'}, status=status.HTTP_400_BAD_REQUEST)
+            except UbicacionFisica.DoesNotExist:
+                return Response({'error': 'Ubicación origen o destino inválida.'}, status=status.HTTP_400_BAD_REQUEST)
+            except InventarioStock.DoesNotExist:
+                return Response({'error': f'No hay stock registrado del repuesto {repuesto.codigo} en la ubicación de origen.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            if stock_origen.stock_disponible < cantidad:
+                return Response({'error': f'Stock insuficiente para el repuesto {repuesto.codigo} en la ubicación origen.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # 2. Descontar stock en origen
+            stock_origen.stock_disponible -= cantidad
+            stock_origen.save()
+
+            # Registrar Salida de Traslado en Kardex
+            MovimientoInventario.objects.create(
+                repuesto=repuesto,
+                ubicacion=ubi_origen,
+                tipo_movimiento=MovimientoInventario.TipoMovimiento.TRASLADO_SALIDA,
+                cantidad=-cantidad,
+                stock_resultante=stock_origen.stock_disponible,
+                motivo=f"Traslado #{traslado.id} a {almacen_destino.nombre}",
+                usuario=request.user,
+                referencia_id=traslado.id,
+                referencia_tipo='TRASLADO'
+            )
+
+            # 3. Sumar stock en destino
+            stock_destino, created = InventarioStock.objects.get_or_create(
+                repuesto=repuesto,
+                ubicacion=ubi_destino,
+                defaults={'stock_disponible': 0, 'stock_minimo': stock_origen.stock_minimo}
+            )
+            stock_destino.stock_disponible += cantidad
+            stock_destino.save()
+
+            # Registrar Entrada de Traslado en Kardex
+            MovimientoInventario.objects.create(
+                repuesto=repuesto,
+                ubicacion=ubi_destino,
+                tipo_movimiento=MovimientoInventario.TipoMovimiento.TRASLADO_ENTRADA,
+                cantidad=cantidad,
+                stock_resultante=stock_destino.stock_disponible,
+                motivo=f"Traslado #{traslado.id} desde {almacen_origen.nombre}",
+                usuario=request.user,
+                referencia_id=traslado.id,
+                referencia_tipo='TRASLADO'
+            )
+
+            # 4. Crear Detalle de Traslado
+            TrasladoInventarioDetalle.objects.create(
+                traslado=traslado,
+                repuesto=repuesto,
+                ubicacion_origen=ubi_origen,
+                ubicacion_destino=ubi_destino,
+                cantidad=cantidad
+            )
+
+        headers = self.get_success_headers(serializer.data)
+        response_serializer = TrasladoInventarioSerializer(traslado)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
