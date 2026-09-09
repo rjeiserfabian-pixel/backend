@@ -8,12 +8,13 @@ from django.db.models import Q, Prefetch
 from .models import (
     UnidadMedida, Categoria, MarcaRepuesto, Repuesto, AplicacionRepuesto,
     Sucursal, Almacen, UbicacionFisica, InventarioStock, MovimientoInventario,
-    TrasladoInventario, TrasladoInventarioDetalle
+    TrasladoInventario, TrasladoInventarioDetalle, GuiaRemision, GuiaRemisionDetalle
 )
 from .serializers import (
     UnidadMedidaSerializer, CategoriaSerializer, MarcaRepuestoSerializer, RepuestoSerializer, RepuestoDetalleSerializer,
     SucursalSerializer, AlmacenSerializer, UbicacionFisicaSerializer,
-    InventarioStockSerializer, MovimientoInventarioSerializer, TrasladoInventarioSerializer
+    InventarioStockSerializer, MovimientoInventarioSerializer, TrasladoInventarioSerializer,
+    GuiaRemisionSerializer
 )
 from rest_framework import filters, pagination
 from django_filters.rest_framework import DjangoFilterBackend
@@ -104,6 +105,11 @@ class RepuestoViewSet(viewsets.ModelViewSet):
                 Q(inventario_stock__ubicacion__casillero__icontains=ubicacion) |
                 Q(inventario_stock__ubicacion__codigo__icontains=ubicacion)
             ).distinct()
+            
+        sucursal = self.request.query_params.get('sucursal')
+        if sucursal:
+            qs = qs.filter(inventario_stock__ubicacion__almacen__sucursal_id=sucursal).distinct()
+            
         return qs
 
     def get_serializer_class(self):
@@ -330,6 +336,8 @@ class InventarioStockViewSet(viewsets.ModelViewSet):
     )
     serializer_class = InventarioStockSerializer
     permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['repuesto__codigo', 'repuesto__nombre']
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -541,3 +549,102 @@ class TrasladoInventarioViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(response_serializer.data)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
+# ──────────────────────────────────────────────
+# NUEVAS VISTAS: GUÍAS DE REMISIÓN
+# ──────────────────────────────────────────────
+
+class GuiaRemisionViewSet(viewsets.ModelViewSet):
+    queryset = GuiaRemision.objects.all().order_by('-id')
+    serializer_class = GuiaRemisionSerializer
+    pagination_class = RepuestoPagination
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        estado = self.request.query_params.get('estado', None)
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        return queryset
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Extraer detalles antes de guardar
+        detalles_datos = serializer.validated_data.pop('detalles_datos', [])
+        
+        # Calcular y asignar correlativo directamente
+        serie_id = serializer.validated_data.get('serie')
+        if serie_id:
+            from apps.ventas.models import SerieDocumentoInterno
+            serie = SerieDocumentoInterno.objects.select_for_update().get(id=serie_id.id if hasattr(serie_id, 'id') else serie_id)
+            correlativo = serie.correlativo_actual + 1
+            serie.correlativo_actual = correlativo
+            serie.save()
+        else:
+            correlativo = 0
+
+        # Guardar la guía con el correlativo calculado
+        guia = serializer.save(correlativo=correlativo)
+
+        # Crear detalles
+        for det in detalles_datos:
+            repuesto = Repuesto.objects.get(id=det['repuesto_id'])
+            GuiaRemisionDetalle.objects.create(
+                guia=guia,
+                repuesto=repuesto,
+                cantidad=det['cantidad']
+            )
+
+        headers = self.get_success_headers(serializer.data)
+        response_serializer = self.get_serializer(guia)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def dar_salida(self, request, pk=None):
+        guia = self.get_object()
+        if guia.estado != GuiaRemision.Estado.CREADA:
+            return Response(
+                {"detail": "La guía debe estar en estado CREADA para dar salida."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        transportista_id = request.data.get('transportista_id')
+        vehiculo_id = request.data.get('vehiculo_id')
+
+        if not transportista_id or not vehiculo_id:
+            return Response(
+                {"detail": "Debe especificar un transportista y un vehículo."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from apps.clientes.models import Transportista
+        from apps.vehiculos.models import VehiculoTransporte
+        
+        transportista = Transportista.objects.get(id=transportista_id)
+        vehiculo = VehiculoTransporte.objects.get(id=vehiculo_id)
+
+        guia.transportista = transportista
+        guia.vehiculo = vehiculo
+        guia.estado = GuiaRemision.Estado.EN_TRASLADO
+        guia.save()
+
+        response_serializer = self.get_serializer(guia)
+        return Response(response_serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='completar')
+    @transaction.atomic
+    def completar_traslado(self, request, pk=None):
+        guia = self.get_object()
+        if guia.estado != GuiaRemision.Estado.EN_TRASLADO:
+            return Response(
+                {"detail": "La guía debe estar en estado EN_TRASLADO para completar."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        guia.estado = GuiaRemision.Estado.COMPLETADA
+        guia.save()
+
+        response_serializer = self.get_serializer(guia)
+        return Response(response_serializer.data)

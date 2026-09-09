@@ -94,6 +94,8 @@ class SerieDocumentoInterno(models.Model):
     class TipoDocumento(models.TextChoices):
         RECIBO_INGRESO = 'RECIBO_INGRESO', 'Recibo de Ingreso'
         CREDITO = 'CREDITO', 'Código de Crédito'
+        GUIA_REMISION = 'GUIA_REMISION', 'Guía de Remisión'
+        
         
     sucursal = models.ForeignKey(Sucursal, on_delete=models.RESTRICT, related_name='series_internas')
     tipo_documento = models.CharField(max_length=50, choices=TipoDocumento.choices)

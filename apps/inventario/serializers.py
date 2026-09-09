@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     UnidadMedida, Categoria, MarcaRepuesto, Repuesto, AplicacionRepuesto,
     Sucursal, Almacen, UbicacionFisica, InventarioStock, MovimientoInventario,
-    TrasladoInventario, TrasladoInventarioDetalle
+    TrasladoInventario, TrasladoInventarioDetalle, GuiaRemision, GuiaRemisionDetalle
 )
 
 
@@ -246,3 +246,52 @@ class TrasladoInventarioSerializer(serializers.ModelSerializer):
             return getattr(obj.usuario, 'get_full_name', lambda: str(obj.usuario))()
         return 'Sistema'
 
+# ──────────────────────────────────────────────
+# SERIALIZERS NUEVOS: GUÍAS DE REMISIÓN
+# ──────────────────────────────────────────────
+
+class GuiaRemisionDetalleSerializer(serializers.ModelSerializer):
+    repuesto_codigo = serializers.CharField(source='repuesto.codigo', read_only=True)
+    repuesto_nombre = serializers.CharField(source='repuesto.nombre', read_only=True)
+    repuesto_unidad = serializers.CharField(source='repuesto.unidad_medida.nombre', read_only=True, default='-')
+
+    class Meta:
+        model = GuiaRemisionDetalle
+        fields = ['id', 'repuesto', 'repuesto_codigo', 'repuesto_nombre', 'repuesto_unidad', 'cantidad']
+
+class GuiaRemisionSerializer(serializers.ModelSerializer):
+    detalles = GuiaRemisionDetalleSerializer(many=True, read_only=True)
+    cliente_nombre = serializers.SerializerMethodField()
+    ubigeo_partida_nombre = serializers.CharField(source='ubigeo_partida.nombre', read_only=True)
+    ubigeo_llegada_nombre = serializers.CharField(source='ubigeo_llegada.nombre', read_only=True)
+    transportista_nombre = serializers.SerializerMethodField()
+    vehiculo_placa = serializers.CharField(source='vehiculo.placa', read_only=True)
+    serie_prefijo = serializers.CharField(source='serie.prefijo', read_only=True)
+
+    # Write-only para creación
+    detalles_datos = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=True
+    )
+
+    class Meta:
+        model = GuiaRemision
+        fields = [
+            'id', 'sucursal', 'serie', 'serie_prefijo', 'correlativo', 'fecha_emision', 'fecha_traslado',
+            'cliente', 'cliente_nombre', 'ubigeo_partida', 'ubigeo_partida_nombre', 'punto_partida',
+            'ubigeo_llegada', 'ubigeo_llegada_nombre', 'punto_llegada', 'motivo_traslado', 'observaciones',
+            'transportista', 'transportista_nombre', 'vehiculo', 'vehiculo_placa', 'estado',
+            'detalles', 'detalles_datos'
+        ]
+        read_only_fields = ('fecha_emision', 'estado')
+
+    def get_cliente_nombre(self, obj):
+        if obj.cliente:
+            return f"{obj.cliente.nombres} {obj.cliente.apellidos}".strip()
+        return '-'
+
+    def get_transportista_nombre(self, obj):
+        if obj.transportista:
+            return obj.transportista.nombre_o_razon_social
+        return '-'

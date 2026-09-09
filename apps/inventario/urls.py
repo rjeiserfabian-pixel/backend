@@ -3,7 +3,8 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     UnidadMedidaViewSet, CategoriaViewSet, MarcaRepuestoViewSet, RepuestoViewSet,
     SucursalViewSet, AlmacenViewSet, UbicacionFisicaViewSet,
-    InventarioStockViewSet, MovimientoInventarioViewSet, TrasladoInventarioViewSet
+    InventarioStockViewSet, MovimientoInventarioViewSet, TrasladoInventarioViewSet,
+    GuiaRemisionViewSet
 )
 
 router = DefaultRouter()
@@ -23,6 +24,7 @@ router.register(r'ubicaciones', UbicacionFisicaViewSet)
 router.register(r'stock', InventarioStockViewSet)
 router.register(r'kardex', MovimientoInventarioViewSet)
 router.register(r'traslados', TrasladoInventarioViewSet, basename='traslado')
+router.register(r'guias-remision', GuiaRemisionViewSet, basename='guia-remision')
 
 urlpatterns = [
     path('', include(router.urls)),

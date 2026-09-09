@@ -2,6 +2,10 @@ import logging
 from django.db import models
 from django.conf import settings
 
+from apps.clientes.models import Cliente, Transportista
+from apps.vehiculos.models import VehiculoTransporte
+from apps.seguridad.models import Distrito
+
 logger = logging.getLogger(__name__)
 
 
@@ -319,3 +323,59 @@ class TrasladoInventarioDetalle(models.Model):
 
     def __str__(self):
         return f"Detalle Traslado #{self.traslado.id} - {self.repuesto.nombre} ({self.cantidad})"
+
+# ──────────────────────────────────────────────
+# MODELOS NUEVOS: GUÍAS DE REMISIÓN
+# ──────────────────────────────────────────────
+
+class GuiaRemision(models.Model):
+    class Estado(models.TextChoices):
+        CREADA = 'CREADA', 'Creada'
+        EN_TRASLADO = 'EN_TRASLADO', 'En Traslado'
+        COMPLETADA = 'COMPLETADA', 'Completada'
+
+    sucursal = models.ForeignKey('inventario.Sucursal', on_delete=models.RESTRICT, related_name='guias_remision')
+    serie = models.ForeignKey('ventas.SerieDocumentoInterno', on_delete=models.RESTRICT, null=True, blank=True)
+    correlativo = models.IntegerField(default=0)
+    fecha_emision = models.DateTimeField(auto_now_add=True)
+    fecha_traslado = models.DateField()
+    
+    cliente = models.ForeignKey(Cliente, on_delete=models.RESTRICT, null=True, blank=True)
+    
+    # Origen y Destino
+    ubigeo_partida = models.ForeignKey(Distrito, on_delete=models.RESTRICT, related_name='guias_partida')
+    punto_partida = models.CharField(max_length=255)
+    ubigeo_llegada = models.ForeignKey(Distrito, on_delete=models.RESTRICT, related_name='guias_llegada')
+    punto_llegada = models.CharField(max_length=255)
+    
+    motivo_traslado = models.CharField(max_length=255)
+    observaciones = models.TextField(null=True, blank=True)
+    
+    # Transporte (Se asignan al dar salida)
+    transportista = models.ForeignKey(Transportista, on_delete=models.RESTRICT, null=True, blank=True)
+    vehiculo = models.ForeignKey(VehiculoTransporte, on_delete=models.RESTRICT, null=True, blank=True)
+    
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.CREADA)
+
+    class Meta:
+        db_table = 'inventario_guia_remision'
+        verbose_name = 'Guía de Remisión'
+        verbose_name_plural = 'Guías de Remisión'
+
+    def __str__(self):
+        serie_str = self.serie.prefijo if self.serie else "GR"
+        return f"{serie_str}-{str(self.correlativo).zfill(6)}"
+
+class GuiaRemisionDetalle(models.Model):
+    guia = models.ForeignKey(GuiaRemision, on_delete=models.CASCADE, related_name='detalles')
+    repuesto = models.ForeignKey(Repuesto, on_delete=models.RESTRICT)
+    cantidad = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        db_table = 'inventario_guia_remision_detalle'
+        verbose_name = 'Detalle de Guía de Remisión'
+        verbose_name_plural = 'Detalles de Guía de Remisión'
+
+    def __str__(self):
+        return f"Detalle {self.id} - {self.repuesto.nombre}"
+
