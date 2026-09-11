@@ -13,8 +13,9 @@ class ConsultaVehicularService:
     BASE_URL = "https://api.yupay.dev/v1/plate"
 
     def __init__(self, token: Optional[str] = None):
-        # Preferir token inyectado o por defecto el provisto en el plan
-        self.token = token or getattr(settings, 'YUPAY_TOKEN', 'ypk_rwXZFUlsbDVsYrSzTviYIZfLUdIuahvxWjDpOsoDIZaAUXxukUaiYNnQgZhMcYls')
+        self.token = token or getattr(settings, 'YUPAY_TOKEN', None)
+        if not self.token:
+            logger.warning("YUPAY_TOKEN no configurado; las consultas a Yupay.dev fallarán.")
         self.headers = {
             'Authorization': f'Bearer {self.token}',
             'Accept': 'application/json',

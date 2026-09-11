@@ -7,13 +7,37 @@ from django.db import transaction
 from django.utils import timezone
 from apps.inventario.models import Repuesto, InventarioStock, MovimientoInventario
 from .models import (
-    Venta, DetalleVenta, SerieComprobante, SesionCaja, 
-    MovimientoCaja, PagoVenta, CuentaPorCobrar, CuotaCredito
+    Venta, DetalleVenta, SerieComprobante, SesionCaja,
+    MovimientoCaja, PagoVenta, CuentaPorCobrar, CuotaCredito, Impuesto
 )
 
 logger = logging.getLogger(__name__)
 
 class VentasService:
+    @staticmethod
+    def obtener_tasa_impuesto() -> Decimal:
+        """
+        Tasa (en %) del impuesto activo a usar para descomponer un total en
+        subtotal + impuesto. Antes era un 18% hardcodeado en 3 sitios; ahora
+        se lee del catálogo Impuesto (Ventas > Impuestos).
+        """
+        impuesto = Impuesto.objects.filter(estado=True, nombre__iexact='IGV').first()
+        if not impuesto:
+            impuesto = Impuesto.objects.filter(estado=True).order_by('id').first()
+        if not impuesto:
+            logger.warning("No hay ningun Impuesto activo configurado; usando 18%% por defecto.")
+            return Decimal('18.00')
+        return impuesto.tasa
+
+    @staticmethod
+    def descomponer_total_con_impuesto(total: Decimal) -> tuple[Decimal, Decimal]:
+        """Dado un total con impuesto incluido, devuelve (subtotal, monto_impuesto)."""
+        tasa = VentasService.obtener_tasa_impuesto()
+        factor = Decimal('1') + (tasa / Decimal('100'))
+        subtotal = (total / factor).quantize(Decimal('0.01'))
+        igv = total - subtotal
+        return subtotal, igv
+
     @staticmethod
     @transaction.atomic
     def generar_ticket_kiosko(cliente, vehiculo, sucursal, detalles_data: list, kilometraje: int = None) -> Venta:
@@ -55,13 +79,10 @@ class VentasService:
                 subtotal_linea=subtotal_linea
             )
             
-            # TODO: Lógica real de IGV basada en el modelo Impuesto.
-            # Por ahora asumiendo 18% incluido en el precio para simplificar el ejemplo.
             subtotal_acumulado += subtotal_linea
-        
+
         venta.total = subtotal_acumulado
-        venta.subtotal = venta.total / Decimal('1.18')
-        venta.igv = venta.total - venta.subtotal
+        venta.subtotal, venta.igv = VentasService.descomponer_total_con_impuesto(venta.total)
         venta.save()
         
         return venta

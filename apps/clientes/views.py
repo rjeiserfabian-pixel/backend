@@ -5,17 +5,27 @@ from rest_framework import filters
 from .models import Cliente, Proveedor, Transportista
 from .serializers import ClienteSerializer, ProveedorSerializer, TransportistaSerializer
 from .services import ConsultaOrchestrator
+from apps.seguridad.permissions import PermisoPorMetodoMixin
 import logging
 
 logger = logging.getLogger(__name__)
 
-class ClienteViewSet(viewsets.ModelViewSet):
-    queryset = Cliente.objects.all()
+class ClienteViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    permiso_ver = "CONTACTOS.CLIENTES.VER"
+    permiso_crear = "CONTACTOS.CLIENTES.CREAR"
+    permiso_editar = "CONTACTOS.CLIENTES.EDITAR"
+    permiso_eliminar = "CONTACTOS.CLIENTES.ELIMINAR"
+    queryset = Cliente.objects.filter(estado=True)
     serializer_class = ClienteSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['dni', 'nombres', 'apellidos']
     # Reglas del skill Python Seguro aplicadas: la paginación global ya está en settings.py
-    
+
+    def perform_destroy(self, instance):
+        # Soft delete: el campo ya existe para esto pero no se usaba.
+        instance.estado = False
+        instance.save(update_fields=['estado'])
+
     @action(detail=False, methods=['post'], url_path='consulta-dni')
     def consulta_dni(self, request):
         """
@@ -79,20 +89,28 @@ class ClienteViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Error interno del servidor al procesar la consulta.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class ProveedorViewSet(viewsets.ModelViewSet):
-    queryset = Proveedor.objects.all()
+class ProveedorViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    permiso_ver = "CONTACTOS.PROVEEDORES.VER"
+    permiso_crear = "CONTACTOS.PROVEEDORES.CREAR"
+    permiso_editar = "CONTACTOS.PROVEEDORES.EDITAR"
+    permiso_eliminar = "CONTACTOS.PROVEEDORES.ELIMINAR"
+    queryset = Proveedor.objects.filter(estado=True)
     serializer_class = ProveedorSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['numero_documento', 'nombre_o_razon_social']
+
+    def perform_destroy(self, instance):
+        instance.estado = False
+        instance.save(update_fields=['estado'])
 
     @action(detail=False, methods=['post'], url_path='consulta-documento')
     def consulta_documento(self, request):
         tipo_documento = request.data.get('tipo_documento')
         numero_documento = request.data.get('numero_documento')
-        
+
         if not tipo_documento or not numero_documento:
             return Response({'error': 'tipo_documento y numero_documento son obligatorios.'}, status=status.HTTP_400_BAD_REQUEST)
-            
+
         try:
             proveedor = Proveedor.objects.filter(numero_documento=numero_documento).first()
             if proveedor:
@@ -127,11 +145,19 @@ class ProveedorViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Error interno del servidor al procesar la consulta.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class TransportistaViewSet(viewsets.ModelViewSet):
-    queryset = Transportista.objects.all()
+class TransportistaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    permiso_ver = "CONTACTOS.TRANSPORTISTAS.VER"
+    permiso_crear = "CONTACTOS.TRANSPORTISTAS.CREAR"
+    permiso_editar = "CONTACTOS.TRANSPORTISTAS.EDITAR"
+    permiso_eliminar = "CONTACTOS.TRANSPORTISTAS.ELIMINAR"
+    queryset = Transportista.objects.filter(estado=True)
     serializer_class = TransportistaSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['numero_documento', 'nombre_o_razon_social']
+
+    def perform_destroy(self, instance):
+        instance.estado = False
+        instance.save(update_fields=['estado'])
 
     @action(detail=False, methods=['post'], url_path='consulta-documento')
     def consulta_documento(self, request):

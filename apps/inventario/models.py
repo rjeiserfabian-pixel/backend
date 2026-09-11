@@ -91,6 +91,12 @@ class Repuesto(models.Model):
         db_table = 'repuesto'
         verbose_name = 'Repuesto'
         verbose_name_plural = 'Repuestos'
+        constraints = [
+            models.CheckConstraint(condition=models.Q(precio_compra__gte=0), name='repuesto_precio_compra_no_negativo'),
+            models.CheckConstraint(condition=models.Q(precio_por_mayor__gte=0), name='repuesto_precio_por_mayor_no_negativo'),
+            models.CheckConstraint(condition=models.Q(precio_cash__gte=0), name='repuesto_precio_cash_no_negativo'),
+            models.CheckConstraint(condition=models.Q(precio_lista__gte=0), name='repuesto_precio_lista_no_negativo'),
+        ]
 
     def __str__(self):
         return f"{self.codigo} - {self.nombre}"
@@ -220,6 +226,17 @@ class InventarioStock(models.Model):
         indexes = [
             models.Index(fields=['repuesto', 'ubicacion'], name='idx_stock_repuesto_ubicacion'),
         ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(stock_disponible__gte=0), name='inventario_stock_disponible_no_negativo'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(stock_reservado__gte=0), name='inventario_stock_reservado_no_negativo'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(stock_merma__gte=0), name='inventario_stock_merma_no_negativo'
+            ),
+        ]
 
     def __str__(self):
         return f"{self.repuesto.codigo} @ {self.ubicacion.codigo} | Disp: {self.stock_disponible}"
@@ -278,7 +295,7 @@ class MovimientoInventario(models.Model):
         ]
 
     def __str__(self):
-        return f"[{self.tipo_movimiento}] {self.repuesto.codigo} | {self.cantidad:+d} → {self.motivo}"
+        return f"[{self.tipo_movimiento}] {self.repuesto.codigo} | {self.cantidad:+.2f} → {self.motivo}"
 
 
 class TrasladoInventario(models.Model):
@@ -320,6 +337,9 @@ class TrasladoInventarioDetalle(models.Model):
         db_table = 'traslado_inventario_detalle'
         verbose_name = 'Detalle de Traslado'
         verbose_name_plural = 'Detalles de Traslado'
+        constraints = [
+            models.CheckConstraint(condition=models.Q(cantidad__gt=0), name='traslado_detalle_cantidad_positiva'),
+        ]
 
     def __str__(self):
         return f"Detalle Traslado #{self.traslado.id} - {self.repuesto.nombre} ({self.cantidad})"
@@ -375,6 +395,9 @@ class GuiaRemisionDetalle(models.Model):
         db_table = 'inventario_guia_remision_detalle'
         verbose_name = 'Detalle de Guía de Remisión'
         verbose_name_plural = 'Detalles de Guía de Remisión'
+        constraints = [
+            models.CheckConstraint(condition=models.Q(cantidad__gt=0), name='guia_remision_detalle_cantidad_positiva'),
+        ]
 
     def __str__(self):
         return f"Detalle {self.id} - {self.repuesto.nombre}"

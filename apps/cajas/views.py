@@ -7,7 +7,7 @@ Reglas de seguridad aplicadas (python-secure skill):
 - select_related en todos los querysets con FK
 - Paginación en todas las listas
 - transaction.atomic en operaciones multi-paso
-- permission_classes = [IsAuthenticated] en todas las vistas
+- get_permissions() con TienePermiso (catálogo CAJAS.*) en todas las vistas
 - logger.error con contexto en todos los except
 """
 import logging
@@ -17,7 +17,6 @@ from django.db.models import Sum, Q
 from django.utils import timezone
 from rest_framework import viewsets, status, views, pagination
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.ventas.models import (
@@ -30,6 +29,7 @@ from .serializers import (
     TransferenciaCajaSerializer, ArqueoCajaSerializer,
     MetodoPagoSerializer
 )
+from apps.seguridad.permissions import TienePermiso, PermisoPorMetodoMixin
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,8 @@ class DashboardCajasView(views.APIView):
     GET /api/cajas/dashboard/
     Devuelve el resumen de todas las cajas con su sesión activa (o la última).
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        return [TienePermiso("CAJAS.VER")]
 
     def get(self, request):
         try:
@@ -118,11 +119,14 @@ class DashboardCajasView(views.APIView):
 # GESTIÓN DE CAJAS
 # ──────────────────────────────────────────────
 
-class CajaViewSet(viewsets.ModelViewSet):
+class CajaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     """CRUD de cajas (Operativas y Chicas)."""
+    # No existe un código CAJAS.CREAR/EDITAR/ELIMINAR dedicado en el catálogo;
+    # se reutiliza CAJAS.VER también para escritura (limitación documentada).
+    permiso_ver = "CAJAS.VER"
+    permiso_editar = "CAJAS.VER"
     queryset = Caja.objects.select_related('sucursal').filter(estado=True)
     serializer_class = CajaSerializer
-    permission_classes = [IsAuthenticated]
     filterset_fields = ['sucursal', 'tipo', 'estado']
 
 
@@ -137,8 +141,14 @@ class SesionCajaViewSet(viewsets.ReadOnlyModelViewSet):
     """
     queryset = SesionCaja.objects.select_related('caja__sucursal', 'usuario').all()
     serializer_class = SesionCajaResumenSerializer
-    permission_classes = [IsAuthenticated]
     pagination_class = CajasPagination
+
+    def get_permissions(self):
+        if self.action == 'abrir':
+            return [TienePermiso("CAJAS.SESION.ABRIR")]
+        if self.action == 'cerrar':
+            return [TienePermiso("CAJAS.SESION.CERRAR")]
+        return [TienePermiso("CAJAS.HISTORIAL.VER")]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -301,8 +311,16 @@ class MovimientoManualViewSet(viewsets.mixins.CreateModelMixin,
     queryset = MovimientoCaja.objects.select_related(
         'sesion__caja', 'metodo_pago', 'creado_por', 'aprobado_por'
     ).all()
-    permission_classes = [IsAuthenticated]
     pagination_class   = CajasPagination
+
+    def get_permissions(self):
+        if self.action == 'aprobar':
+            return [TienePermiso("CAJAS.MOVIMIENTOS.APROBAR")]
+        if self.action == 'rechazar':
+            return [TienePermiso("CAJAS.MOVIMIENTOS.RECHAZAR")]
+        if self.request.method == 'GET':
+            return [TienePermiso("CAJAS.MOVIMIENTOS.VER")]
+        return [TienePermiso("CAJAS.MOVIMIENTOS.CREAR")]
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -373,8 +391,12 @@ class TransferenciaViewSet(viewsets.mixins.CreateModelMixin,
         'sesion_origen__caja', 'sesion_destino__caja', 'usuario'
     ).all()
     serializer_class   = TransferenciaCajaSerializer
-    permission_classes = [IsAuthenticated]
     pagination_class   = CajasPagination
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("CAJAS.TRANSFERENCIAS.VER")]
+        return [TienePermiso("CAJAS.TRANSFERENCIAS.CREAR")]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -486,7 +508,10 @@ class ArqueoView(views.APIView):
     GET /api/cajas/arqueo/<sesion_id>/calcular/  — Devuelve el saldo teórico en tiempo real.
     POST /api/cajas/arqueo/<sesion_id>/registrar/ — Registra un arqueo parcial (no cierra la sesión).
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        # No existe un código CAJAS.ARQUEO.* dedicado; se reutiliza
+        # CAJAS.SESION.CERRAR por ser la acción semánticamente más cercana.
+        return [TienePermiso("CAJAS.SESION.CERRAR")]
 
     def get(self, request, sesion_id):
         sesion = SesionCaja.objects.filter(id=sesion_id).select_related('caja', 'usuario').first()

@@ -2,7 +2,6 @@ import logging
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
 from django.db.models import Q, Prefetch
 from .models import (
@@ -16,6 +15,7 @@ from .serializers import (
     InventarioStockSerializer, MovimientoInventarioSerializer, TrasladoInventarioSerializer,
     GuiaRemisionSerializer
 )
+from apps.seguridad.permissions import TienePermiso, PermisoPorMetodoMixin
 from rest_framework import filters, pagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.http import HttpResponse
@@ -33,30 +33,39 @@ logger = logging.getLogger(__name__)
 # VIEWSETS EXISTENTES (sin cambios en lógica)
 # ──────────────────────────────────────────────
 
-class UnidadMedidaViewSet(viewsets.ModelViewSet):
+class UnidadMedidaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    # No existe un código UNIDADES.* dedicado en el catálogo; se reutiliza
+    # INVENTARIO.REPUESTOS.* por ser un catálogo auxiliar de Repuestos.
+    permiso_ver = "INVENTARIO.REPUESTOS.VER"
+    permiso_editar = "INVENTARIO.REPUESTOS.EDITAR"
     queryset = UnidadMedida.objects.filter(estado=True).order_by('nombre')
     serializer_class = UnidadMedidaSerializer
-    permission_classes = [IsAuthenticated]
 
     def perform_destroy(self, instance):
         instance.estado = False
         instance.save()
 
 
-class CategoriaViewSet(viewsets.ModelViewSet):
+class CategoriaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    permiso_ver = "INVENTARIO.CATEGORIAS.VER"
+    permiso_crear = "INVENTARIO.CATEGORIAS.CREAR"
+    permiso_editar = "INVENTARIO.CATEGORIAS.EDITAR"
+    permiso_eliminar = "INVENTARIO.CATEGORIAS.ELIMINAR"
     queryset = Categoria.objects.filter(estado=True).order_by('-id')
     serializer_class = CategoriaSerializer
-    permission_classes = [IsAuthenticated]
 
     def perform_destroy(self, instance):
         instance.estado = False
         instance.save()
 
 
-class MarcaRepuestoViewSet(viewsets.ModelViewSet):
+class MarcaRepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    permiso_ver = "INVENTARIO.MARCAS.VER"
+    permiso_crear = "INVENTARIO.MARCAS.CREAR"
+    permiso_editar = "INVENTARIO.MARCAS.EDITAR"
+    permiso_eliminar = "INVENTARIO.MARCAS.ELIMINAR"
     queryset = MarcaRepuesto.objects.filter(estado=True).order_by('-id')
     serializer_class = MarcaRepuestoSerializer
-    permission_classes = [IsAuthenticated]
 
     def perform_destroy(self, instance):
         instance.estado = False
@@ -68,7 +77,11 @@ class RepuestoPagination(pagination.PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-class RepuestoViewSet(viewsets.ModelViewSet):
+class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    permiso_ver = "INVENTARIO.REPUESTOS.VER"
+    permiso_crear = "INVENTARIO.REPUESTOS.CREAR"
+    permiso_editar = "INVENTARIO.REPUESTOS.EDITAR"
+    permiso_eliminar = "INVENTARIO.REPUESTOS.ELIMINAR"
     # select_related y prefetch_related para evitar N+1
     queryset = (
         Repuesto.objects
@@ -87,7 +100,6 @@ class RepuestoViewSet(viewsets.ModelViewSet):
         .order_by('-id')
     )
     serializer_class = RepuestoSerializer
-    permission_classes = [IsAuthenticated]
     pagination_class = RepuestoPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['categoria', 'marca']
@@ -249,11 +261,14 @@ class RepuestoViewSet(viewsets.ModelViewSet):
 # NUEVOS VIEWSETS: ESTRUCTURA FÍSICA
 # ──────────────────────────────────────────────
 
-class SucursalViewSet(viewsets.ModelViewSet):
+class SucursalViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     """CRUD completo de Sucursales."""
+    # No existe un código SUCURSALES.* dedicado; se reutiliza INVENTARIO.ALMACENES.*
+    permiso_ver = "INVENTARIO.ALMACENES.VER"
+    permiso_crear = "INVENTARIO.ALMACENES.CREAR"
+    permiso_editar = "INVENTARIO.ALMACENES.EDITAR"
     queryset = Sucursal.objects.filter(estado=True).order_by('nombre')
     serializer_class = SucursalSerializer
-    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -270,12 +285,14 @@ class SucursalViewSet(viewsets.ModelViewSet):
         logger.info(f"Sucursal desactivada: {instance.nombre} | Usuario: {self.request.user}")
 
 
-class AlmacenViewSet(viewsets.ModelViewSet):
+class AlmacenViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     """CRUD completo de Almacenes. Filtra por sucursal si se pasa ?sucursal=<id>."""
+    permiso_ver = "INVENTARIO.ALMACENES.VER"
+    permiso_crear = "INVENTARIO.ALMACENES.CREAR"
+    permiso_editar = "INVENTARIO.ALMACENES.EDITAR"
     # select_related para evitar N+1 al mostrar sucursal_nombre
     queryset = Almacen.objects.filter(estado=True).select_related('sucursal').order_by('sucursal__nombre', 'nombre')
     serializer_class = AlmacenSerializer
-    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -296,8 +313,11 @@ class AlmacenViewSet(viewsets.ModelViewSet):
         logger.info(f"Almacén desactivado: {instance} | Usuario: {self.request.user}")
 
 
-class UbicacionFisicaViewSet(viewsets.ModelViewSet):
+class UbicacionFisicaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     """CRUD completo de Ubicaciones Físicas. Filtra por almacen si se pasa ?almacen=<id>."""
+    permiso_ver = "INVENTARIO.ALMACENES.VER"
+    permiso_crear = "INVENTARIO.ALMACENES.CREAR"
+    permiso_editar = "INVENTARIO.ALMACENES.EDITAR"
     # select_related para evitar N+1
     queryset = (
         UbicacionFisica.objects
@@ -305,7 +325,6 @@ class UbicacionFisicaViewSet(viewsets.ModelViewSet):
         .order_by('almacen__sucursal__nombre', 'almacen__nombre', 'codigo')
     )
     serializer_class = UbicacionFisicaSerializer
-    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -322,20 +341,21 @@ class UbicacionFisicaViewSet(viewsets.ModelViewSet):
 # NUEVOS VIEWSETS: STOCK Y KARDEX
 # ──────────────────────────────────────────────
 
-class InventarioStockViewSet(viewsets.ModelViewSet):
+class InventarioStockViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     """
     Gestión del stock por ubicación.
     - GET /inventario/stock/?repuesto=<id>  → Ver stock de un repuesto en todas las ubicaciones
     - GET /inventario/stock/?ubicacion=<id> → Ver todos los repuestos en una ubicación
     - PATCH /inventario/stock/<id>/         → Ajustar stock (crea automáticamente el movimiento de Kardex)
     """
+    permiso_ver = "INVENTARIO.REPUESTOS.VER"
+    permiso_editar = "INVENTARIO.REPUESTOS.EDITAR"
     queryset = (
         InventarioStock.objects
         .select_related('repuesto', 'ubicacion__almacen__sucursal')
         .order_by('repuesto__codigo')
     )
     serializer_class = InventarioStockSerializer
-    permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter]
     search_fields = ['repuesto__codigo', 'repuesto__nombre']
 
@@ -405,19 +425,19 @@ class InventarioStockViewSet(viewsets.ModelViewSet):
             )
 
 
-class MovimientoInventarioViewSet(viewsets.ReadOnlyModelViewSet):
+class MovimientoInventarioViewSet(PermisoPorMetodoMixin, viewsets.ReadOnlyModelViewSet):
     """
     Kardex de inventario (solo lectura). El Kardex es inmutable.
     Filtra por ?repuesto=<id> o ?ubicacion=<id>.
     Paginado por defecto (25 registros). Los movimientos más recientes van primero.
     """
+    permiso_ver = "INVENTARIO.KARDEX.VER"
     queryset = (
         MovimientoInventario.objects
         .select_related('repuesto', 'ubicacion__almacen__sucursal', 'usuario')
         .order_by('-fecha')
     )
     serializer_class = MovimientoInventarioSerializer
-    permission_classes = [IsAuthenticated]
     pagination_class = RepuestoPagination
 
     def get_queryset(self):
@@ -441,8 +461,16 @@ class TrasladoInventarioViewSet(viewsets.ModelViewSet):
     """
     queryset = TrasladoInventario.objects.all().select_related('almacen_origen', 'almacen_destino', 'usuario').prefetch_related('detalles__repuesto', 'detalles__ubicacion_origen', 'detalles__ubicacion_destino').order_by('-fecha_traslado')
     serializer_class = TrasladoInventarioSerializer
-    permission_classes = [IsAuthenticated]
     pagination_class = RepuestoPagination
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("INVENTARIO.TRASLADOS.VER")]
+        if self.request.method == 'DELETE':
+            # No hay TRASLADOS.ELIMINAR dedicado; se exige el permiso más alto
+            # disponible ya que un DELETE aquí no revierte el stock movido.
+            return [TienePermiso("INVENTARIO.TRASLADOS.APROBAR")]
+        return [TienePermiso("INVENTARIO.TRASLADOS.CREAR")]
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -557,7 +585,18 @@ class GuiaRemisionViewSet(viewsets.ModelViewSet):
     queryset = GuiaRemision.objects.all().order_by('-id')
     serializer_class = GuiaRemisionSerializer
     pagination_class = RepuestoPagination
-    
+
+    def get_permissions(self):
+        if self.action in ('dar_salida', 'completar_traslado'):
+            return [TienePermiso("INVENTARIO.TRASLADOS.APROBAR")]
+        if self.request.method == 'GET':
+            return [TienePermiso("INVENTARIO.TRASLADOS.VER")]
+        if self.request.method == 'DELETE':
+            # No hay TRASLADOS.ELIMINAR dedicado; se exige el permiso más alto
+            # disponible ya que un DELETE aquí no revierte el stock movido.
+            return [TienePermiso("INVENTARIO.TRASLADOS.APROBAR")]
+        return [TienePermiso("INVENTARIO.TRASLADOS.CREAR")]
+
     def get_queryset(self):
         queryset = super().get_queryset()
         estado = self.request.query_params.get('estado', None)

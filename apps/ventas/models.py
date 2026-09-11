@@ -53,6 +53,16 @@ class SesionCaja(models.Model):
         verbose_name     = 'Sesión de Caja'
         verbose_name_plural = 'Sesiones de Caja'
         ordering         = ['-fecha_apertura']
+        constraints = [
+            # Evita dos sesiones ABIERTA simultáneas en la misma caja (antes
+            # solo se validaba con un .filter().exists() sin bloqueo, con
+            # condición de carrera real bajo uso concurrente).
+            models.UniqueConstraint(
+                fields=['caja'],
+                condition=models.Q(estado='ABIERTA'),
+                name='unica_sesion_abierta_por_caja',
+            ),
+        ]
 
     def __str__(self):
         return f"Sesión {self.id} - {self.caja.nombre} ({self.usuario})"
@@ -225,6 +235,9 @@ class DetalleVenta(models.Model):
         db_table = 'ventas_detalle_venta'
         verbose_name = 'Detalle de Venta'
         verbose_name_plural = 'Detalles de Venta'
+        constraints = [
+            models.CheckConstraint(condition=models.Q(cantidad__gt=0), name='detalle_venta_cantidad_positiva'),
+        ]
 
     def __str__(self):
         nombre = self.repuesto.nombre if self.repuesto else self.descripcion_servicio
@@ -292,6 +305,9 @@ class MovimientoCaja(models.Model):
         verbose_name     = 'Movimiento de Caja'
         verbose_name_plural = 'Movimientos de Caja'
         ordering         = ['-fecha']
+        constraints = [
+            models.CheckConstraint(condition=models.Q(monto__gt=0), name='movimiento_caja_monto_positivo'),
+        ]
 
     def __str__(self):
         return f"[{self.tipo}] {self.monto} - {self.concepto} ({self.metodo_pago.nombre})"
@@ -447,6 +463,13 @@ class TransferenciaCaja(models.Model):
         verbose_name     = 'Transferencia entre Cajas'
         verbose_name_plural = 'Transferencias entre Cajas'
         ordering         = ['-fecha']
+        constraints = [
+            models.CheckConstraint(condition=models.Q(monto__gt=0), name='transferencia_caja_monto_positivo'),
+            models.CheckConstraint(
+                condition=~models.Q(sesion_origen=models.F('sesion_destino')),
+                name='transferencia_caja_origen_distinto_destino',
+            ),
+        ]
 
     def __str__(self):
         return f"Transferencia S/ {self.monto}: {self.sesion_origen.caja.nombre} → {self.sesion_destino.caja.nombre}"

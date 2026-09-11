@@ -157,5 +157,37 @@ class TienePermiso(BasePermission):
         return False
 
 
+class PermisoPorMetodoMixin:
+    """
+    Mixin para ViewSets de catálogo/configuración simples: gatea por método
+    HTTP reutilizando los códigos de permiso declarados en la subclase.
+
+    Uso mínimo (solo VER/EDITAR, cuando el catálogo no tiene códigos
+    dedicados de CREAR/ELIMINAR):
+        class MetodoPagoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+            permiso_ver = "VENTAS.CONFIGURACION.VER"
+            permiso_editar = "VENTAS.CONFIGURACION.EDITAR"
+
+    Uso completo (cuando existen los 4 códigos VER/CREAR/EDITAR/ELIMINAR):
+        permiso_ver / permiso_crear / permiso_editar / permiso_eliminar
+    """
+    permiso_ver = None
+    permiso_crear = None
+    permiso_editar = None
+    permiso_eliminar = None
+
+    def get_permissions(self):
+        method = self.request.method
+        if method == "GET":
+            codigo = self.permiso_ver
+        elif method == "POST":
+            codigo = self.permiso_crear or self.permiso_editar
+        elif method == "DELETE":
+            codigo = self.permiso_eliminar or self.permiso_editar
+        else:
+            codigo = self.permiso_editar
+        return [TienePermiso(codigo)]
+
+
 # Importación local para evitar circular imports
 from django.db.models import Q as models_Q  # noqa: E402

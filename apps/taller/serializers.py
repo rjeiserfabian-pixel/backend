@@ -36,6 +36,11 @@ class OrdenRepuestoSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrdenRepuesto
         fields = ['id', 'orden', 'repuesto', 'repuesto_detalle', 'cantidad', 'precio_unitario', 'aprobado_cliente', 'entregado_por_almacen', 'instalado']
+        # aprobado_cliente/instalado solo deben cambiar vía las acciones dedicadas
+        # (aprobar_servicios / marcar_instalado), que mantienen sincronizado el
+        # stock reservado. Un PATCH directo a estos campos desincronizaba stock
+        # y estado (bug real ya detectado y corregido).
+        read_only_fields = ['aprobado_cliente', 'instalado']
 
 class OrdenTrabajoListSerializer(serializers.ModelSerializer):
     vehiculo_placa = serializers.CharField(source='vehiculo.placa', read_only=True)

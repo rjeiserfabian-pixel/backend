@@ -76,6 +76,7 @@ class CuentaPorPagar(models.Model):
         ('Pendiente', 'Pendiente'),
         ('Parcial', 'Pago Parcial'),
         ('Pagada', 'Pagada'),
+        ('Anulada', 'Anulada'),
     ]
 
     compra = models.OneToOneField(Compra, on_delete=models.CASCADE, related_name='cuenta_por_pagar')

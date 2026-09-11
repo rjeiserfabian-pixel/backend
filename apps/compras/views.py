@@ -3,10 +3,13 @@ from django.db import transaction
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 
 from .models import Compra, DetalleCompra, CuentaPorPagar, PagoCuenta, TipoComprobanteCompra
 from .serializers import CompraSerializer, CuentaPorPagarSerializer, PagoCuentaSerializer, TipoComprobanteCompraSerializer
 from apps.inventario.models import Repuesto, InventarioStock, MovimientoInventario, UbicacionFisica
+from apps.seguridad.permissions import TienePermiso
 
 class TipoComprobanteCompraViewSet(viewsets.ModelViewSet):
     queryset = TipoComprobanteCompra.objects.all()
@@ -17,6 +20,32 @@ class CompraViewSet(viewsets.ModelViewSet):
     queryset = Compra.objects.all().select_related('proveedor', 'usuario')
     serializer_class = CompraSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action == 'anular':
+            return [TienePermiso("COMPRAS.ELIMINAR")]
+        return super().get_permissions()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        params = self.request.query_params
+        proveedor_id = params.get('proveedor_id')
+        estado = params.get('estado')
+        tipo_pago = params.get('tipo_pago')
+        fecha_desde = params.get('fecha_desde')
+        fecha_hasta = params.get('fecha_hasta')
+
+        if proveedor_id:
+            qs = qs.filter(proveedor_id=proveedor_id)
+        if estado:
+            qs = qs.filter(estado=estado)
+        if tipo_pago:
+            qs = qs.filter(tipo_pago=tipo_pago)
+        if fecha_desde:
+            qs = qs.filter(fecha_emision__gte=fecha_desde)
+        if fecha_hasta:
+            qs = qs.filter(fecha_emision__lte=fecha_hasta)
+        return qs
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -128,8 +157,68 @@ class CompraViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
+    @action(detail=True, methods=['post'], url_path='anular')
+    @transaction.atomic
+    def anular(self, request, pk=None):
+        """
+        Anula una compra: revierte el stock y el kardex generados al registrarla,
+        y marca su cuenta por pagar (si existe) como Anulada. No recalcula
+        retroactivamente el costo promedio ponderado del repuesto (limitación
+        aceptada: requeriría trazabilidad de lotes/FIFO que el sistema no maneja).
+        """
+        compra = self.get_object()
 
-from rest_framework.decorators import action
+        if compra.estado == 'Anulada':
+            raise ValidationError("Esta compra ya se encuentra anulada.")
+
+        cuenta_por_pagar = getattr(compra, 'cuenta_por_pagar', None)
+        if cuenta_por_pagar and cuenta_por_pagar.monto_pagado > 0:
+            raise ValidationError(
+                "No se puede anular: esta compra tiene pagos registrados. "
+                "Reversa los pagos antes de anularla."
+            )
+
+        movimientos_originales = MovimientoInventario.objects.select_related('repuesto', 'ubicacion').filter(
+            referencia_tipo='COMPRA',
+            referencia_id=compra.id,
+            tipo_movimiento=MovimientoInventario.TipoMovimiento.ENTRADA,
+        )
+
+        for movimiento in movimientos_originales:
+            inventario = InventarioStock.objects.select_for_update().get(
+                repuesto=movimiento.repuesto, ubicacion=movimiento.ubicacion
+            )
+            if inventario.stock_disponible < movimiento.cantidad:
+                raise ValidationError(
+                    f"No se puede anular: el repuesto '{movimiento.repuesto.codigo}' ya no tiene "
+                    "suficiente stock disponible (posiblemente ya fue vendido o trasladado)."
+                )
+
+            inventario.stock_disponible -= movimiento.cantidad
+            inventario.save()
+
+            MovimientoInventario.objects.create(
+                repuesto=movimiento.repuesto,
+                ubicacion=movimiento.ubicacion,
+                tipo_movimiento=MovimientoInventario.TipoMovimiento.SALIDA,
+                cantidad=movimiento.cantidad,
+                stock_resultante=inventario.stock_disponible,
+                motivo=f"Anulación de compra {compra.serie}-{compra.numero_comprobante}",
+                usuario=request.user,
+                referencia_id=compra.id,
+                referencia_tipo='COMPRA_ANULACION',
+            )
+
+        if cuenta_por_pagar:
+            cuenta_por_pagar.estado = 'Anulada'
+            cuenta_por_pagar.save()
+
+        compra.estado = 'Anulada'
+        compra.save()
+
+        serializer = self.get_serializer(compra)
+        return Response(serializer.data)
+
 
 class CuentaPorPagarViewSet(viewsets.ModelViewSet):
     queryset = CuentaPorPagar.objects.all().select_related('proveedor', 'compra')
@@ -139,8 +228,11 @@ class CuentaPorPagarViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         proveedor_id = self.request.query_params.get('proveedor_id')
+        compra_id = self.request.query_params.get('compra_id')
         if proveedor_id:
             qs = qs.filter(proveedor_id=proveedor_id)
+        if compra_id:
+            qs = qs.filter(compra_id=compra_id)
         return qs.order_by('-creado_en')
 
     @action(detail=False, methods=['get'], url_path='resumen-proveedores')

@@ -356,6 +356,8 @@ class AsignarPermisosRolView(APIView):
 class PermisoListView(ListCreateAPIView):
     """GET /api/seguridad/permisos/ → Catálogo de permisos del sistema."""
     serializer_class = PermisoSerializer
+    pagination_class = None
+
     def get_permissions(self):
         return [TienePermiso("SEGURIDAD.ROLES.VER")]
 

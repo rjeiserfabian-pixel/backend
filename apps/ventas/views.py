@@ -21,6 +21,7 @@ from .services import VentasService, CreditoService
 from apps.inventario.models import Sucursal, Almacen, Repuesto
 from apps.clientes.models import Cliente
 from apps.vehiculos.models import Vehiculo
+from apps.seguridad.permissions import TienePermiso, PermisoPorMetodoMixin
 
 logger = logging.getLogger(__name__)
 
@@ -28,33 +29,47 @@ logger = logging.getLogger(__name__)
 # MANTENIMIENTO (CONFIGURACIONES)
 # ──────────────────────────────────────────────
 
-class MetodoPagoViewSet(viewsets.ModelViewSet):
+class MetodoPagoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    permiso_ver = "VENTAS.CONFIGURACION.VER"
+    permiso_editar = "VENTAS.CONFIGURACION.EDITAR"
     queryset = MetodoPago.objects.all()
     serializer_class = MetodoPagoSerializer
 
 
-class ImpuestoViewSet(viewsets.ModelViewSet):
+class ImpuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    permiso_ver = "VENTAS.CONFIGURACION.VER"
+    permiso_editar = "VENTAS.CONFIGURACION.EDITAR"
     queryset = Impuesto.objects.all()
     serializer_class = ImpuestoSerializer
 
 
-class TipoComprobanteViewSet(viewsets.ModelViewSet):
+class TipoComprobanteViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    permiso_ver = "VENTAS.CONFIGURACION.VER"
+    permiso_editar = "VENTAS.CONFIGURACION.EDITAR"
     queryset = TipoComprobante.objects.all()
     serializer_class = TipoComprobanteSerializer
 
 
-class SerieComprobanteViewSet(viewsets.ModelViewSet):
+class SerieComprobanteViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    permiso_ver = "VENTAS.CONFIGURACION.VER"
+    permiso_editar = "VENTAS.CONFIGURACION.EDITAR"
     queryset = SerieComprobante.objects.select_related('sucursal', 'tipo_comprobante').all()
     serializer_class = SerieComprobanteSerializer
     filterset_fields = ['sucursal', 'tipo_comprobante', 'estado']
 
-class SerieDocumentoInternoViewSet(viewsets.ModelViewSet):
+class SerieDocumentoInternoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    permiso_ver = "VENTAS.CONFIGURACION.VER"
+    permiso_editar = "VENTAS.CONFIGURACION.EDITAR"
     queryset = SerieDocumentoInterno.objects.select_related('sucursal').all()
     serializer_class = SerieDocumentoInternoSerializer
     filterset_fields = ['sucursal', 'tipo_documento', 'estado']
 
 
-class CajaViewSet(viewsets.ModelViewSet):
+class CajaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    # No existe un código CAJAS.CREAR/EDITAR/ELIMINAR dedicado en el catálogo;
+    # se reutiliza CAJAS.VER también para escritura (limitación documentada).
+    permiso_ver = "CAJAS.VER"
+    permiso_editar = "CAJAS.VER"
     queryset = Caja.objects.all()
     serializer_class = CajaSerializer
 
@@ -63,9 +78,18 @@ class CajaViewSet(viewsets.ModelViewSet):
 # CAJA Y SESIONES
 # ──────────────────────────────────────────────
 
-class SesionCajaViewSet(viewsets.ModelViewSet):
+class SesionCajaViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = SesionCaja.objects.all()
     serializer_class = SesionCajaSerializer
+
+    def get_permissions(self):
+        if self.action == 'aperturar':
+            return [TienePermiso("CAJAS.SESION.ABRIR")]
+        if self.action == 'cerrar':
+            return [TienePermiso("CAJAS.SESION.CERRAR")]
+        if self.request.method == 'GET':
+            return [TienePermiso("CAJAS.HISTORIAL.VER")]
+        return [TienePermiso("CAJAS.VER")]
 
     @action(detail=False, methods=['post'])
     def aperturar(self, request):
@@ -90,11 +114,17 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def cerrar(self, request, pk=None):
         sesion = self.get_object()
+        if sesion.estado != SesionCaja.Estado.ABIERTA:
+            return Response({"error": "Esta sesión ya está cerrada."}, status=status.HTTP_400_BAD_REQUEST)
+
         saldo_fisico_declarado = request.data.get('saldo_cierre_real', 0.00)
-        
-        # Calcular saldo esperado sumando movimientos
-        ingresos = sesion.movimientos.filter(tipo=MovimientoCaja.Tipo.INGRESO).aggregate(t=Sum('monto'))['t'] or 0
-        egresos = sesion.movimientos.filter(tipo=MovimientoCaja.Tipo.EGRESO).aggregate(t=Sum('monto'))['t'] or 0
+
+        # Calcular saldo esperado sumando solo movimientos APROBADOS (un movimiento
+        # manual PENDIENTE de aprobación, registrado desde el módulo Cajas sobre esta
+        # misma sesión, no debe contarse en el cierre — bug real ya corregido aquí).
+        movimientos_aprobados = sesion.movimientos.filter(estado_movimiento=MovimientoCaja.EstadoMovimiento.APROBADO)
+        ingresos = movimientos_aprobados.filter(tipo=MovimientoCaja.Tipo.INGRESO).aggregate(t=Sum('monto'))['t'] or 0
+        egresos = movimientos_aprobados.filter(tipo=MovimientoCaja.Tipo.EGRESO).aggregate(t=Sum('monto'))['t'] or 0
         saldo_esperado = float(sesion.saldo_inicial) + float(ingresos) - float(egresos)
         
         sesion.saldo_cierre_esperado = saldo_esperado
@@ -109,9 +139,9 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='reporte-cierre')
     def reporte_cierre(self, request, pk=None):
         sesion = self.get_object()
-        
-        # Agrupar ingresos por método de pago
-        movimientos = sesion.movimientos.all()
+
+        # Agrupar ingresos por método de pago (solo movimientos APROBADOS)
+        movimientos = sesion.movimientos.filter(estado_movimiento=MovimientoCaja.EstadoMovimiento.APROBADO)
         por_metodo = {}
         por_concepto = {}
         
@@ -144,11 +174,15 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='detalle-activa')
     def detalle_activa(self, request, pk=None):
         sesion = self.get_object()
-        
-        ingresos = sesion.movimientos.filter(tipo=MovimientoCaja.Tipo.INGRESO).aggregate(t=Sum('monto'))['t'] or 0
-        egresos = sesion.movimientos.filter(tipo=MovimientoCaja.Tipo.EGRESO).aggregate(t=Sum('monto'))['t'] or 0
+
+        # Solo movimientos APROBADOS entran al saldo (ver nota en `cerrar`); la lista
+        # de movimientos que se muestra abajo sí incluye pendientes, para que el
+        # cajero vea que existen aunque todavía no afecten su saldo.
+        movimientos_aprobados = sesion.movimientos.filter(estado_movimiento=MovimientoCaja.EstadoMovimiento.APROBADO)
+        ingresos = movimientos_aprobados.filter(tipo=MovimientoCaja.Tipo.INGRESO).aggregate(t=Sum('monto'))['t'] or 0
+        egresos = movimientos_aprobados.filter(tipo=MovimientoCaja.Tipo.EGRESO).aggregate(t=Sum('monto'))['t'] or 0
         saldo_actual = float(sesion.saldo_inicial) + float(ingresos) - float(egresos)
-        
+
         movimientos = sesion.movimientos.all().order_by('-fecha')
         
         paginator = pagination.PageNumberPagination()
@@ -179,6 +213,11 @@ class VentaViewSet(viewsets.ModelViewSet):
     queryset = Venta.objects.all().order_by('-creado_en')
     serializer_class = VentaSerializer
     pagination_class = VentaPagination
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("VENTAS.POS.VER")]
+        return [TienePermiso("VENTAS.POS.CREAR")]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -325,15 +364,15 @@ class VentaViewSet(viewsets.ModelViewSet):
                     )
                     
                 venta.total = subtotal_acumulado
-                venta.subtotal = venta.total / Decimal('1.18')
-                venta.igv = venta.total - venta.subtotal
+                venta.subtotal, venta.igv = VentasService.descomponer_total_con_impuesto(venta.total)
                 venta.save()
-            
+
             # 2. Procesar (Caja, Stock, etc)
             tipo_comprobante = TipoComprobante.objects.get(id=data['tipo_comprobante_id'])
             
-            # Correlativo
-            serie_obj = SerieComprobante.objects.filter(id=data['serie_id']).first()
+            # Correlativo — select_for_update() evita que dos ventas concurrentes
+            # lean el mismo correlativo_actual y generen números duplicados.
+            serie_obj = SerieComprobante.objects.select_for_update().filter(id=data['serie_id']).first()
             correlativo = serie_obj.generar_siguiente_correlativo()
             serie_obj.correlativo_actual += 1
             serie_obj.save()
@@ -475,6 +514,15 @@ class CuentaPorCobrarViewSet(viewsets.ModelViewSet):
     queryset = CuentaPorCobrar.objects.select_related('venta__cliente').prefetch_related('cuotas').all()
     serializer_class = CuentaPorCobrarSerializer
     pagination_class = VentaPagination
+
+    def get_permissions(self):
+        if self.action == 'pagar_cuota':
+            return [TienePermiso("CUENTAS.POR_COBRAR.REGISTRAR_PAGO")]
+        if self.request.method == 'GET':
+            return [TienePermiso("CUENTAS.POR_COBRAR.VER")]
+        # No hay código CREAR/EDITAR/ELIMINAR dedicado para cuentas por cobrar
+        # fuera del registro de pagos; se reutiliza REGISTRAR_PAGO.
+        return [TienePermiso("CUENTAS.POR_COBRAR.REGISTRAR_PAGO")]
 
     def get_queryset(self):
         qs = super().get_queryset()

@@ -11,15 +11,15 @@ Reglas aplicadas:
 """
 import logging
 import io
-from datetime import date, datetime
+from datetime import date
 
 from django.db.models import Sum, Count, F, Q, Value, DecimalField, ExpressionWrapper
 from django.db.models.functions import Coalesce, TruncDate
 from django.http import HttpResponse
-from django.utils.timezone import make_aware, is_naive
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError
 from rest_framework import status
 
 from apps.ventas.models import (
@@ -30,6 +30,7 @@ from apps.inventario.models import Repuesto, Sucursal
 from apps.clientes.models import Cliente
 from apps.taller.models import OrdenTrabajo
 from apps.vehiculos.models import Vehiculo
+from apps.seguridad.permissions import TienePermiso
 
 logger = logging.getLogger(__name__)
 
@@ -42,30 +43,45 @@ def _parse_date_range(request):
     """
     Lee 'fecha_inicio' y 'fecha_fin' del query string.
     Si no se envían, usa el primer y último día del mes actual.
+    Si se envían pero con un formato inválido, rechaza la petición
+    (antes se ignoraba en silencio y se usaba el mes actual, ocultando
+    el error del usuario).
     Retorna dos objetos date.
     """
     today = date.today()
-    fecha_inicio_str = request.query_params.get("fecha_inicio", today.replace(day=1).isoformat())
-    fecha_fin_str = request.query_params.get("fecha_fin", today.isoformat())
+    fecha_inicio_str = request.query_params.get("fecha_inicio")
+    fecha_fin_str = request.query_params.get("fecha_fin")
     try:
-        fecha_inicio = date.fromisoformat(fecha_inicio_str)
-        fecha_fin = date.fromisoformat(fecha_fin_str)
+        fecha_inicio = date.fromisoformat(fecha_inicio_str) if fecha_inicio_str else today.replace(day=1)
+        fecha_fin = date.fromisoformat(fecha_fin_str) if fecha_fin_str else today
     except ValueError:
-        fecha_inicio = today.replace(day=1)
-        fecha_fin = today
+        raise ValidationError("fecha_inicio y fecha_fin deben tener formato YYYY-MM-DD.")
     return fecha_inicio, fecha_fin
 
 
-def _to_aware(d: date, end: bool = False):
-    """Convierte un date a datetime aware (Lima). Si end=True, usa 23:59:59."""
-    from django.utils import timezone
-    if end:
-        dt = datetime(d.year, d.month, d.day, 23, 59, 59)
-    else:
-        dt = datetime(d.year, d.month, d.day, 0, 0, 0)
-    if is_naive(dt):
-        dt = make_aware(dt)
-    return dt
+def _totales_ventas_en_soles(qs):
+    """
+    Suma subtotal/igv/total de un queryset de Venta convirtiendo cada fila
+    a soles con su propio tipo_cambio (soles por unidad de moneda
+    extranjera, 1.0000 para ventas en soles) antes de sumar. Sumar montos
+    de monedas distintas sin convertir da un total sin sentido.
+    """
+    conversion = qs.aggregate(
+        subtotal=Sum(
+            ExpressionWrapper(F("subtotal") * F("tipo_cambio"), output_field=DecimalField(max_digits=14, decimal_places=2))
+        ),
+        igv=Sum(
+            ExpressionWrapper(F("igv") * F("tipo_cambio"), output_field=DecimalField(max_digits=14, decimal_places=2))
+        ),
+        total=Sum(
+            ExpressionWrapper(F("total") * F("tipo_cambio"), output_field=DecimalField(max_digits=14, decimal_places=2))
+        ),
+    )
+    return {
+        "subtotal": float(conversion["subtotal"] or 0),
+        "igv": float(conversion["igv"] or 0),
+        "total": float(conversion["total"] or 0),
+    }
 
 
 def _exportar_excel(headers: list, rows: list, sheet_name: str = "Reporte") -> HttpResponse:
@@ -126,17 +142,96 @@ def _exportar_pdf(title: str, headers: list, rows: list) -> HttpResponse:
             content_type="text/plain",
         )
 
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+    from reportlab.platypus import Image
+    from datetime import datetime
+    from apps.seguridad.models import Empresa
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=1.5 * cm, rightMargin=1.5 * cm)
     styles = getSampleStyleSheet()
     elements = []
 
-    # Título
-    elements.append(Paragraph(title, styles["Title"]))
+    # Obtener configuración de empresa
+    empresa = Empresa.objects.first()
+    
+    # 1. Logo (Izquierda)
+    logo_element = ""
+    if empresa and empresa.logo:
+        try:
+            # reportlab Image soporta ruta de archivo local
+            logo_img = Image(empresa.logo.path)
+            # escalar a 2.5cm de alto aprox conservando la proporción
+            aspect = logo_img.drawWidth / logo_img.drawHeight
+            logo_img.drawHeight = 2.5 * cm
+            logo_img.drawWidth = 2.5 * cm * aspect
+            logo_element = logo_img
+        except Exception:
+            pass
+
+    # 2. Título (Centro)
+    titulo_element = Paragraph(title, styles["Title"])
+
+    # 3. Empresa Info (Derecha)
+    info_style = ParagraphStyle(
+        name="InfoStyle",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        textColor=colors.black,
+        alignment=TA_RIGHT,
+    )
+    razon_social = empresa.razon_social if empresa else "Sistema de Gestión"
+    fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M")
+    info_text = f"<b>{razon_social}</b><br/>Fecha: {fecha_actual}"
+    info_element = Paragraph(info_text, info_style)
+
+    # Crear tabla para el encabezado (3 columnas sin bordes)
+    ancho_total = landscape(A4)[0] - 3 * cm
+    col_izq = 5 * cm
+    col_der = 5 * cm
+    col_cen = ancho_total - col_izq - col_der
+
+    header_table = Table(
+        [[logo_element, titulo_element, info_element]],
+        colWidths=[col_izq, col_cen, col_der],
+    )
+    header_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (0, 0), "LEFT"),
+        ("ALIGN", (1, 0), (1, 0), "CENTER"),
+        ("ALIGN", (2, 0), (2, 0), "RIGHT"),
+    ]))
+    
+    elements.append(header_table)
     elements.append(Spacer(1, 0.5 * cm))
 
+    # Estilos de párrafo para la tabla (permite salto de línea automático)
+    header_style = ParagraphStyle(
+        name="HeaderStyle",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=9,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+    
+    row_style = ParagraphStyle(
+        name="RowStyle",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        textColor=colors.black,
+        alignment=TA_CENTER,
+    )
+
+    # Envolver contenido en Paragraph
+    wrapped_headers = [Paragraph(str(h), header_style) for h in headers]
+    wrapped_rows = [[Paragraph(str(cell) if cell is not None else "", row_style) for cell in row] for row in rows]
+
     # Tabla
-    table_data = [headers] + rows
+    table_data = [wrapped_headers] + wrapped_rows
     col_count = len(headers)
     col_width = (landscape(A4)[0] - 3 * cm) / col_count
 
@@ -175,12 +270,16 @@ class ReporteCajaView(APIView):
     GET /api/reportes/caja/
     Parámetros: fecha_inicio, fecha_fin, caja_id (opcional), formato (json|excel|pdf)
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        # No existe un código REPORTES.CAJA.VER dedicado; se reutiliza CAJAS.VER.
+        return [TienePermiso("CAJAS.VER")]
 
     def get(self, request):
         fecha_inicio, fecha_fin = _parse_date_range(request)
         caja_id = request.query_params.get("caja_id")
         formato = request.query_params.get("formato", "json")
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 50)), 200)
 
         # Filtrar sesiones en el rango de fechas
         sesiones_qs = (
@@ -193,13 +292,54 @@ class ReporteCajaView(APIView):
         )
         if caja_id:
             sesiones_qs = sesiones_qs.filter(caja_id=caja_id)
+        sesiones_qs = sesiones_qs.order_by("-fecha_apertura")
 
-        # Traer todos los movimientos de esas sesiones en un solo query
-        sesion_ids = list(sesiones_qs.values_list("id", flat=True))
+        if formato in ("excel", "pdf"):
+            # Para exportar traemos todas las sesiones sin paginar (límite 5000)
+            data = self._construir_data(sesiones_qs[:5000])
+            headers = ["Caja", "Sucursal", "Usuario", "Apertura", "Cierre", "Saldo Inicial",
+                       "Saldo Cierre", "Efectivo", "Tarjeta", "Yape", "Plin", "Estado"]
+            if formato == "excel":
+                rows = [
+                    [d["caja"], d["sucursal"], d["usuario"], d["fecha_apertura"], d["fecha_cierre"],
+                     d["saldo_inicial"], d["saldo_cierre_real"], d["efectivo"], d["tarjeta"],
+                     d["yape"], d["plin"], d["estado"]]
+                    for d in data
+                ]
+                return _exportar_excel(headers, rows, "Reporte_Caja")
+            headers_pdf = ["Caja", "Sucursal", "Apertura", "Cierre", "S. Inicial", "S. Cierre", "Efectivo", "Tarjeta", "Yape", "Plin"]
+            rows = [
+                [d["caja"], d["sucursal"], d["fecha_apertura"], d["fecha_cierre"],
+                 str(d["saldo_inicial"]), str(d["saldo_cierre_real"]),
+                 str(d["efectivo"]), str(d["tarjeta"]), str(d["yape"]), str(d["plin"])]
+                for d in data
+            ]
+            return _exportar_pdf("Reporte de Caja", headers_pdf, rows)
+
+        total = sesiones_qs.count()
+        offset = (page - 1) * page_size
+        data = self._construir_data(sesiones_qs[offset: offset + page_size])
+
+        return Response({
+            "data": data,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size,
+        })
+
+    def _construir_data(self, sesiones_qs):
+        # Traer todos los movimientos APROBADOS de esas sesiones en un solo query.
+        # Un movimiento pendiente o rechazado no debe inflar el saldo mostrado.
+        sesion_ids = [s.id for s in sesiones_qs]
         movimientos_qs = (
             MovimientoCaja.objects
             .select_related("metodo_pago")
-            .filter(sesion_id__in=sesion_ids, tipo=MovimientoCaja.Tipo.INGRESO)
+            .filter(
+                sesion_id__in=sesion_ids,
+                tipo=MovimientoCaja.Tipo.INGRESO,
+                estado_movimiento=MovimientoCaja.EstadoMovimiento.APROBADO,
+            )
             .values("sesion_id", "metodo_pago__nombre")
             .annotate(total=Sum("monto"), cantidad=Count("id"))
         )
@@ -222,7 +362,7 @@ class ReporteCajaView(APIView):
                 "id_sesion": sesion.id,
                 "caja": sesion.caja.nombre,
                 "sucursal": sesion.caja.sucursal.nombre,
-                "usuario": f"{sesion.usuario.nombre} {sesion.usuario.apellidos}",
+                "usuario": f"{sesion.usuario.nombres} {sesion.usuario.apellidos}",
                 "fecha_apertura": sesion.fecha_apertura.strftime("%d/%m/%Y %H:%M"),
                 "fecha_cierre": sesion.fecha_cierre.strftime("%d/%m/%Y %H:%M") if sesion.fecha_cierre else "Abierta",
                 "saldo_inicial": float(sesion.saldo_inicial),
@@ -233,29 +373,7 @@ class ReporteCajaView(APIView):
                 "plin": movs.get("PLIN", {}).get("total", 0),
                 "estado": sesion.estado,
             })
-
-        if formato == "excel":
-            headers = ["Caja", "Sucursal", "Usuario", "Apertura", "Cierre", "Saldo Inicial",
-                       "Saldo Cierre", "Efectivo", "Tarjeta", "Yape", "Plin", "Estado"]
-            rows = [
-                [d["caja"], d["sucursal"], d["usuario"], d["fecha_apertura"], d["fecha_cierre"],
-                 d["saldo_inicial"], d["saldo_cierre_real"], d["efectivo"], d["tarjeta"],
-                 d["yape"], d["plin"], d["estado"]]
-                for d in data
-            ]
-            return _exportar_excel(headers, rows, "Reporte_Caja")
-
-        if formato == "pdf":
-            headers = ["Caja", "Sucursal", "Apertura", "Cierre", "S. Inicial", "S. Cierre", "Efectivo", "Tarjeta", "Yape", "Plin"]
-            rows = [
-                [d["caja"], d["sucursal"], d["fecha_apertura"], d["fecha_cierre"],
-                 str(d["saldo_inicial"]), str(d["saldo_cierre_real"]),
-                 str(d["efectivo"]), str(d["tarjeta"]), str(d["yape"]), str(d["plin"])]
-                for d in data
-            ]
-            return _exportar_pdf("Reporte de Caja", headers, rows)
-
-        return Response({"data": data, "total_registros": len(data)})
+        return data
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -269,7 +387,10 @@ class ReporteVentasView(APIView):
                 vendedor_id, producto_id, formato (json|excel|pdf)
     Paginado: page, page_size (default 50)
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        if self.request.query_params.get('formato') in ('excel', 'pdf'):
+            return [TienePermiso("REPORTES.VENTAS.EXPORTAR")]
+        return [TienePermiso("REPORTES.VENTAS.VER")]
 
     def get(self, request):
         fecha_inicio, fecha_fin = _parse_date_range(request)
@@ -289,7 +410,7 @@ class ReporteVentasView(APIView):
                 "sucursal",
                 "sesion_caja__usuario",
             )
-            .exclude(estado=Venta.Estado.PRE_VENTA)
+            .exclude(estado__in=[Venta.Estado.PRE_VENTA, Venta.Estado.ANULADA])
             .filter(
                 fecha_emision__date__gte=fecha_inicio,
                 fecha_emision__date__lte=fecha_fin,
@@ -314,7 +435,7 @@ class ReporteVentasView(APIView):
             vendedor = ""
             if v.sesion_caja and v.sesion_caja.usuario:
                 u = v.sesion_caja.usuario
-                vendedor = f"{u.nombre} {u.apellidos}"
+                vendedor = f"{u.nombres} {u.apellidos}"
             data.append({
                 "id": v.id,
                 "fecha_emision": v.fecha_emision.strftime("%d/%m/%Y") if v.fecha_emision else "",
@@ -339,7 +460,7 @@ class ReporteVentasView(APIView):
                 vendedor = ""
                 if v.sesion_caja and v.sesion_caja.usuario:
                     u = v.sesion_caja.usuario
-                    vendedor = f"{u.nombre} {u.apellidos}"
+                    vendedor = f"{u.nombres} {u.apellidos}"
                 all_data.append([
                     v.fecha_emision.strftime("%d/%m/%Y") if v.fecha_emision else "",
                     v.tipo_comprobante.nombre if v.tipo_comprobante else "—",
@@ -366,11 +487,10 @@ class ReporteVentasView(APIView):
             "page": page,
             "page_size": page_size,
             "total_pages": (total + page_size - 1) // page_size,
-            "totales": {
-                "subtotal": float(qs.aggregate(s=Sum("subtotal"))["s"] or 0),
-                "igv": float(qs.aggregate(s=Sum("igv"))["s"] or 0),
-                "total": float(qs.aggregate(s=Sum("total"))["s"] or 0),
-            },
+            # Ventas en distintas monedas se convierten a soles usando el
+            # tipo_cambio guardado en cada venta antes de sumar (nunca se
+            # deben sumar montos de monedas distintas directamente).
+            "totales": _totales_ventas_en_soles(qs),
         })
 
 
@@ -385,7 +505,10 @@ class ReporteProductosView(APIView):
                 formato (json|excel|pdf)
     Paginado: page, page_size (default 50)
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        # No existe un código REPORTES.PRODUCTOS.EXPORTAR dedicado; se
+        # reutiliza REPORTES.PRODUCTOS.VER también para exportar.
+        return [TienePermiso("REPORTES.PRODUCTOS.VER")]
 
     def get(self, request):
         categoria_id = request.query_params.get("categoria_id")
@@ -398,13 +521,25 @@ class ReporteProductosView(APIView):
         qs = (
             Repuesto.objects
             .select_related("categoria", "marca", "unidad_medida")
-            .prefetch_related("stocks")
             .filter(estado=True)
+            .annotate(
+                stock_total=Coalesce(
+                    Sum("inventario_stock__stock_disponible"),
+                    Value(0),
+                    output_field=DecimalField(max_digits=12, decimal_places=2),
+                )
+            )
         )
         if categoria_id:
             qs = qs.filter(categoria_id=categoria_id)
         if marca_id:
             qs = qs.filter(marca_id=marca_id)
+        if stock_estado == "agotado":
+            qs = qs.filter(stock_total__lte=0)
+        elif stock_estado == "bajo":
+            qs = qs.filter(stock_total__gt=0, stock_total__lte=5)
+        elif stock_estado == "normal":
+            qs = qs.filter(stock_total__gt=5)
 
         total = qs.count()
         offset = (page - 1) * page_size
@@ -412,14 +547,6 @@ class ReporteProductosView(APIView):
 
         data = []
         for r in repuestos:
-            # Stock total a través de la propiedad ya definida en el modelo
-            stock = sum(s.cantidad for s in r.stocks.all() if s.cantidad > 0)
-            if stock_estado == "agotado" and stock > 0:
-                continue
-            if stock_estado == "bajo" and stock > 5:
-                continue
-            if stock_estado == "normal" and stock <= 5:
-                continue
             data.append({
                 "id": r.id,
                 "codigo": r.codigo,
@@ -430,7 +557,7 @@ class ReporteProductosView(APIView):
                 "precio_compra": float(r.precio_compra),
                 "precio_lista": float(r.precio_lista),
                 "precio_cash": float(r.precio_cash),
-                "stock": float(stock),
+                "stock": float(r.stock_total),
                 "alerta_precio": r.alerta_precio,
             })
 
@@ -473,7 +600,8 @@ class ReporteClientesView(APIView):
     Parámetros: fecha_inicio, fecha_fin, deuda_estado (con_saldo|al_dia), formato
     Paginado: page, page_size (default 50)
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        return [TienePermiso("REPORTES.CLIENTES.VER")]
 
     def get(self, request):
         fecha_inicio, fecha_fin = _parse_date_range(request)
@@ -565,7 +693,8 @@ class ReporteComprasView(APIView):
                 formato (json|excel|pdf)
     Paginado: page, page_size (default 50)
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        return [TienePermiso("REPORTES.COMPRAS.VER")]
 
     def get(self, request):
         fecha_inicio, fecha_fin = _parse_date_range(request)
@@ -579,6 +708,7 @@ class ReporteComprasView(APIView):
             Compra.objects
             .select_related("proveedor", "tipo_comprobante_fk", "usuario")
             .prefetch_related("cuenta_por_pagar")
+            .exclude(estado='Anulada')
             .filter(
                 fecha_emision__gte=fecha_inicio,
                 fecha_emision__lte=fecha_fin,
@@ -660,7 +790,8 @@ class ReporteAvanzadoView(APIView):
                          compras_detalladas | ordenes_servicio
     Parámetros: fecha_inicio, fecha_fin, sucursal_id, tipo, formato
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        return [TienePermiso("REPORTES.AVANZADO.VER")]
 
     def get(self, request):
         fecha_inicio, fecha_fin = _parse_date_range(request)
@@ -816,6 +947,7 @@ class ReporteAvanzadoView(APIView):
         qs = (
             DetalleCompra.objects
             .select_related("compra__proveedor", "compra__tipo_comprobante_fk", "repuesto")
+            .exclude(compra__estado='Anulada')
             .filter(
                 compra__fecha_emision__gte=fi,
                 compra__fecha_emision__lte=ff,
@@ -863,6 +995,7 @@ class ReporteAvanzadoView(APIView):
                 "recepcionista", "mecanico_asignado",
                 "tipo_servicio",
             )
+            .exclude(estado=OrdenTrabajo.Estado.CANCELADO)
             .filter(fecha_ingreso__date__gte=fi, fecha_ingreso__date__lte=ff)
         )
         total = qs.count()
@@ -876,7 +1009,7 @@ class ReporteAvanzadoView(APIView):
                 "fecha_ingreso": o.fecha_ingreso.strftime("%d/%m/%Y"),
                 "placa": o.vehiculo.placa,
                 "cliente": f"{o.cliente.nombres} {o.cliente.apellidos}" if o.cliente else "—",
-                "mecanico": f"{o.mecanico_asignado.nombre} {o.mecanico_asignado.apellidos}" if o.mecanico_asignado else "—",
+                "mecanico": f"{o.mecanico_asignado.nombres} {o.mecanico_asignado.apellidos}" if o.mecanico_asignado else "—",
                 "tipo_servicio": o.tipo_servicio.nombre if o.tipo_servicio else "—",
                 "estado": o.estado,
                 "fecha_finalizacion": o.fecha_finalizacion.strftime("%d/%m/%Y") if o.fecha_finalizacion else "—",
@@ -907,7 +1040,8 @@ class ReporteVehiculosView(APIView):
     Parámetros: placa, cliente_id, formato (json|excel|pdf)
     Paginado: page, page_size (default 50)
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        return [TienePermiso("REPORTES.VEHICULO.VER")]
 
     def get(self, request):
         placa = request.query_params.get("placa", "").strip().upper()
@@ -932,8 +1066,11 @@ class ReporteVehiculosView(APIView):
 
         data = []
         for v in vehiculos:
-            ordenes = v.ordenes_trabajo.all()
-            ultima_orden = ordenes.order_by("-fecha_ingreso").first()
+            # Materializado una sola vez: re-encadenar .order_by()/.count() sobre
+            # la relación invalida el prefetch_related y dispara 2 queries extra
+            # por vehículo.
+            ordenes = list(v.ordenes_trabajo.all())
+            ultima_orden = max(ordenes, key=lambda o: o.fecha_ingreso) if ordenes else None
             clientes_set = set()
             for o in ordenes:
                 if o.cliente:
@@ -944,9 +1081,9 @@ class ReporteVehiculosView(APIView):
                 "placa": v.placa,
                 "marca": v.marca,
                 "modelo": v.modelo,
-                "anio": v.anio,
+                "anio": v.anio_fabricacion,
                 "propietarios": ", ".join(clientes_set) if clientes_set else "—",
-                "total_ordenes": ordenes.count(),
+                "total_ordenes": len(ordenes),
                 "ultimo_ingreso": ultima_orden.fecha_ingreso.strftime("%d/%m/%Y") if ultima_orden else "—",
                 "ultimo_estado": ultima_orden.estado if ultima_orden else "—",
             })

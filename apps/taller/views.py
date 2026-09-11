@@ -4,6 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
+from rest_framework.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
@@ -16,18 +17,37 @@ from .serializers import (
 )
 from apps.inventario.models import MovimientoInventario, InventarioStock
 from apps.ventas.models import Venta, DetalleVenta
+from apps.ventas.services import VentasService
+from apps.seguridad.permissions import TienePermiso
 import uuid
 
 logger = logging.getLogger(__name__)
 
+
 class TipoServicioViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
     queryset = TipoServicio.objects.all()
     serializer_class = TipoServicioSerializer
 
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("TIPOS_SERVICIO.VER")]
+        # No existe un código ELIMINAR dedicado para Tipos de Servicio; se reutiliza EDITAR.
+        return [TienePermiso("TIPOS_SERVICIO.CREAR" if self.request.method == 'POST' else "TIPOS_SERVICIO.EDITAR")]
+
 class OrdenTrabajoViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
-    
+    def get_permissions(self):
+        if self.action in ('aprobar_servicios', 'finalizar_orden', 'enviar_a_pos'):
+            return [TienePermiso("ORDENES_TRABAJO.APROBAR")]
+        if self.action == 'anular':
+            return [TienePermiso("ORDENES_TRABAJO.CAMBIAR_ESTADO")]
+        if self.request.method == 'GET':
+            return [TienePermiso("ORDENES_TRABAJO.VER")]
+        if self.request.method == 'POST':
+            return [TienePermiso("ORDENES_TRABAJO.CREAR")]
+        if self.request.method == 'DELETE':
+            return [TienePermiso("ORDENES_TRABAJO.ELIMINAR")]
+        return [TienePermiso("ORDENES_TRABAJO.EDITAR")]
+
     def get_queryset(self):
         # Evitar N+1 en las consultas, usando select_related para FK y prefetch para M:N
         queryset = OrdenTrabajo.objects.select_related(
@@ -48,7 +68,28 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             
             if is_mecanico and not is_admin:
                 queryset = queryset.filter(mecanico_asignado=user)
-                
+
+        params = self.request.query_params
+        estado = params.get('estado')
+        mecanico_asignado = params.get('mecanico_asignado')
+        cliente = params.get('cliente')
+        placa = params.get('placa')
+        fecha_desde = params.get('fecha_desde')
+        fecha_hasta = params.get('fecha_hasta')
+
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        if mecanico_asignado:
+            queryset = queryset.filter(mecanico_asignado_id=mecanico_asignado)
+        if cliente:
+            queryset = queryset.filter(cliente_id=cliente)
+        if placa:
+            queryset = queryset.filter(vehiculo__placa__icontains=placa)
+        if fecha_desde:
+            queryset = queryset.filter(fecha_ingreso__date__gte=fecha_desde)
+        if fecha_hasta:
+            queryset = queryset.filter(fecha_ingreso__date__lte=fecha_hasta)
+
         return queryset
 
     def get_serializer_class(self):
@@ -82,10 +123,25 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             usuario=self.request.user
         )
 
+    # Transiciones de estado permitidas fuera de las acciones dedicadas (aprobar_servicios,
+    # finalizar_orden, enviar_a_pos, anular). Cualquier otro cambio de estado vía PATCH/PUT
+    # directo se rechaza para evitar saltarse las validaciones de negocio de esas acciones.
+    TRANSICIONES_MANUALES_PERMITIDAS = {
+        (OrdenTrabajo.Estado.RECEPCIONADO, OrdenTrabajo.Estado.INSPECCION),
+        (OrdenTrabajo.Estado.INSPECCION, OrdenTrabajo.Estado.ESPERANDO_APROBACION),
+    }
+
     def perform_update(self, serializer):
         orden_anterior = self.get_object()
         estado_anterior = orden_anterior.estado
-        
+        nuevo_estado = serializer.validated_data.get('estado', estado_anterior)
+
+        if nuevo_estado != estado_anterior and (estado_anterior, nuevo_estado) not in self.TRANSICIONES_MANUALES_PERMITIDAS:
+            raise ValidationError(
+                f"No se puede cambiar el estado de '{estado_anterior}' a '{nuevo_estado}' directamente. "
+                "Usa la acción correspondiente (aprobar, finalizar, enviar a POS o anular)."
+            )
+
         orden = serializer.save()
         
         # Guardar en el historial si el estado cambió
@@ -124,24 +180,26 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             # Actualizar servicios
             OrdenServicio.objects.filter(orden=orden, id__in=servicios_ids).update(aprobado_cliente=True)
             OrdenServicio.objects.filter(orden=orden).exclude(id__in=servicios_ids).update(aprobado_cliente=False)
-            
+
             # Actualizar repuestos y reservar stock
             repuestos_a_aprobar = OrdenRepuesto.objects.filter(orden=orden, id__in=repuestos_ids)
             for orp in repuestos_a_aprobar:
                 if not orp.aprobado_cliente:  # Solo si no estaba aprobado antes
                     orp.aprobado_cliente = True
                     orp.save(update_fields=['aprobado_cliente'])
-                    
+
                     # Reservar stock
-                    stock_record = InventarioStock.objects.filter(repuesto=orp.repuesto, stock_disponible__gte=orp.cantidad).first()
+                    stock_record = InventarioStock.objects.select_for_update().filter(
+                        repuesto=orp.repuesto, stock_disponible__gte=orp.cantidad
+                    ).first()
                     if not stock_record:
-                        stock_record = InventarioStock.objects.filter(repuesto=orp.repuesto).first()
-                    
+                        stock_record = InventarioStock.objects.select_for_update().filter(repuesto=orp.repuesto).first()
+
                     if stock_record:
                         stock_record.stock_disponible -= orp.cantidad
                         stock_record.stock_reservado += orp.cantidad
                         stock_record.save()
-                        
+
                         MovimientoInventario.objects.create(
                             repuesto=orp.repuesto,
                             ubicacion=stock_record.ubicacion,
@@ -153,10 +211,40 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
                             referencia_id=orden.id,
                             referencia_tipo='OT'
                         )
-            
+
+            # Liberar la reserva de los repuestos que dejan de estar aprobados en este envío.
+            # Sin esto, reaprobar el mismo repuesto en una llamada posterior lo reservaría
+            # una segunda vez sobre la misma cantidad física (bug detectado y corregido).
+            repuestos_a_desaprobar = OrdenRepuesto.objects.filter(
+                orden=orden, aprobado_cliente=True
+            ).exclude(id__in=repuestos_ids)
+            for orp in repuestos_a_desaprobar:
+                if orp.instalado:
+                    raise ValidationError(
+                        f"No se puede quitar la aprobación del repuesto '{orp.repuesto.codigo}': "
+                        "ya fue instalado. Revierta la instalación primero."
+                    )
+                stock_record = InventarioStock.objects.select_for_update().filter(repuesto=orp.repuesto).first()
+                if stock_record:
+                    stock_record.stock_disponible += orp.cantidad
+                    stock_record.stock_reservado -= orp.cantidad
+                    stock_record.save()
+
+                    MovimientoInventario.objects.create(
+                        repuesto=orp.repuesto,
+                        ubicacion=stock_record.ubicacion,
+                        tipo_movimiento=MovimientoInventario.TipoMovimiento.RESERVA,
+                        cantidad=orp.cantidad,
+                        stock_resultante=stock_record.stock_disponible,
+                        motivo=f"Liberación de reserva por desaprobación en OT-{orden.numero}",
+                        usuario=request.user,
+                        referencia_id=orden.id,
+                        referencia_tipo='OT'
+                    )
+
             # Desaprobar los no seleccionados
             OrdenRepuesto.objects.filter(orden=orden).exclude(id__in=repuestos_ids).update(aprobado_cliente=False)
-            
+
             orden.estado = OrdenTrabajo.Estado.APROBADO
             orden.save()
             
@@ -200,9 +288,9 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             
         sucursal_id = request.data.get('sucursal_id')
         if not sucursal_id:
-            # Intentar obtener de request.user si es necesario o por defecto 1
-            sucursal_id = 1
-            
+            raise ValidationError("Debe especificar la sucursal (sucursal_id) para enviar la orden al POS.")
+
+
         venta_existente = Venta.objects.filter(
             ticket_kiosko__startswith=f"OT-{orden.id}-",
             estado=Venta.Estado.PRE_VENTA
@@ -255,21 +343,83 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
                 )
                 subtotal_acumulado += subtotal_linea
                 
-            from decimal import Decimal
             venta.total = subtotal_acumulado
-            venta.subtotal = venta.total / Decimal('1.18')  # TODO: usar tipo impuesto
-            venta.igv = venta.total - venta.subtotal
+            venta.subtotal, venta.igv = VentasService.descomponer_total_con_impuesto(venta.total)
             venta.save()
             
             # NOTA: Ya no cambiamos a FACTURADO aquí, se hará cuando se pague en POS.
             
         return Response({
-            'status': 'ok', 
-            'message': 'Enviado a POS correctamente.', 
+            'status': 'ok',
+            'message': 'Enviado a POS correctamente.',
             'venta_id': venta.id,
             'ticket': venta.ticket_kiosko,
             'estado_orden': orden.estado
         })
+
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def anular(self, request, pk=None):
+        """
+        Anula una orden de trabajo: libera las reservas de stock de sus repuestos
+        aprobados aún no instalados y registra el motivo en el historial de estados.
+        No revierte repuestos ya instalados (ese stock ya salió físicamente).
+        """
+        orden = self.get_object()
+
+        if orden.estado in (OrdenTrabajo.Estado.FACTURADO, OrdenTrabajo.Estado.CANCELADO):
+            raise ValidationError(f"No se puede anular una orden en estado '{orden.estado}'.")
+
+        venta_existente = Venta.objects.filter(
+            ticket_kiosko__startswith=f"OT-{orden.id}-",
+            estado=Venta.Estado.PRE_VENTA
+        ).exists()
+        if venta_existente:
+            raise ValidationError(
+                "No se puede anular: ya existe un ticket en el Punto de Venta para esta orden. "
+                "Cancele ese ticket antes de anular la orden."
+            )
+
+        if orden.repuestos.filter(instalado=True).exists():
+            raise ValidationError(
+                "No se puede anular: esta orden tiene repuestos ya instalados (ese stock ya salió del almacén)."
+            )
+
+        motivo = (request.data.get('motivo') or '').strip()
+        if not motivo:
+            raise ValidationError("Debe indicar el motivo de la anulación.")
+
+        for orp in orden.repuestos.filter(aprobado_cliente=True, instalado=False):
+            stock_record = InventarioStock.objects.filter(repuesto=orp.repuesto).first()
+            if stock_record:
+                stock_record.stock_disponible += orp.cantidad
+                stock_record.stock_reservado -= orp.cantidad
+                stock_record.save()
+
+                MovimientoInventario.objects.create(
+                    repuesto=orp.repuesto,
+                    ubicacion=stock_record.ubicacion,
+                    tipo_movimiento=MovimientoInventario.TipoMovimiento.RESERVA,
+                    cantidad=orp.cantidad,
+                    stock_resultante=stock_record.stock_disponible,
+                    motivo=f"Liberación de reserva por anulación de OT-{orden.numero}",
+                    usuario=request.user,
+                    referencia_id=orden.id,
+                    referencia_tipo='OT_ANULACION'
+                )
+
+        orden.estado = OrdenTrabajo.Estado.CANCELADO
+        orden.save(update_fields=['estado'])
+
+        OrdenHistorialEstado.objects.create(
+            orden=orden,
+            estado=orden.estado,
+            usuario=request.user,
+            observaciones=motivo
+        )
+
+        serializer = self.get_serializer(orden)
+        return Response(serializer.data)
 
     @action(detail=True, methods=['get'])
     def generar_pdf(self, request, pk=None):
@@ -320,15 +470,23 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
 class HallazgoViewSet(viewsets.ModelViewSet):
     queryset = Hallazgo.objects.all()
     serializer_class = HallazgoSerializer
-    permission_classes = [IsAuthenticated]
-    
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("ORDENES_TRABAJO.VER")]
+        return [TienePermiso("ORDENES_TRABAJO.EDITAR")]
+
     def perform_create(self, serializer):
         serializer.save(registrado_por=self.request.user)
 
 class OrdenServicioViewSet(viewsets.ModelViewSet):
     queryset = OrdenServicio.objects.all()
     serializer_class = OrdenServicioSerializer
-    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("ORDENES_TRABAJO.VER")]
+        return [TienePermiso("ORDENES_TRABAJO.EDITAR")]
 
     @action(detail=True, methods=['patch'])
     def marcar_completado(self, request, pk=None):
@@ -340,18 +498,40 @@ class OrdenServicioViewSet(viewsets.ModelViewSet):
 class OrdenRepuestoViewSet(viewsets.ModelViewSet):
     queryset = OrdenRepuesto.objects.select_related('repuesto')
     serializer_class = OrdenRepuestoSerializer
-    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("ORDENES_TRABAJO.VER")]
+        return [TienePermiso("ORDENES_TRABAJO.EDITAR")]
 
     @action(detail=True, methods=['patch'])
+    @transaction.atomic
     def marcar_instalado(self, request, pk=None):
+        """
+        Alterna 'instalado'. Es simétrico: activar convierte la reserva en
+        salida definitiva (Kardex SALIDA); desactivar devuelve esa reserva
+        (Kardex RESERVA positivo). Antes solo activar tenía efecto, así que
+        activar/desactivar repetidamente descontaba stock de más (bug real
+        ya detectado en producción, corregido aquí).
+        """
         repuesto_orden = self.get_object()
-        repuesto_orden.instalado = not repuesto_orden.instalado
-        repuesto_orden.save(update_fields=['instalado'])
-        
-        # Convertir reserva en salida definitiva al instalar
-        if repuesto_orden.instalado:
-            stock_record = InventarioStock.objects.filter(repuesto=repuesto_orden.repuesto).first()
-            if stock_record:
+        orden = repuesto_orden.orden
+
+        if orden.estado in (OrdenTrabajo.Estado.CANCELADO, OrdenTrabajo.Estado.FACTURADO):
+            raise ValidationError(
+                f"No se puede modificar la instalación de un repuesto en una orden '{orden.estado}'."
+            )
+
+        nuevo_valor = not repuesto_orden.instalado
+
+        if nuevo_valor and not repuesto_orden.aprobado_cliente:
+            raise ValidationError("No se puede instalar un repuesto que no ha sido aprobado.")
+
+        stock_record = InventarioStock.objects.select_for_update().filter(repuesto=repuesto_orden.repuesto).first()
+
+        if stock_record:
+            if nuevo_valor:
+                # Instalar: convertir la reserva en salida definitiva.
                 stock_record.stock_reservado -= repuesto_orden.cantidad
                 stock_record.save()
                 MovimientoInventario.objects.create(
@@ -360,18 +540,44 @@ class OrdenRepuestoViewSet(viewsets.ModelViewSet):
                     tipo_movimiento=MovimientoInventario.TipoMovimiento.SALIDA,
                     cantidad=-repuesto_orden.cantidad,
                     stock_resultante=stock_record.stock_disponible,
-                    motivo=f"Instalación en OT-{repuesto_orden.orden.numero}",
+                    motivo=f"Instalación en OT-{orden.numero}",
                     usuario=request.user,
-                    referencia_id=repuesto_orden.orden.id,
+                    referencia_id=orden.id,
                     referencia_tipo='OT'
                 )
-                
+            else:
+                # Revertir instalación: la reserva vuelve a estar activa.
+                stock_record.stock_reservado += repuesto_orden.cantidad
+                stock_record.save()
+                MovimientoInventario.objects.create(
+                    repuesto=repuesto_orden.repuesto,
+                    ubicacion=stock_record.ubicacion,
+                    tipo_movimiento=MovimientoInventario.TipoMovimiento.RESERVA,
+                    cantidad=repuesto_orden.cantidad,
+                    stock_resultante=stock_record.stock_disponible,
+                    motivo=f"Reversión de instalación en OT-{orden.numero}",
+                    usuario=request.user,
+                    referencia_id=orden.id,
+                    referencia_tipo='OT'
+                )
+
+        repuesto_orden.instalado = nuevo_valor
+        repuesto_orden.save(update_fields=['instalado'])
+
         return Response({'status': 'ok', 'instalado': repuesto_orden.instalado})
 
 class PlantillaPreventivaViewSet(viewsets.ModelViewSet):
     queryset = PlantillaPreventiva.objects.all()
     serializer_class = PlantillaPreventivaSerializer
-    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("PLANTILLAS_TALLER.VER")]
+        if self.request.method == 'POST':
+            return [TienePermiso("PLANTILLAS_TALLER.CREAR")]
+        if self.request.method == 'DELETE':
+            return [TienePermiso("PLANTILLAS_TALLER.ELIMINAR")]
+        return [TienePermiso("PLANTILLAS_TALLER.EDITAR")]
 
 class ConsultaVehiculoPublicaView(APIView):
     permission_classes = [AllowAny]

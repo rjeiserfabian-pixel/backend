@@ -1,18 +1,22 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from rest_framework import filters
 from .models import Vehiculo
 from .serializers import VehiculoSerializer
 from .services import ConsultaVehicularService
+from apps.seguridad.permissions import PermisoPorMetodoMixin
+from apps.clientes.models import Cliente
 import logging
 
 logger = logging.getLogger(__name__)
 
-class VehiculoViewSet(viewsets.ModelViewSet):
+class VehiculoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    permiso_ver = "VEHICULOS.VER"
+    permiso_crear = "VEHICULOS.CREAR"
+    permiso_editar = "VEHICULOS.EDITAR"
+    permiso_eliminar = "VEHICULOS.ELIMINAR"
     serializer_class = VehiculoSerializer
-    permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter]
     search_fields = ['placa', 'marca', 'modelo']
 
@@ -56,12 +60,34 @@ class VehiculoViewSet(viewsets.ModelViewSet):
             logger.error(f"Error interno al consultar placa {placa}: {e}", exc_info=True)
             return Response({'error': 'Error interno del servidor al procesar la consulta.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=True, methods=['post'], url_path='vincular-cliente')
+    def vincular_cliente(self, request, pk=None):
+        """
+        Vincula un cliente a este vehículo de forma aditiva (nunca desvincula
+        a otros clientes ya asociados) — un vehículo puede tener varios
+        dueños/conductores a lo largo del tiempo (ej. un familiar, alguien
+        que lo tomó prestado).
+        """
+        vehiculo = self.get_object()
+        cliente_id = request.data.get('cliente_id')
+        if not cliente_id:
+            return Response({'error': 'cliente_id es obligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            cliente = Cliente.objects.get(id=cliente_id)
+        except Cliente.DoesNotExist:
+            return Response({'error': 'Cliente no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        vehiculo.clientes.add(cliente)
+        return Response(self.get_serializer(vehiculo).data)
+
 from .models import VehiculoTransporte
 from .serializers import VehiculoTransporteSerializer
 
-class VehiculoTransporteViewSet(viewsets.ModelViewSet):
+class VehiculoTransporteViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    # No existe VEHICULOS_TRANSPORTE.ELIMINAR en el catálogo; se reutiliza EDITAR.
+    permiso_ver = "VEHICULOS_TRANSPORTE.VER"
+    permiso_crear = "VEHICULOS_TRANSPORTE.CREAR"
+    permiso_editar = "VEHICULOS_TRANSPORTE.EDITAR"
     serializer_class = VehiculoTransporteSerializer
-    permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter]
     search_fields = ['placa', 'marca', 'modelo']
 
