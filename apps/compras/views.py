@@ -274,21 +274,61 @@ class PagoCuentaViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
-        pago = serializer.save(usuario=request.user)
-        cuenta = pago.cuenta_por_pagar
-        
+
+        metodo_pago_id = serializer.validated_data.pop('metodo_pago_id', None)
+        cuenta = serializer.validated_data.get('cuenta_por_pagar')
+        monto = serializer.validated_data.get('monto_abonado')
+        afecta_caja = serializer.validated_data.get('afecta_caja', True)
+
+        # Validación server-side: no basta con lo que ya valida el frontend,
+        # porque cualquiera podría llamar a la API directamente.
+        if monto is None or monto <= 0:
+            return Response({'error': 'El monto a abonar debe ser mayor a 0.'}, status=status.HTTP_400_BAD_REQUEST)
+        if cuenta and monto > cuenta.saldo_pendiente:
+            return Response({'error': 'El monto no puede ser mayor al saldo pendiente.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        movimiento = None
+        if afecta_caja:
+            from apps.ventas.models import SesionCaja, MovimientoCaja, MetodoPago
+            sesion = SesionCaja.objects.filter(usuario=request.user, estado=SesionCaja.Estado.ABIERTA).first()
+            if not sesion:
+                return Response(
+                    {'error': 'Debe abrir su caja para registrar un pago que afecte caja. Si el pago se hizo por otro medio (ej. transferencia bancaria), desmarque "Afecta a Caja".'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            metodo_pago_obj = None
+            if metodo_pago_id:
+                metodo_pago_obj = MetodoPago.objects.filter(id=metodo_pago_id).first()
+            if not metodo_pago_obj:
+                metodo_pago_obj = MetodoPago.objects.filter(estado=True).first()
+            if not metodo_pago_obj:
+                return Response({'error': 'No hay métodos de pago configurados.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            movimiento = MovimientoCaja.objects.create(
+                sesion=sesion,
+                tipo=MovimientoCaja.Tipo.EGRESO,
+                concepto=MovimientoCaja.Concepto.PAGO_PROVEEDOR,
+                metodo_pago=metodo_pago_obj,
+                monto=monto,
+                referencia=serializer.validated_data.get('referencia') or f"Pago a {cuenta.proveedor.nombre_o_razon_social}",
+                origen_movimiento=MovimientoCaja.OrigenMovimiento.PAGO_PROVEEDOR,
+                referencia_origen=f"CXP-{cuenta.id}",
+                creado_por=request.user,
+            )
+
+        pago = serializer.save(usuario=request.user, movimiento_caja=movimiento)
+
         # Actualizar la cuenta por pagar
         cuenta.monto_pagado += pago.monto_abonado
         cuenta.saldo_pendiente = cuenta.monto_total - cuenta.monto_pagado
-        
+
         if cuenta.saldo_pendiente <= 0:
             cuenta.estado = 'Pagada'
             cuenta.saldo_pendiente = 0 # Sanity check
         elif cuenta.monto_pagado > 0:
             cuenta.estado = 'Parcial'
-            
+
         cuenta.save()
-        
+
         headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        return Response(self.get_serializer(pago).data, status=status.HTTP_201_CREATED, headers=headers)

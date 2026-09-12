@@ -111,7 +111,9 @@ class SerieDocumentoInterno(models.Model):
         RECIBO_INGRESO = 'RECIBO_INGRESO', 'Recibo de Ingreso'
         CREDITO = 'CREDITO', 'Código de Crédito'
         GUIA_REMISION = 'GUIA_REMISION', 'Guía de Remisión'
-        
+        PROFORMA = 'PROFORMA', 'Proforma / Cotización'
+        TRASLADO = 'TRASLADO', 'Nota de Traslado'
+
         
     sucursal = models.ForeignKey(Sucursal, on_delete=models.RESTRICT, related_name='series_internas')
     tipo_documento = models.CharField(max_length=50, choices=TipoDocumento.choices)

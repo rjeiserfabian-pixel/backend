@@ -36,11 +36,15 @@ class CompraSerializer(serializers.ModelSerializer):
 
 class PagoCuentaSerializer(serializers.ModelSerializer):
     usuario_nombre = serializers.ReadOnlyField(source='usuario.username')
+    # Solo se usa para construir el MovimientoCaja cuando afecta_caja=True;
+    # no es un campo del modelo (el modelo ya guarda metodo_pago como texto).
+    metodo_pago_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    numero_recibo = serializers.CharField(source='movimiento_caja.numero_recibo', read_only=True, default=None)
 
     class Meta:
         model = PagoCuenta
         fields = '__all__'
-        read_only_fields = ('usuario', 'creado_en')
+        read_only_fields = ('usuario', 'creado_en', 'movimiento_caja')
 
 
 class CuentaPorPagarSerializer(serializers.ModelSerializer):

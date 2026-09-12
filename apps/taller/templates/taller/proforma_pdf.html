@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Cotización OT-{{ orden.numero }}</title>
+    <title>Cotización {{ numero_documento|default:orden.numero }}</title>
     <style>
         @page {
             size: a4 portrait;
@@ -29,9 +29,9 @@
         table { width: 100%; border-collapse: collapse; }
         td { vertical-align: top; }
         
-        .header-title { font-size: 30px; font-weight: bold; letter-spacing: 0.5px; }
-        .header-subtitle { font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; font-weight: bold; }
-        .header-info-text { font-size: 11px; color: #334155; margin-top: 10px; line-height: 1.4; }
+        .header-title { font-size: 15px; font-weight: bold; letter-spacing: 0.2px; margin: 0; }
+        .header-info-text { font-size: 10px; color: #334155; margin-top: 4px; line-height: 1.5; }
+        .header-info-text .bold { font-size: 10px; }
         
         .section-title { font-size: 10px; font-weight: bold; color: #ea580c; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
         
@@ -51,30 +51,34 @@
     <!-- Header -->
     <table style="margin-bottom: 20px;">
         <tr>
-            <td style="width: 8%; vertical-align: middle;">
-                <!-- Modern Omega logo usando CSS -->
-                <div style="font-family: serif; font-size: 42px; color: #ea580c; line-height: 1; font-weight: normal;">&Omega;</div>
+            <td style="width: 14%; vertical-align: middle;">
+                {% if empresa_logo_data_uri %}
+                <img src="{{ empresa_logo_data_uri }}" style="max-height: 40px; max-width: 90px;" />
+                {% else %}
+                <!-- Sin logo configurado: iniciales de la empresa como respaldo -->
+                <div style="font-family: serif; font-size: 30px; color: #ea580c; line-height: 1; font-weight: normal;">&Omega;</div>
+                {% endif %}
             </td>
-            <td style="width: 56%; vertical-align: middle; padding-top: 5px;">
-                <div class="header-title"><span class="text-navy">OMEGA</span> <span class="text-orange">AUTOMOTRIZ</span></div>
-                <div class="header-subtitle">SERVICIO AUTOMOTRIZ & MANTENIMIENTO PREVENTIVO</div>
+            <td style="width: 50%; vertical-align: middle;">
+                <div class="header-title text-navy">{{ empresa.razon_social|default:"Empresa no configurada" }}</div>
                 <div class="header-info-text">
-                    <span class="bold">OMEGA AUTOMOTRIZ E.I.R.L.</span> — Jr. Martinez de Compagnon N° 1576<br>
-                    Telf: 987 070 538 - 942 940 538 | automotrizomega@gmail.com
+                    <span class="bold">RUC {{ empresa.ruc|default:"-" }}</span><br>
+                    {{ empresa.direccion|default:"Dirección no configurada" }}{% if empresa.distrito %}, {{ empresa.distrito }}{% endif %}<br>
+                    {% if empresa.telefono %}Tel: {{ empresa.telefono }}{% endif %}{% if empresa.telefono and empresa.email %} | {% endif %}{% if empresa.email %}{{ empresa.email }}{% endif %}
                 </div>
             </td>
             <td style="width: 36%; vertical-align: top;">
                 <table style="width: 70%; float: right;">
                     <tr>
                         <td style="text-align: center; padding-bottom: 5px;">
-                            <span style="color: #64748b; font-size: 11px; font-weight: bold; letter-spacing: 1px;">R.U.C. 20601042381</span>
+                            <span style="color: #64748b; font-size: 11px; font-weight: bold; letter-spacing: 1px;">R.U.C. {{ empresa.ruc|default:"-" }}</span>
                         </td>
                     </tr>
                     <tr>
                         <td>
                             <table style="width: 100%; background-color: #0f172a; padding: 6px 10px; border-radius: 4px;">
                                 <tr><td style="color: #ffffff; text-align: center; font-size: 10px; letter-spacing: 2px;">COTIZACIÓN</td></tr>
-                                <tr><td style="color: #ffffff; text-align: center; font-size: 16px; font-weight: bold; padding-top: 2px;">N.° {{ orden.numero|default:"0000" }}</td></tr>
+                                <tr><td style="color: #ffffff; text-align: center; font-size: 16px; font-weight: bold; padding-top: 2px;">N.° {{ numero_documento|default:"0000" }}</td></tr>
                             </table>
                         </td>
                     </tr>
@@ -82,7 +86,7 @@
             </td>
         </tr>
     </table>
-    
+
     <div style="height: 2px; background-color: #0f172a; margin-bottom: 15px;"></div>
 
     <!-- DATOS CLIENTE Y EMISION -->
@@ -247,7 +251,7 @@
     </table>
 
     <div id="footer_content" class="footer-note">
-        OMEGA AUTOMOTRIZ E.I.R.L. — RUC 20601042381 — Documento generado electrónicamente
+        {{ empresa.razon_social|default:"" }} — RUC {{ empresa.ruc|default:"-" }} — Documento generado electrónicamente
     </div>
 
 </body>

@@ -50,6 +50,12 @@ class OrdenTrabajo(models.Model):
     
     # Campo para almacenar temporalmente el PDF generado de la cotización/hallazgos
     url_cotizacion_pdf = models.URLField(max_length=500, null=True, blank=True)
+
+    # Número de la Proforma/Cotización (serie administrable en Configuración >
+    # Series Internas). Se genera una sola vez, en el primer PDF, y se
+    # reutiliza en reimpresiones. Si la sucursal no tiene serie PROFORMA
+    # configurada, se sigue usando el número de la OT como respaldo.
+    numero_cotizacion = models.CharField(max_length=20, null=True, blank=True)
     
     # Nivel transaccional: Fecha límite para aprobar la cotización
     fecha_vencimiento_cotizacion = models.DateTimeField(

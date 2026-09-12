@@ -154,14 +154,23 @@ class PagoCuotaSerializer(serializers.ModelSerializer):
 
 class CuotaCreditoSerializer(serializers.ModelSerializer):
     pagos = PagoCuotaSerializer(many=True, read_only=True)
-    
+    # El estado ATRASADA nunca se escribe en la BD (nada lo actualiza); en vez
+    # de confiar en ese campo, se calcula al vuelo comparando la fecha de
+    # vencimiento contra hoy, igual que ya hace Cuentas por Pagar.
+    esta_vencida = serializers.SerializerMethodField()
+
     class Meta:
         model = CuotaCredito
         fields = '__all__'
 
+    def get_esta_vencida(self, obj):
+        from django.utils import timezone
+        return obj.saldo_pendiente > 0 and obj.fecha_vencimiento < timezone.localdate()
+
 
 class CuentaPorCobrarSerializer(serializers.ModelSerializer):
     cuotas = CuotaCreditoSerializer(many=True, read_only=True)
+    esta_atrasada = serializers.SerializerMethodField()
     cliente_nombre = serializers.CharField(source='venta.cliente.nombres', read_only=True)
     cliente_apellidos = serializers.CharField(source='venta.cliente.apellidos', read_only=True)
     cliente_dni = serializers.CharField(source='venta.cliente.dni', read_only=True)
@@ -174,6 +183,11 @@ class CuentaPorCobrarSerializer(serializers.ModelSerializer):
     class Meta:
         model = CuentaPorCobrar
         fields = '__all__'
+
+    def get_esta_atrasada(self, obj):
+        from django.utils import timezone
+        hoy = timezone.localdate()
+        return any(cuota.saldo_pendiente > 0 and cuota.fecha_vencimiento < hoy for cuota in obj.cuotas.all())
 
 from .models import SerieDocumentoInterno
 

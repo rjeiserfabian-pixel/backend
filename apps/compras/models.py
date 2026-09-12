@@ -1,3 +1,5 @@
+from decimal import Decimal
+import django.core.validators
 from django.db import models
 from django.conf import settings
 from apps.clientes.models import Proveedor
@@ -104,11 +106,25 @@ class CuentaPorPagar(models.Model):
 
 class PagoCuenta(models.Model):
     cuenta_por_pagar = models.ForeignKey(CuentaPorPagar, on_delete=models.CASCADE, related_name='pagos')
-    monto_abonado = models.DecimalField(max_digits=12, decimal_places=2)
+    monto_abonado = models.DecimalField(
+        max_digits=12, decimal_places=2,
+        validators=[django.core.validators.MinValueValidator(Decimal('0.01'))]
+    )
     fecha_pago = models.DateField(db_index=True)
     metodo_pago = models.CharField(max_length=50) # Ej. Efectivo, Transferencia, Yape, etc.
     referencia = models.CharField(max_length=100, null=True, blank=True, help_text="Nro de operación, etc.")
-    
+
+    # Si afecta_caja=True, el pago sale de la sesión de caja abierta del
+    # usuario (se descuenta como egreso real de efectivo/caja, igual que un
+    # cobro de cuota de venta). Si es False, es un pago hecho fuera de caja
+    # (ej. transferencia bancaria directa desde la cuenta de la empresa) y no
+    # debe afectar el saldo de ninguna caja.
+    afecta_caja = models.BooleanField(default=True)
+    movimiento_caja = models.OneToOneField(
+        'ventas.MovimientoCaja', on_delete=models.RESTRICT,
+        null=True, blank=True, related_name='pago_cuenta_rel'
+    )
+
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT)
     creado_en = models.DateTimeField(auto_now_add=True)
 
@@ -117,6 +133,9 @@ class PagoCuenta(models.Model):
         verbose_name = 'Pago de Cuenta por Pagar'
         verbose_name_plural = 'Pagos de Cuentas por Pagar'
         ordering = ['-fecha_pago', '-id']
+        constraints = [
+            models.CheckConstraint(condition=models.Q(monto_abonado__gt=0), name='pago_cuenta_monto_positivo'),
+        ]
 
     def __str__(self):
         return f"Pago {self.monto_abonado} a {self.cuenta_por_pagar} el {self.fecha_pago}"

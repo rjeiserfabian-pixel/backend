@@ -319,7 +319,9 @@ class VentaViewSet(viewsets.ModelViewSet):
                     fecha_venta = parsed_date
 
             moneda = data.get('moneda', 'PEN')
-            tipo_cambio = data.get('tipo_cambio', 1.0000)
+            tipo_cambio = data.get('tipo_cambio')
+            if not tipo_cambio or tipo_cambio == '':
+                tipo_cambio = 1.0000
             monto_recibido = data.get('monto_recibido', 0.00)
             vuelto = data.get('vuelto', 0.00)
             
@@ -385,9 +387,13 @@ class VentaViewSet(viewsets.ModelViewSet):
             # Movimientos de Caja (saltar si es registro manual)
             sesion = None
             if not es_registro_manual:
-                sesion_caja_id = data.get('sesion_caja_id')
-                sesion = SesionCaja.objects.filter(id=sesion_caja_id, estado=SesionCaja.Estado.ABIERTA).first()
+                # La sesión se determina por el usuario autenticado (no por un ID
+                # enviado desde el cliente): evita depender de un caché de frontend
+                # desincronizado y evita que un cliente pueda enviar el ID de una
+                # sesión ajena.
+                sesion = SesionCaja.objects.filter(usuario=request.user, estado=SesionCaja.Estado.ABIERTA).first()
                 if not sesion:
+                    transaction.set_rollback(True)
                     return Response({"error": "Sesión de caja abierta requerida para venta normal."}, status=status.HTTP_400_BAD_REQUEST)
                 venta.sesion_caja = sesion
 
@@ -428,6 +434,7 @@ class VentaViewSet(viewsets.ModelViewSet):
                     almacen_origen = sucursal.almacenes.first()
                     
             if not almacen_origen:
+                transaction.set_rollback(True)
                 return Response({"error": "La sucursal no tiene almacenes configurados."}, status=status.HTTP_400_BAD_REQUEST)
 
             # 3. Descontar stock (solo para repuestos físicos, no servicios)
@@ -466,7 +473,14 @@ class VentaViewSet(viewsets.ModelViewSet):
                         fecha_limite = datetime.strptime(fecha_limite_str, '%Y-%m-%d').date()
                     except ValueError:
                         pass
-                        
+
+                # La fecha de vencimiento debe ser estrictamente posterior a
+                # hoy: una venta al crédito que vence el mismo día que se
+                # crea queda "atrasada" desde el día siguiente sin que el
+                # cliente haya tenido plazo real para pagar.
+                if not fecha_limite or fecha_limite <= timezone.localdate():
+                    raise ValueError("La fecha de vencimiento del crédito debe ser posterior a hoy.")
+
                 CreditoService.generar_credito(
                     venta=venta,
                     frecuencia=CuentaPorCobrar.Frecuencia.MENSUAL,
@@ -490,20 +504,24 @@ class TipoCambioView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        token = getattr(settings, 'APISPERU_TOKEN', None)
-        if not token:
-            return Response({"error": "APISPERU_TOKEN no configurado"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+        from django.core.cache import cache
+        from django.utils import timezone
+
+        # SUNAT solo publica un tipo de cambio por día: se cachea por fecha para
+        # que N usuarios cambiando de moneda en el POS no disparen N peticiones
+        # al proveedor externo (apis.net.pe), que además tiene límite de tasa.
+        cache_key = f"tipo_cambio_sunat_{timezone.localdate().isoformat()}"
+        data = cache.get(cache_key)
+        if data is not None:
+            return Response(data)
+
         try:
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/json"
-            }
-            url = "https://dniruc.apisperu.com/api/v1/tipo-de-cambio"
-            response = requests.get(url, headers=headers, timeout=5)
+            url = "https://api.apis.net.pe/v1/tipo-cambio-sunat"
+            response = requests.get(url, timeout=5)
             response.raise_for_status()
             data = response.json()
             # APIsPeru devuelve: {"compra": 3.75, "venta": 3.76, "origen": "SUNAT", "moneda": "USD", "fecha": "2023-10-10"}
+            cache.set(cache_key, data, timeout=60 * 60 * 24)
             return Response(data)
         except Exception as e:
             logger.error(f"Error consultando tipo de cambio: {str(e)}")
@@ -537,8 +555,16 @@ class CuentaPorCobrarViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='resumen-clientes')
     def resumen_clientes(self, request):
         from django.db.models import Sum, Count, Q
-        
-        # Filtramos primero base query para no afectar eliminados lógicos si los hubiera
+        from django.utils import timezone
+
+        hoy = timezone.localdate()
+
+        # El estado ATRASADO de CuentaPorCobrar nunca se actualiza en ningún
+        # lado del sistema (queda fijo en PENDIENTE aunque venza), así que
+        # contar por ese campo siempre daría 0. Se calcula en su lugar
+        # dinámicamente: una cuenta "tiene atraso" si alguna de sus cuotas
+        # está vencida y con saldo pendiente — igual que ya hace Cuentas por
+        # Pagar en resumen_proveedores.
         qs = CuentaPorCobrar.objects.values(
             'venta__cliente__id',
             'venta__cliente__dni',
@@ -547,7 +573,11 @@ class CuentaPorCobrarViewSet(viewsets.ModelViewSet):
         ).annotate(
             total_deuda=Sum('monto_financiado'),
             saldo_pendiente_total=Sum('saldo_pendiente'),
-            tiene_atrasos=Count('id', filter=Q(estado=CuentaPorCobrar.Estado.ATRASADO))
+            tiene_atrasos=Count(
+                'id',
+                filter=Q(cuotas__fecha_vencimiento__lt=hoy, cuotas__saldo_pendiente__gt=0),
+                distinct=True
+            )
         ).order_by('-saldo_pendiente_total')
 
         page = self.paginate_queryset(qs)

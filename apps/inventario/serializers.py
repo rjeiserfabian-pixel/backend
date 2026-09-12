@@ -141,6 +141,7 @@ class InventarioStockSerializer(serializers.ModelSerializer):
     """Serializer completo para ver/crear/actualizar el stock en una ubicación."""
     repuesto_codigo = serializers.CharField(source='repuesto.codigo', read_only=True)
     repuesto_nombre = serializers.CharField(source='repuesto.nombre', read_only=True)
+    repuesto_unidad = serializers.CharField(source='repuesto.unidad_medida.abreviatura', read_only=True, default='-')
     ubicacion_codigo = serializers.CharField(source='ubicacion.codigo', read_only=True)
     almacen_nombre = serializers.CharField(source='ubicacion.almacen.nombre', read_only=True)
     sucursal_nombre = serializers.CharField(source='ubicacion.almacen.sucursal.nombre', read_only=True)
@@ -210,6 +211,7 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
 class TrasladoInventarioDetalleSerializer(serializers.ModelSerializer):
     repuesto_nombre = serializers.CharField(source='repuesto.nombre', read_only=True)
     repuesto_codigo = serializers.CharField(source='repuesto.codigo', read_only=True)
+    repuesto_unidad = serializers.CharField(source='repuesto.unidad_medida.abreviatura', read_only=True, default='-')
     ubicacion_origen_nombre = serializers.CharField(source='ubicacion_origen.codigo', read_only=True)
     ubicacion_destino_nombre = serializers.CharField(source='ubicacion_destino.codigo', read_only=True)
 
@@ -224,7 +226,10 @@ class TrasladoInventarioSerializer(serializers.ModelSerializer):
     almacen_origen_nombre = serializers.CharField(source='almacen_origen.nombre', read_only=True)
     almacen_destino_nombre = serializers.CharField(source='almacen_destino.nombre', read_only=True)
     usuario_nombre = serializers.SerializerMethodField()
-    
+    confirmado_por_nombre = serializers.SerializerMethodField()
+    serie_prefijo = serializers.CharField(source='serie.prefijo', read_only=True, default=None)
+    numero_documento = serializers.SerializerMethodField()
+
     # Write only fields for creation
     detalles_datos = serializers.ListField(
         child=serializers.DictField(),
@@ -235,11 +240,23 @@ class TrasladoInventarioSerializer(serializers.ModelSerializer):
     class Meta:
         model = TrasladoInventario
         fields = [
-            'id', 'fecha_traslado', 'almacen_origen', 'almacen_origen_nombre', 
-            'almacen_destino', 'almacen_destino_nombre', 'observaciones', 
-            'usuario', 'usuario_nombre', 'estado', 'detalles', 'detalles_datos'
+            'id', 'fecha_traslado', 'almacen_origen', 'almacen_origen_nombre',
+            'almacen_destino', 'almacen_destino_nombre', 'observaciones',
+            'usuario', 'usuario_nombre', 'estado', 'confirmado_por', 'confirmado_por_nombre',
+            'fecha_confirmacion', 'motivo_rechazo', 'serie_prefijo', 'correlativo',
+            'numero_documento', 'detalles', 'detalles_datos'
         ]
-        read_only_fields = ('usuario', 'estado')
+        read_only_fields = ('usuario', 'estado', 'confirmado_por', 'fecha_confirmacion', 'motivo_rechazo', 'correlativo')
+
+    def get_numero_documento(self, obj):
+        if obj.serie and obj.correlativo:
+            return f"{obj.serie.prefijo}-{str(obj.correlativo).zfill(obj.serie.longitud_correlativo)}"
+        return f"TR-{str(obj.id).zfill(6)}"
+
+    def get_confirmado_por_nombre(self, obj):
+        if obj.confirmado_por:
+            return getattr(obj.confirmado_por, 'get_full_name', lambda: str(obj.confirmado_por))()
+        return None
 
     def get_usuario_nombre(self, obj):
         if obj.usuario:

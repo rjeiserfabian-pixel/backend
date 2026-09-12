@@ -424,47 +424,92 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def generar_pdf(self, request, pk=None):
         orden = self.get_object()
-        
+
         # Calcular totales
         total_servicios = sum(s.precio_estimado for s in orden.servicios.all())
         total_repuestos = sum(r.cantidad * r.precio_unitario for r in orden.repuestos.all())
         total_general = total_servicios + total_repuestos
-        
-        from apps.seguridad.models import CuentaBancaria
+
+        from apps.seguridad.models import CuentaBancaria, Empresa
         cuentas = CuentaBancaria.objects.filter(estado=True)
-        
+
+        # Configuración real de la empresa (la misma que ve el usuario en
+        # Configuración > Empresa), no datos de ejemplo fijos.
+        empresa, _ = Empresa.objects.get_or_create(id=1, defaults={
+            "razon_social": "Mi Empresa",
+            "ruc": "00000000000",
+            "direccion": "Dirección no configurada"
+        })
+        empresa_logo_data_uri = None
+        if empresa.logo:
+            import base64
+            import mimetypes
+            try:
+                # xhtml2pdf (a diferencia del navegador) no resuelve de forma
+                # confiable una ruta de archivo o una URL del propio servidor
+                # para cargar la imagen del logo. La forma robusta es incrustar
+                # los bytes de la imagen directamente en el HTML como base64,
+                # así el logo queda embebido en el PDF sin depender de ninguna
+                # ruta externa.
+                with empresa.logo.open('rb') as f:
+                    logo_bytes = f.read()
+                mime_type = mimetypes.guess_type(empresa.logo.name)[0] or 'image/png'
+                empresa_logo_data_uri = f"data:{mime_type};base64,{base64.b64encode(logo_bytes).decode('ascii')}"
+            except (OSError, ValueError) as e:
+                logger.error(f"No se pudo incrustar el logo de la empresa en el PDF: {e}")
+                empresa_logo_data_uri = None
+
+        # Número de cotización: se genera una sola vez con la serie PROFORMA
+        # (Configuración > Series Internas) de la sucursal indicada, y se
+        # reutiliza en reimpresiones. Si aún no hay serie configurada para esa
+        # sucursal, se sigue mostrando el número de la OT (comportamiento previo).
+        if not orden.numero_cotizacion:
+            sucursal_id = request.query_params.get('sucursal_id')
+            if sucursal_id:
+                from apps.ventas.models import SerieDocumentoInterno
+                with transaction.atomic():
+                    serie = SerieDocumentoInterno.objects.select_for_update().filter(
+                        sucursal_id=sucursal_id,
+                        tipo_documento=SerieDocumentoInterno.TipoDocumento.PROFORMA,
+                        estado=True
+                    ).first()
+                    if serie:
+                        numero = serie.generar_siguiente_correlativo()
+                        serie.correlativo_actual += 1
+                        serie.save(update_fields=['correlativo_actual'])
+                        orden.numero_cotizacion = numero
+                        orden.save(update_fields=['numero_cotizacion'])
+
+        numero_documento = orden.numero_cotizacion or orden.numero
+
         # Configurar contexto
         context = {
             'orden': orden,
+            'numero_documento': numero_documento,
             'total_servicios': total_servicios,
             'total_repuestos': total_repuestos,
             'total_general': total_general,
             'cuentas_bancarias': cuentas,
-            'empresa': {
-                'nombre': 'OMEGA AUTOMOTRIZ',
-                'direccion': 'Av. Principal 123',
-                'ruc': '20123456789',
-                'telefono': '987-654-321'
-            }
+            'empresa': empresa,
+            'empresa_logo_data_uri': empresa_logo_data_uri,
         }
-        
+
         from django.template.loader import render_to_string
         from django.http import HttpResponse
         from xhtml2pdf import pisa
-        import io
-        
+
         html_string = render_to_string('taller/proforma_pdf.html', context)
-        
+
         response = HttpResponse(content_type='application/pdf')
-        response['Content-Disposition'] = f'inline; filename="cotizacion_OT_{orden.numero}.pdf"'
-        
+        response['Content-Disposition'] = f'inline; filename="cotizacion_{numero_documento}.pdf"'
+
         pisa_status = pisa.CreatePDF(
             html_string, dest=response
         )
-        
+
         if pisa_status.err:
             return HttpResponse('Error generando PDF', status=500)
-            
+
         return response
 
 class HallazgoViewSet(viewsets.ModelViewSet):

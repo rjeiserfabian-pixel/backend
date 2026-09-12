@@ -456,19 +456,23 @@ class MovimientoInventarioViewSet(PermisoPorMetodoMixin, viewsets.ReadOnlyModelV
 
 class TrasladoInventarioViewSet(viewsets.ModelViewSet):
     """
-    Gestiona los traslados de mercadería entre ubicaciones físicas.
-    La creación procesa el stock y genera Kardex atómicamente.
+    Gestiona los traslados de mercadería entre almacenes propios (distinto de
+    la Guía de Remisión, que es para traslados hacia un tercero/lugar público).
+
+    Flujo: al crear, el stock SALE del origen y el traslado queda PENDIENTE
+    (la mercadería está "en tránsito", no disponible en ningún almacén).
+    Solo al confirmar la recepción (acción "confirmar") el stock entra al
+    destino. Si no llegó o se canceló, se usa "rechazar" para devolver el
+    stock al origen.
     """
-    queryset = TrasladoInventario.objects.all().select_related('almacen_origen', 'almacen_destino', 'usuario').prefetch_related('detalles__repuesto', 'detalles__ubicacion_origen', 'detalles__ubicacion_destino').order_by('-fecha_traslado')
+    queryset = TrasladoInventario.objects.all().select_related('almacen_origen', 'almacen_destino', 'usuario', 'confirmado_por').prefetch_related('detalles__repuesto', 'detalles__ubicacion_origen', 'detalles__ubicacion_destino').order_by('-fecha_traslado')
     serializer_class = TrasladoInventarioSerializer
     pagination_class = RepuestoPagination
 
     def get_permissions(self):
         if self.request.method == 'GET':
             return [TienePermiso("INVENTARIO.TRASLADOS.VER")]
-        if self.request.method == 'DELETE':
-            # No hay TRASLADOS.ELIMINAR dedicado; se exige el permiso más alto
-            # disponible ya que un DELETE aquí no revierte el stock movido.
+        if self.action in ('confirmar', 'rechazar') or self.request.method == 'DELETE':
             return [TienePermiso("INVENTARIO.TRASLADOS.APROBAR")]
         return [TienePermiso("INVENTARIO.TRASLADOS.CREAR")]
 
@@ -476,21 +480,39 @@ class TrasladoInventarioViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         detalles_datos = serializer.validated_data.pop('detalles_datos')
         almacen_origen = serializer.validated_data['almacen_origen']
         almacen_destino = serializer.validated_data['almacen_destino']
-        
+
         # Validar y procesar detalles
         if not detalles_datos:
             return Response({'error': 'Debe enviar al menos un producto.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 1. Crear Cabecera del Traslado
+        # Numeración: si la sucursal del almacén origen tiene una serie TRASLADO
+        # configurada (Configuración > Series Internas), se consume su
+        # correlativo. Si no, queda sin numerar y se sigue mostrando "TR-<id>"
+        # como antes (no rompe nada para quien no la haya configurado).
+        from apps.ventas.models import SerieDocumentoInterno
+        serie_traslado = SerieDocumentoInterno.objects.select_for_update().filter(
+            sucursal=almacen_origen.sucursal,
+            tipo_documento=SerieDocumentoInterno.TipoDocumento.TRASLADO,
+            estado=True
+        ).first()
+        correlativo = None
+        if serie_traslado:
+            correlativo = serie_traslado.correlativo_actual + 1
+            serie_traslado.correlativo_actual = correlativo
+            serie_traslado.save(update_fields=['correlativo_actual'])
+
+        # 1. Crear Cabecera del Traslado (queda PENDIENTE hasta que el destino confirme)
         traslado = TrasladoInventario.objects.create(
             almacen_origen=almacen_origen,
             almacen_destino=almacen_destino,
             observaciones=serializer.validated_data.get('observaciones', ''),
-            usuario=request.user
+            usuario=request.user,
+            serie=serie_traslado,
+            correlativo=correlativo
         )
 
         for detalle in detalles_datos:
@@ -498,22 +520,23 @@ class TrasladoInventarioViewSet(viewsets.ModelViewSet):
             ubicacion_origen_id = detalle['ubicacion_origen']
             ubicacion_destino_id = detalle['ubicacion_destino']
             cantidad = detalle['cantidad']
-            
+
             from decimal import Decimal, InvalidOperation
             try:
                 cantidad = Decimal(str(cantidad))
             except InvalidOperation:
                 return Response({'error': 'Cantidad inválida'}, status=status.HTTP_400_BAD_REQUEST)
-                
+
             if cantidad <= 0:
                 return Response({'error': 'La cantidad debe ser mayor a 0'}, status=status.HTTP_400_BAD_REQUEST)
-                
-            # Validar y obtener registros origen
+
+            # Validar registros origen y destino (el destino se valida ahora
+            # para no descubrir un error recién al confirmar la recepción)
             try:
                 repuesto = Repuesto.objects.get(id=repuesto_id)
                 ubi_origen = UbicacionFisica.objects.get(id=ubicacion_origen_id, almacen=almacen_origen)
                 ubi_destino = UbicacionFisica.objects.get(id=ubicacion_destino_id, almacen=almacen_destino)
-                
+
                 stock_origen = InventarioStock.objects.get(repuesto=repuesto, ubicacion=ubi_origen)
             except Repuesto.DoesNotExist:
                 return Response({'error': f'Repuesto ID {repuesto_id} no existe.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -525,7 +548,7 @@ class TrasladoInventarioViewSet(viewsets.ModelViewSet):
             if stock_origen.stock_disponible < cantidad:
                 return Response({'error': f'Stock insuficiente para el repuesto {repuesto.codigo} en la ubicación origen.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 2. Descontar stock en origen
+            # 2. Descontar stock en origen (sale de inmediato, queda "en tránsito")
             stock_origen.stock_disponible -= cantidad
             stock_origen.save()
 
@@ -536,35 +559,13 @@ class TrasladoInventarioViewSet(viewsets.ModelViewSet):
                 tipo_movimiento=MovimientoInventario.TipoMovimiento.TRASLADO_SALIDA,
                 cantidad=-cantidad,
                 stock_resultante=stock_origen.stock_disponible,
-                motivo=f"Traslado #{traslado.id} a {almacen_destino.nombre}",
+                motivo=f"Traslado #{traslado.id} a {almacen_destino.nombre} (pendiente de confirmación)",
                 usuario=request.user,
                 referencia_id=traslado.id,
                 referencia_tipo='TRASLADO'
             )
 
-            # 3. Sumar stock en destino
-            stock_destino, created = InventarioStock.objects.get_or_create(
-                repuesto=repuesto,
-                ubicacion=ubi_destino,
-                defaults={'stock_disponible': 0, 'stock_minimo': stock_origen.stock_minimo}
-            )
-            stock_destino.stock_disponible += cantidad
-            stock_destino.save()
-
-            # Registrar Entrada de Traslado en Kardex
-            MovimientoInventario.objects.create(
-                repuesto=repuesto,
-                ubicacion=ubi_destino,
-                tipo_movimiento=MovimientoInventario.TipoMovimiento.TRASLADO_ENTRADA,
-                cantidad=cantidad,
-                stock_resultante=stock_destino.stock_disponible,
-                motivo=f"Traslado #{traslado.id} desde {almacen_origen.nombre}",
-                usuario=request.user,
-                referencia_id=traslado.id,
-                referencia_tipo='TRASLADO'
-            )
-
-            # 4. Crear Detalle de Traslado
+            # 3. Crear Detalle de Traslado (el stock de destino se suma recién al confirmar)
             TrasladoInventarioDetalle.objects.create(
                 traslado=traslado,
                 repuesto=repuesto,
@@ -576,6 +577,94 @@ class TrasladoInventarioViewSet(viewsets.ModelViewSet):
         response_serializer = TrasladoInventarioSerializer(traslado, context={'request': request})
         headers = self.get_success_headers(response_serializer.data)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        traslado = self.get_object()
+        if traslado.estado != TrasladoInventario.Estado.PENDIENTE:
+            return Response(
+                {'error': 'Solo se puede eliminar un traslado mientras está pendiente de confirmación.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        self._revertir_stock_origen(traslado, motivo_prefijo='Eliminación de')
+        return super().destroy(request, *args, **kwargs)
+
+    def _revertir_stock_origen(self, traslado, motivo_prefijo='Rechazo de'):
+        """Devuelve al origen el stock que había salido, con su Kardex."""
+        for detalle in traslado.detalles.select_related('repuesto', 'ubicacion_origen'):
+            stock_origen, _ = InventarioStock.objects.get_or_create(
+                repuesto=detalle.repuesto,
+                ubicacion=detalle.ubicacion_origen,
+                defaults={'stock_disponible': 0}
+            )
+            stock_origen.stock_disponible += detalle.cantidad
+            stock_origen.save()
+            MovimientoInventario.objects.create(
+                repuesto=detalle.repuesto,
+                ubicacion=detalle.ubicacion_origen,
+                tipo_movimiento=MovimientoInventario.TipoMovimiento.TRASLADO_ENTRADA,
+                cantidad=detalle.cantidad,
+                stock_resultante=stock_origen.stock_disponible,
+                motivo=f"{motivo_prefijo} traslado #{traslado.id}",
+                usuario=self.request.user,
+                referencia_id=traslado.id,
+                referencia_tipo='TRASLADO'
+            )
+
+    @action(detail=True, methods=['post'], url_path='confirmar')
+    @transaction.atomic
+    def confirmar(self, request, pk=None):
+        """El almacén destino confirma que la mercadería llegó: recién aquí se suma el stock."""
+        traslado = self.get_object()
+        if traslado.estado != TrasladoInventario.Estado.PENDIENTE:
+            return Response({'error': 'Este traslado ya fue confirmado o rechazado.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        for detalle in traslado.detalles.select_related('repuesto', 'ubicacion_destino'):
+            stock_destino, _ = InventarioStock.objects.get_or_create(
+                repuesto=detalle.repuesto,
+                ubicacion=detalle.ubicacion_destino,
+                defaults={'stock_disponible': 0}
+            )
+            stock_destino.stock_disponible += detalle.cantidad
+            stock_destino.save()
+            MovimientoInventario.objects.create(
+                repuesto=detalle.repuesto,
+                ubicacion=detalle.ubicacion_destino,
+                tipo_movimiento=MovimientoInventario.TipoMovimiento.TRASLADO_ENTRADA,
+                cantidad=detalle.cantidad,
+                stock_resultante=stock_destino.stock_disponible,
+                motivo=f"Traslado #{traslado.id} desde {traslado.almacen_origen.nombre} (confirmado)",
+                usuario=request.user,
+                referencia_id=traslado.id,
+                referencia_tipo='TRASLADO'
+            )
+
+        traslado.estado = TrasladoInventario.Estado.COMPLETADO
+        traslado.confirmado_por = request.user
+        traslado.fecha_confirmacion = timezone.now()
+        traslado.save(update_fields=['estado', 'confirmado_por', 'fecha_confirmacion'])
+        return Response(TrasladoInventarioSerializer(traslado, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'], url_path='rechazar')
+    @transaction.atomic
+    def rechazar(self, request, pk=None):
+        """El destino indica que la mercadería no llegó: el stock vuelve al origen."""
+        traslado = self.get_object()
+        if traslado.estado != TrasladoInventario.Estado.PENDIENTE:
+            return Response({'error': 'Este traslado ya fue confirmado o rechazado.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        motivo = (request.data.get('motivo') or '').strip()
+        if not motivo:
+            return Response({'error': 'Debe indicar el motivo del rechazo.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        self._revertir_stock_origen(traslado, motivo_prefijo='Rechazo de')
+
+        traslado.estado = TrasladoInventario.Estado.RECHAZADO
+        traslado.confirmado_por = request.user
+        traslado.fecha_confirmacion = timezone.now()
+        traslado.motivo_rechazo = motivo
+        traslado.save(update_fields=['estado', 'confirmado_por', 'fecha_confirmacion', 'motivo_rechazo'])
+        return Response(TrasladoInventarioSerializer(traslado, context={'request': request}).data)
 
 # ──────────────────────────────────────────────
 # NUEVAS VISTAS: GUÍAS DE REMISIÓN

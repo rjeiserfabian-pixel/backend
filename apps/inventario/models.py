@@ -300,18 +300,43 @@ class MovimientoInventario(models.Model):
 
 class TrasladoInventario(models.Model):
     """
-    Cabecera de un traslado de mercadería entre dos almacenes/ubicaciones.
+    Cabecera de un traslado de mercadería entre dos almacenes/ubicaciones
+    propios de la empresa (a diferencia de la Guía de Remisión, que es para
+    traslados hacia un tercero/lugar público).
+
+    El stock sale del origen al crear el traslado, pero solo entra al destino
+    cuando alguien con permiso de aprobación confirma la recepción física
+    (acción "confirmar"). Mientras está PENDIENTE, la mercadería no figura
+    como stock disponible en ningún almacén (está "en tránsito").
     """
+    class Estado(models.TextChoices):
+        PENDIENTE = 'PENDIENTE', 'Pendiente de confirmación'
+        COMPLETADO = 'COMPLETADO', 'Completado'
+        RECHAZADO = 'RECHAZADO', 'Rechazado'
+
     fecha_traslado = models.DateTimeField(auto_now_add=True)
     almacen_origen = models.ForeignKey(Almacen, on_delete=models.RESTRICT, related_name='traslados_origen')
     almacen_destino = models.ForeignKey(Almacen, on_delete=models.RESTRICT, related_name='traslados_destino')
+    # Serie administrable en Configuración > Series Internas (tipo TRASLADO).
+    # Si la sucursal de origen no tiene una serie configurada, se sigue
+    # numerando como "TR-<id>" (comportamiento previo, sin romper nada).
+    serie = models.ForeignKey('ventas.SerieDocumentoInterno', on_delete=models.RESTRICT, null=True, blank=True)
+    correlativo = models.IntegerField(null=True, blank=True)
     observaciones = models.TextField(null=True, blank=True)
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.RESTRICT,
         related_name='traslados_realizados'
     )
-    estado = models.CharField(max_length=20, default='COMPLETADO')
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.PENDIENTE)
+    confirmado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.RESTRICT,
+        null=True, blank=True,
+        related_name='traslados_confirmados'
+    )
+    fecha_confirmacion = models.DateTimeField(null=True, blank=True)
+    motivo_rechazo = models.CharField(max_length=255, null=True, blank=True)
 
     class Meta:
         db_table = 'traslado_inventario'
