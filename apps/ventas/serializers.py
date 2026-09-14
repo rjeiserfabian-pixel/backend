@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from .models import (
-    Caja, SesionCaja, MovimientoCaja, TipoComprobante, SerieComprobante, MetodoPago, 
-    Impuesto, Venta, DetalleVenta, PagoVenta, CuentaPorCobrar, CuotaCredito, PagoCuota
+    Caja, SesionCaja, MovimientoCaja, TipoComprobante, SerieComprobante, MetodoPago,
+    Impuesto, Venta, DetalleVenta, PagoVenta, CuentaPorCobrar, CuotaCredito, PagoCuota,
+    KioskoTerminal
 )
 from apps.inventario.serializers import RepuestoSerializer
 from apps.clientes.serializers import ClienteSerializer
@@ -36,6 +37,18 @@ class SerieComprobanteSerializer(serializers.ModelSerializer):
     class Meta:
         model = SerieComprobante
         fields = '__all__'
+
+
+class KioskoTerminalSerializer(serializers.ModelSerializer):
+    sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)
+
+    class Meta:
+        model = KioskoTerminal
+        fields = ['id', 'nombre', 'sucursal', 'sucursal_nombre', 'codigo_activacion', 'activo', 'activado_en', 'ultima_actividad', 'creado_en']
+        # El token es el secreto que usa el dispositivo para identificarse; nunca
+        # se expone por el listado del panel de administración, solo se entrega
+        # una vez al activar el kiosko (ver KioskoActivarSerializer/acción activar).
+        read_only_fields = ['codigo_activacion', 'activado_en', 'ultima_actividad', 'creado_en']
 
 
 class CajaSerializer(serializers.ModelSerializer):
@@ -104,7 +117,8 @@ class VentaSerializer(serializers.ModelSerializer):
     tipo_comprobante_nombre = serializers.CharField(source='tipo_comprobante.nombre', read_only=True)
     vendedor_nombre = serializers.CharField(source='sesion_caja.usuario.nombre_completo', read_only=True)
     caja_nombre = serializers.CharField(source='sesion_caja.caja.nombre', read_only=True)
-    
+    kiosko_nombre = serializers.CharField(source='kiosko.nombre', read_only=True)
+
     class Meta:
         model = Venta
         fields = '__all__'
@@ -113,7 +127,12 @@ class VentaSerializer(serializers.ModelSerializer):
 class TicketKioskoCreateSerializer(serializers.Serializer):
     cliente_id = serializers.IntegerField()
     vehiculo_id = serializers.IntegerField(required=False, allow_null=True)
-    sucursal_id = serializers.IntegerField()
+    # El origen real de verdad para la sucursal es kiosko_token, resuelto en el
+    # backend — sucursal_id queda opcional y se ignora si hay un token válido.
+    # Así un ticket no puede terminar en una sucursal distinta a la del kiosko
+    # físico solo porque alguien manipule el valor enviado desde el navegador.
+    sucursal_id = serializers.IntegerField(required=False, allow_null=True)
+    kiosko_token = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     moneda = serializers.CharField(max_length=3, required=False, default='PEN')
     tipo_cambio = serializers.DecimalField(max_digits=10, decimal_places=4, required=False, default=1.0000)
     kilometraje = serializers.IntegerField(required=False, allow_null=True, min_value=0)

@@ -2,12 +2,13 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from .views import (
-    CajaViewSet, SesionCajaViewSet, MetodoPagoViewSet, 
+    CajaViewSet, SesionCajaViewSet, MetodoPagoViewSet,
     ImpuestoViewSet, TipoComprobanteViewSet, SerieComprobanteViewSet, VentaViewSet,
-    CuentaPorCobrarViewSet, TipoCambioView, SerieDocumentoInternoViewSet
+    CuentaPorCobrarViewSet, TipoCambioView, SerieDocumentoInternoViewSet, KioskoTerminalViewSet
 )
 
 router = DefaultRouter()
+router.register(r'kioskos', KioskoTerminalViewSet, basename='kiosko')
 router.register(r'cajas', CajaViewSet, basename='caja')
 router.register(r'sesiones', SesionCajaViewSet, basename='sesioncaja')
 router.register(r'metodos-pago', MetodoPagoViewSet, basename='metodopago')

@@ -184,13 +184,37 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
 
         repuestos = self.get_queryset().filter(query).distinct()
 
+        # Si la request viene de un kiosko registrado, además del stock global
+        # (stock_total_disponible, para el catálogo interno) se agrega el stock
+        # real disponible SOLO en la sucursal de ese kiosko — es lo que debe ver
+        # el cliente, para no ofrecerle cantidades que físicamente están en otro local.
+        from apps.ventas.models import KioskoTerminal
+        kiosko_token = request.query_params.get('kiosko_token')
+        sucursal_id_kiosko = None
+        if kiosko_token:
+            kiosko = KioskoTerminal.objects.filter(token=kiosko_token, activo=True).first()
+            if kiosko:
+                sucursal_id_kiosko = kiosko.sucursal_id
+
+        def _anexar_stock_sucursal(items, objetos):
+            if sucursal_id_kiosko is None:
+                return items
+            for item, obj in zip(items, objetos):
+                item['stock_disponible_sucursal'] = sum(
+                    s.stock_disponible for s in obj.inventario_stock.all()
+                    if s.ubicacion.almacen.sucursal_id == sucursal_id_kiosko
+                )
+            return items
+
         page = self.paginate_queryset(repuestos)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            data = _anexar_stock_sucursal(serializer.data, page)
+            return self.get_paginated_response(data)
 
         serializer = self.get_serializer(repuestos, many=True)
-        return Response(serializer.data)
+        data = _anexar_stock_sucursal(serializer.data, repuestos)
+        return Response(data)
 
     @action(detail=False, methods=['get'])
     def exportar_excel(self, request):

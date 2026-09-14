@@ -1117,6 +1117,80 @@ class ReporteVehiculosView(APIView):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 7B. REPORTE DE KIOSKOS
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ReporteKioskosView(APIView):
+    """
+    GET /api/reportes/kioskos/
+    Parámetros: fecha_inicio, fecha_fin, sucursal_id, formato (json|excel|pdf)
+    Agrupa las ventas cobradas por kiosko de origen: cuántos tickets generó
+    cada terminal y cuánto vendió, para que el dueño del taller sepa qué
+    kiosko se usa más (y detecte uno que dejó de generar ventas).
+    """
+    def get_permissions(self):
+        return [TienePermiso("REPORTES.KIOSKOS.VER")]
+
+    def get(self, request):
+        fecha_inicio, fecha_fin = _parse_date_range(request)
+        sucursal_id = request.query_params.get("sucursal_id")
+        formato = request.query_params.get("formato", "json")
+
+        qs = (
+            Venta.objects
+            .filter(
+                kiosko__isnull=False,
+                fecha_emision__date__gte=fecha_inicio,
+                fecha_emision__date__lte=fecha_fin,
+            )
+            .exclude(estado__in=[Venta.Estado.PRE_VENTA, Venta.Estado.ANULADA])
+        )
+        if sucursal_id:
+            qs = qs.filter(sucursal_id=sucursal_id)
+
+        total_monto = ExpressionWrapper(F("total") * F("tipo_cambio"), output_field=DecimalField(max_digits=14, decimal_places=2))
+
+        agrupado = (
+            qs.values("kiosko_id", "kiosko__nombre", "kiosko__sucursal__nombre")
+            .annotate(
+                total_tickets=Count("id"),
+                total_vendido=Coalesce(Sum(total_monto), Value(0), output_field=DecimalField(max_digits=14, decimal_places=2)),
+            )
+            .order_by("-total_vendido")
+        )
+
+        data = []
+        for row in agrupado:
+            total_tickets = row["total_tickets"]
+            total_vendido = float(row["total_vendido"] or 0)
+            data.append({
+                "kiosko_id": row["kiosko_id"],
+                "kiosko_nombre": row["kiosko__nombre"] or "—",
+                "sucursal": row["kiosko__sucursal__nombre"] or "—",
+                "total_tickets": total_tickets,
+                "total_vendido": total_vendido,
+                "ticket_promedio": round(total_vendido / total_tickets, 2) if total_tickets else 0,
+            })
+
+        resumen = {
+            "total_tickets": sum(d["total_tickets"] for d in data),
+            "total_vendido": round(sum(d["total_vendido"] for d in data), 2),
+        }
+
+        if formato in ("excel", "pdf"):
+            headers = ["Kiosko", "Sucursal", "Tickets", "Total Vendido (S/)", "Ticket Promedio (S/)"]
+            rows = [
+                [d["kiosko_nombre"], d["sucursal"], d["total_tickets"], d["total_vendido"], d["ticket_promedio"]]
+                for d in data
+            ]
+            if formato == "excel":
+                return _exportar_excel(headers, rows, "Reporte_Kioskos")
+            return _exportar_pdf("Reporte de Kioskos", headers, rows)
+
+        return Response({"data": data, "resumen": resumen})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 8. FILTROS AUXILIARES (para los selectores del frontend)
 # ─────────────────────────────────────────────────────────────────────────────
 

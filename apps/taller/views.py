@@ -250,7 +250,13 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
 
             orden.estado = OrdenTrabajo.Estado.APROBADO
             orden.save()
-            
+
+            OrdenHistorialEstado.objects.create(
+                orden=orden,
+                estado=orden.estado,
+                usuario=request.user,
+            )
+
             logger.info(f"OT-{orden.numero} aprobada por cliente. Servicios: {servicios_ids}, Repuestos: {repuestos_ids}")
             
         return Response({'status': 'ok', 'message': 'Aprobación registrada correctamente.'})
@@ -276,7 +282,13 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         orden.estado = OrdenTrabajo.Estado.FINALIZADO
         orden.fecha_finalizacion = timezone.now()
         orden.save(update_fields=['estado', 'fecha_finalizacion'])
-        
+
+        OrdenHistorialEstado.objects.create(
+            orden=orden,
+            estado=orden.estado,
+            usuario=request.user,
+        )
+
         return Response({'status': 'ok', 'message': 'Orden finalizada correctamente.', 'estado': orden.estado})
 
     @action(detail=True, methods=['post'])

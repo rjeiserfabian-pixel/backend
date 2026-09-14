@@ -8,14 +8,15 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from decimal import Decimal
 
 from .models import (
-    Caja, SesionCaja, MovimientoCaja, TipoComprobante, SerieComprobante, MetodoPago, 
-    Impuesto, Venta, DetalleVenta, CuentaPorCobrar, CuotaCredito, PagoVenta, SerieDocumentoInterno
+    Caja, SesionCaja, MovimientoCaja, TipoComprobante, SerieComprobante, MetodoPago,
+    Impuesto, Venta, DetalleVenta, CuentaPorCobrar, CuotaCredito, PagoVenta, SerieDocumentoInterno,
+    KioskoTerminal
 )
 from .serializers import (
     CajaSerializer, SesionCajaSerializer, MovimientoCajaSerializer,
     TipoComprobanteSerializer, SerieComprobanteSerializer, MetodoPagoSerializer, ImpuestoSerializer,
     VentaSerializer, TicketKioskoCreateSerializer, ProcesarVentaSerializer,
-    CuentaPorCobrarSerializer, SerieDocumentoInternoSerializer
+    CuentaPorCobrarSerializer, SerieDocumentoInternoSerializer, KioskoTerminalSerializer
 )
 from .services import VentasService, CreditoService
 from apps.inventario.models import Sucursal, Almacen, Repuesto
@@ -201,6 +202,62 @@ class SesionCajaViewSet(viewsets.ReadOnlyModelViewSet):
         })
 
 # ──────────────────────────────────────────────
+# KIOSKOS (terminales físicos de autoservicio)
+# ──────────────────────────────────────────────
+
+class KioskoTerminalViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    """
+    CRUD de kioskos (panel de administración, requiere sesión) + dos acciones
+    públicas para el propio dispositivo físico: `activar` (una vez, con el
+    código que entrega el administrador) y `whoami` (confirmar identidad en
+    cada carga, sin volver a pedir nada).
+    """
+    permiso_ver = "CONFIGURACION.KIOSKOS.VER"
+    permiso_crear = "CONFIGURACION.KIOSKOS.CREAR"
+    permiso_editar = "CONFIGURACION.KIOSKOS.EDITAR"
+    permiso_eliminar = "CONFIGURACION.KIOSKOS.ELIMINAR"
+    queryset = KioskoTerminal.objects.select_related('sucursal').all()
+    serializer_class = KioskoTerminalSerializer
+
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
+    def activar(self, request):
+        codigo = (request.data.get('codigo_activacion') or '').strip().upper()
+        if not codigo:
+            return Response({"error": "Debes indicar el código de activación."}, status=status.HTTP_400_BAD_REQUEST)
+
+        kiosko = KioskoTerminal.objects.select_related('sucursal').filter(codigo_activacion=codigo).first()
+        if not kiosko or not kiosko.activo:
+            return Response({"error": "Código inválido o kiosko desactivado."}, status=status.HTTP_404_NOT_FOUND)
+
+        from django.utils import timezone as _timezone
+        if not kiosko.activado_en:
+            kiosko.activado_en = _timezone.now()
+        kiosko.ultima_actividad = _timezone.now()
+        kiosko.save(update_fields=['activado_en', 'ultima_actividad'])
+
+        return Response({
+            'token': kiosko.token,
+            'kiosko_id': kiosko.id,
+            'kiosko_nombre': kiosko.nombre,
+            'sucursal_id': kiosko.sucursal_id,
+            'sucursal_nombre': kiosko.sucursal.nombre,
+        })
+
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    def whoami(self, request):
+        token = request.query_params.get('token')
+        kiosko = KioskoTerminal.objects.select_related('sucursal').filter(token=token, activo=True).first() if token else None
+        if not kiosko:
+            return Response({"error": "Kiosko no reconocido o desactivado."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            'kiosko_id': kiosko.id,
+            'kiosko_nombre': kiosko.nombre,
+            'sucursal_id': kiosko.sucursal_id,
+            'sucursal_nombre': kiosko.sucursal.nombre,
+        })
+
+
+# ──────────────────────────────────────────────
 # VENTAS Y KIOSKO
 # ──────────────────────────────────────────────
 
@@ -236,6 +293,13 @@ class VentaViewSet(viewsets.ModelViewSet):
             qs = qs.filter(estado__in=[Venta.Estado.PAGADA, Venta.Estado.AL_CREDITO])
         elif estado:
             qs = qs.filter(estado=estado)
+
+        # Un cajero solo debe ver los pedidos (Kiosko/OT) de la sucursal que
+        # tiene activa — antes esta lista mostraba tickets de TODAS las
+        # sucursales a cualquier cajero, sin importar dónde estuviera parado.
+        sucursal = self.request.query_params.get('sucursal')
+        if sucursal:
+            qs = qs.filter(sucursal_id=sucursal)
         return qs
 
     @action(
@@ -246,21 +310,36 @@ class VentaViewSet(viewsets.ModelViewSet):
     def kiosko_generar_ticket(self, request):
         serializer = TicketKioskoCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         data = serializer.validated_data
+
+        # La sucursal SIEMPRE se resuelve desde el kiosko registrado (nunca del
+        # sucursal_id que mande el navegador) — es lo que evita que un ticket
+        # generado en una sucursal termine facturado/descontando stock en otra.
+        kiosko_token = data.get('kiosko_token')
+        kiosko = KioskoTerminal.objects.filter(token=kiosko_token, activo=True).select_related('sucursal').first() if kiosko_token else None
+        if not kiosko:
+            return Response(
+                {"error": "Este kiosko no está activado o fue desactivado. Contacta al administrador del taller."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        from django.utils import timezone as _timezone
+        kiosko.ultima_actividad = _timezone.now()
+        kiosko.save(update_fields=['ultima_actividad'])
+
         cliente = Cliente.objects.get(id=data['cliente_id'])
         vehiculo_id = data.get('vehiculo_id')
         vehiculo = Vehiculo.objects.get(id=vehiculo_id) if vehiculo_id else None
-        sucursal = Sucursal.objects.get(id=data['sucursal_id'])
         kilometraje = data.get('kilometraje', None)
-        
+
         try:
             venta = VentasService.generar_ticket_kiosko(
                 cliente=cliente,
                 vehiculo=vehiculo,
-                sucursal=sucursal,
+                sucursal=kiosko.sucursal,
                 detalles_data=data['detalles'],
-                kilometraje=kilometraje
+                kilometraje=kilometraje,
+                kiosko=kiosko,
             )
             return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
         except Exception as e:
@@ -340,11 +419,22 @@ class VentaViewSet(viewsets.ModelViewSet):
             venta_id = data.get('venta_id')
             if venta_id:
                 venta = Venta.objects.get(id=venta_id)
-                # IMPORTANTE: No borramos ni recreamos los detalles porque 
+                # IMPORTANTE: No borramos ni recreamos los detalles porque
                 # pueden contener descripciones de servicios del Taller o Kiosko
                 # que son de solo lectura en el POS.
+                # La sucursal de una venta ya existente (Kiosko/OT) NO se reasigna
+                # aquí: quedó fijada en su creación. Antes esta línea la
+                # sobreescribía con la sucursal activa del cajero, así que un
+                # ticket generado en la sucursal A podía terminar cobrado y
+                # descontando stock en la sucursal B solo porque el cajero tenía
+                # otra sucursal seleccionada en su pantalla (bug real detectado).
+                if venta.sucursal_id != sucursal.id:
+                    transaction.set_rollback(True)
+                    return Response({
+                        'error': f"Este ticket pertenece a la sucursal '{venta.sucursal.nombre}'. "
+                                 f"Cambia tu sucursal activa a esa para poder cobrarlo."
+                    }, status=status.HTTP_400_BAD_REQUEST)
                 venta.cliente = cliente
-                venta.sucursal = sucursal
                 venta.moneda = moneda
                 venta.tipo_cambio = tipo_cambio
                 venta.monto_recibido = monto_recibido
@@ -451,18 +541,25 @@ class VentaViewSet(viewsets.ModelViewSet):
                 return Response({"error": "La sucursal no tiene almacenes configurados."}, status=status.HTTP_400_BAD_REQUEST)
 
             # 3. Descontar stock (solo para repuestos físicos, no servicios)
-            for det in venta.detalles.all():
-                if not det.repuesto:
-                    continue  # Los servicios no tienen stock físico
-                VentasService._descontar_stock(
-                    repuesto=det.repuesto, 
-                    almacen=almacen_origen, 
-                    cantidad=det.cantidad, 
-                    motivo=f"Venta {venta.serie_correlativo}",
-                    usuario=request.user,
-                    referencia_id=venta.id
-                )
-                
+            # Si la venta viene de una Orden de Trabajo, sus repuestos ya salieron
+            # del inventario al aprobarlos (RESERVA) e instalarlos (SALIDA) en el
+            # taller — descontar de nuevo aquí duplicaba/triplicaba la salida del
+            # mismo repuesto físico (bug real detectado: Reserva + Instalación +
+            # Venta restaban 3 veces la misma unidad).
+            es_de_orden_trabajo = bool(venta.ticket_kiosko and venta.ticket_kiosko.startswith('OT-'))
+            if not es_de_orden_trabajo:
+                for det in venta.detalles.all():
+                    if not det.repuesto:
+                        continue  # Los servicios no tienen stock físico
+                    VentasService._descontar_stock(
+                        repuesto=det.repuesto,
+                        almacen=almacen_origen,
+                        cantidad=det.cantidad,
+                        motivo=f"Venta {venta.serie_correlativo}",
+                        usuario=request.user,
+                        referencia_id=venta.id
+                    )
+
             # 4. Si viene de una Orden de Trabajo, cambiar estado a FACTURADO
             if venta.ticket_kiosko and venta.ticket_kiosko.startswith('OT-'):
                 parts = venta.ticket_kiosko.split('-')

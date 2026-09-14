@@ -11,6 +11,7 @@ from .views import (
     ReporteComprasView,
     ReporteAvanzadoView,
     ReporteVehiculosView,
+    ReporteKioskosView,
     FiltrosAuxiliaresView,
 )
 
@@ -22,5 +23,6 @@ urlpatterns = [
     path("compras/",    ReporteComprasView.as_view(),     name="reporte-compras"),
     path("avanzado/",   ReporteAvanzadoView.as_view(),   name="reporte-avanzado"),
     path("vehiculos/",  ReporteVehiculosView.as_view(),  name="reporte-vehiculos"),
+    path("kioskos/",    ReporteKioskosView.as_view(),    name="reporte-kioskos"),
     path("filtros/",    FiltrosAuxiliaresView.as_view(), name="reporte-filtros"),
 ]

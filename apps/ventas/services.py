@@ -40,20 +40,29 @@ class VentasService:
 
     @staticmethod
     @transaction.atomic
-    def generar_ticket_kiosko(cliente, vehiculo, sucursal, detalles_data: list, kilometraje: int = None) -> Venta:
+    def generar_ticket_kiosko(cliente, vehiculo, sucursal, detalles_data: list, kilometraje: int = None, kiosko=None) -> Venta:
         """
         Crea una venta en estado PRE_VENTA (Ticket) a partir de la selección del kiosko.
         No descuenta stock ni registra pagos aún.
+
+        `kiosko` (KioskoTerminal), cuando viene informado, es la fuente de verdad
+        de la sucursal: sobreescribe el parámetro `sucursal` para que el ticket
+        quede atado a la sucursal real del terminal físico, sin depender de un
+        dato que pudo venir manipulado desde el navegador del kiosko.
         """
+        if kiosko is not None:
+            sucursal = kiosko.sucursal
+
         ticket_code = f"TK-{str(uuid.uuid4())[:6].upper()}"
-        
+
         venta = Venta.objects.create(
             cliente=cliente,
             vehiculo=vehiculo,
             sucursal=sucursal,
             estado=Venta.Estado.PRE_VENTA,
             ticket_kiosko=ticket_code,
-            kilometraje=kilometraje
+            kilometraje=kilometraje,
+            kiosko=kiosko,
         )
         
         # Actualizar el kilometraje actual del vehículo si se proporcionó
@@ -151,11 +160,16 @@ class VentasService:
             pass
 
         # 4. Descontar Stock del Almacén
+        # Si la venta viene de una Orden de Trabajo, el stock de sus repuestos ya
+        # salió del inventario al aprobarlos (RESERVA) e instalarlos (SALIDA) en
+        # el taller — descontar de nuevo aquí duplicaba la salida del mismo
+        # repuesto físico. Ver misma corrección en procesar_venta_directa (views.py).
+        es_de_orden_trabajo = bool(venta.ticket_kiosko and venta.ticket_kiosko.startswith('OT-'))
         for detalle in venta.detalles.all():
             detalle.almacen_origen = almacen_origen
             detalle.save()
-            
-            if detalle.repuesto:
+
+            if detalle.repuesto and not es_de_orden_trabajo:
                 VentasService._descontar_stock(detalle.repuesto, almacen_origen, detalle.cantidad, f"Venta {venta.serie_correlativo}", usuario, venta.id)
 
         # 5. Si viene de una Orden de Trabajo, cambiar estado a FACTURADO

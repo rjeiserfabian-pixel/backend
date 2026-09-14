@@ -72,8 +72,11 @@ class RepuestoSerializer(serializers.ModelSerializer):
     unidad_medida_nombre = serializers.CharField(source='unidad_medida.nombre', read_only=True)
     unidad_medida_abreviatura = serializers.CharField(source='unidad_medida.abreviatura', read_only=True)
     unidad_medida_permite_decimales = serializers.BooleanField(source='unidad_medida.permite_decimales', read_only=True)
-    stock_total_disponible = serializers.IntegerField(read_only=True)
-    stock_minimo_global = serializers.IntegerField(read_only=True)
+    # ReadOnlyField (no IntegerField): stock_disponible es DecimalField y se
+    # vende por fracciones (ej. litros de aceite) — IntegerField truncaba los
+    # decimales (8.50 -> 8), ocultando el stock real disponible.
+    stock_total_disponible = serializers.ReadOnlyField()
+    stock_minimo_global = serializers.ReadOnlyField()
     inventario_stock = InventarioStockResumenSerializer(many=True, read_only=True)
 
     class Meta:

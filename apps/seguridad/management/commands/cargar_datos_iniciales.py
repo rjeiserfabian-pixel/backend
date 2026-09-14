@@ -275,6 +275,11 @@ class Command(BaseCommand):
                 "icono": "wallet", "ruta": "/reportes/caja",
                 "orden": 7, "visible_menu": True, "padre": "REPORTES",
             },
+            {
+                "codigo": "REPORTES_KIOSKOS", "nombre": "Reporte de Kioskos",
+                "icono": "layoutdashboard", "ruta": "/reportes/kioskos",
+                "orden": 8, "visible_menu": True, "padre": "REPORTES",
+            },
             # ── Cajas ─────────────────────────────────────────────────────────
             {
                 "codigo": "CAJAS", "nombre": "Cajas",
@@ -326,6 +331,11 @@ class Command(BaseCommand):
                 "codigo": "EMPRESA", "nombre": "Empresa",
                 "icono": "building", "ruta": "/seguridad/empresa",
                 "orden": 5, "visible_menu": True, "padre": "CONFIG",
+            },
+            {
+                "codigo": "KIOSKOS", "nombre": "Kioskos",
+                "icono": "layoutdashboard", "ruta": "/configuracion/kioskos",
+                "orden": 6, "visible_menu": True, "padre": "CONFIG",
             },
         ]
 
@@ -497,6 +507,13 @@ class Command(BaseCommand):
             {"modulo": "REPORTES", "codigo": "REPORTES.COMPRAS.VER",    "nombre": "Ver reporte de compras",    "accion": "VER"},
             {"modulo": "REPORTES", "codigo": "REPORTES.AVANZADO.VER",   "nombre": "Ver reporte avanzado",      "accion": "VER"},
             {"modulo": "REPORTES", "codigo": "REPORTES.VEHICULO.VER",   "nombre": "Ver reporte de vehículos",  "accion": "VER"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.KIOSKOS.VER",    "nombre": "Ver reporte de kioskos",    "accion": "VER"},
+
+            # ── KIOSKOS ───────────────────────────────────────────────────────
+            {"modulo": "CONFIG", "codigo": "CONFIGURACION.KIOSKOS.VER",      "nombre": "Ver kioskos",      "accion": "VER"},
+            {"modulo": "CONFIG", "codigo": "CONFIGURACION.KIOSKOS.CREAR",    "nombre": "Crear kioskos",    "accion": "CREAR"},
+            {"modulo": "CONFIG", "codigo": "CONFIGURACION.KIOSKOS.EDITAR",   "nombre": "Editar kioskos",   "accion": "EDITAR"},
+            {"modulo": "CONFIG", "codigo": "CONFIGURACION.KIOSKOS.ELIMINAR", "nombre": "Eliminar kioskos", "accion": "ELIMINAR"},
 
             # ── CAJAS ─────────────────────────────────────────────────────────
             {"modulo": "CAJAS", "codigo": "CAJAS.VER",                "nombre": "Ver dashboard de cajas",        "accion": "VER"},

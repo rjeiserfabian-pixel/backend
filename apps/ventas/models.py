@@ -1,4 +1,5 @@
 import logging
+import secrets
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
@@ -7,6 +8,42 @@ from apps.clientes.models import Cliente
 from apps.vehiculos.models import Vehiculo
 
 logger = logging.getLogger(__name__)
+
+
+def _generar_codigo_activacion():
+    # Legible para escribir/leer a mano durante el setup físico del equipo.
+    return secrets.token_hex(4).upper()
+
+
+def _generar_token_kiosko():
+    return secrets.token_urlsafe(32)
+
+
+class KioskoTerminal(models.Model):
+    """
+    Un kiosko físico registrado y atado a una sucursal. Se activa una sola vez
+    en el dispositivo (con codigo_activacion) y desde ahí usa su `token` para
+    identificarse en cada request público, sin depender de que el navegador
+    del cliente "recuerde" ni de que nadie edite una URL a mano — el backend
+    resuelve la sucursal a partir del token, nunca de un dato que mande el cliente.
+    """
+    nombre = models.CharField(max_length=100)
+    sucursal = models.ForeignKey(Sucursal, on_delete=models.RESTRICT, related_name='kioskos')
+    codigo_activacion = models.CharField(max_length=20, unique=True, db_index=True, default=_generar_codigo_activacion)
+    token = models.CharField(max_length=64, unique=True, db_index=True, default=_generar_token_kiosko)
+    activo = models.BooleanField(default=True)
+    activado_en = models.DateTimeField(null=True, blank=True)
+    ultima_actividad = models.DateTimeField(null=True, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'ventas_kiosko_terminal'
+        verbose_name = 'Kiosko'
+        verbose_name_plural = 'Kioskos'
+        ordering = ['sucursal__nombre', 'nombre']
+
+    def __str__(self):
+        return f"{self.nombre} ({self.sucursal.nombre})"
 
 # ──────────────────────────────────────────────
 # CONFIGURACIONES DE CAJA Y FACTURACIÓN
@@ -195,6 +232,10 @@ class Venta(models.Model):
     tipo_comprobante = models.ForeignKey(TipoComprobante, on_delete=models.RESTRICT, null=True, blank=True)
     serie_correlativo = models.CharField(max_length=50, null=True, blank=True, db_index=True)
     ticket_kiosko = models.CharField(max_length=20, null=True, blank=True, db_index=True)  # Ej: TK-482
+    kiosko = models.ForeignKey(
+        KioskoTerminal, on_delete=models.SET_NULL, null=True, blank=True, related_name='ventas',
+        help_text="Terminal de kiosko que generó este ticket, si aplica."
+    )
     kilometraje = models.IntegerField(null=True, blank=True)  # Kilometraje del vehículo al momento del ingreso
 
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
