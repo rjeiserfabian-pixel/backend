@@ -12,10 +12,11 @@ class TipoServicioSerializer(serializers.ModelSerializer):
 class OrdenHistorialEstadoSerializer(serializers.ModelSerializer):
     usuario_nombre = serializers.CharField(source='usuario.nombre_completo', read_only=True)
     estado_display = serializers.CharField(source='get_estado_display', read_only=True)
+    motivo_categoria_display = serializers.CharField(source='get_motivo_categoria_display', read_only=True)
 
     class Meta:
         model = OrdenHistorialEstado
-        fields = ['id', 'estado', 'estado_display', 'fecha_registro', 'usuario', 'usuario_nombre', 'observaciones']
+        fields = ['id', 'estado', 'estado_display', 'fecha_registro', 'usuario', 'usuario_nombre', 'observaciones', 'motivo_categoria', 'motivo_categoria_display']
 
 class HallazgoSerializer(serializers.ModelSerializer):
     registrado_por_nombre = serializers.CharField(source='registrado_por.nombre_completo', read_only=True)
@@ -28,7 +29,14 @@ class HallazgoSerializer(serializers.ModelSerializer):
 class OrdenServicioSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrdenServicio
-        fields = ['id', 'orden', 'descripcion', 'precio_estimado', 'aprobado_cliente', 'completado']
+        fields = ['id', 'orden', 'descripcion', 'precio_estimado', 'aprobado_cliente', 'completado', 'hallazgo_origen']
+
+    def validate(self, attrs):
+        hallazgo = attrs.get('hallazgo_origen')
+        orden = attrs.get('orden') or getattr(self.instance, 'orden', None)
+        if hallazgo and orden and hallazgo.orden_id != orden.id:
+            raise serializers.ValidationError("El hallazgo seleccionado no pertenece a esta orden de trabajo.")
+        return attrs
 
 class OrdenRepuestoSerializer(serializers.ModelSerializer):
     repuesto_detalle = RepuestoSerializer(source='repuesto', read_only=True)
@@ -50,7 +58,7 @@ class OrdenTrabajoListSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = OrdenTrabajo
-        fields = ['id', 'numero', 'vehiculo', 'vehiculo_placa', 'cliente', 'cliente_nombre', 'estado', 'tipo_servicio', 'tipo_servicio_detalle', 'fecha_ingreso', 'mecanico_nombre', 'motivo_ingreso', 'fecha_vencimiento_cotizacion']
+        fields = ['id', 'numero', 'vehiculo', 'vehiculo_placa', 'cliente', 'cliente_nombre', 'estado', 'tipo_servicio', 'tipo_servicio_detalle', 'fecha_ingreso', 'mecanico_asignado', 'mecanico_nombre', 'motivo_ingreso', 'fecha_vencimiento_cotizacion', 'fecha_estimada_entrega']
         
     def get_cliente_nombre(self, obj):
         if obj.cliente:
@@ -75,7 +83,8 @@ class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'numero', 'vehiculo', 'vehiculo_detalle', 'cliente', 'cliente_detalle', 'recepcionista', 'recepcionista_nombre',
             'mecanico_asignado', 'mecanico_nombre', 'estado', 'tipo_servicio', 'tipo_servicio_detalle', 'kilometraje_ingreso',
-            'motivo_ingreso', 'url_cotizacion_pdf', 'fecha_vencimiento_cotizacion', 'fecha_ingreso', 'fecha_finalizacion', 'hallazgos', 'servicios', 'repuestos', 'historial_estados'
+            'motivo_ingreso', 'url_cotizacion_pdf', 'fecha_vencimiento_cotizacion', 'fecha_estimada_entrega', 'fecha_ingreso',
+            'fecha_finalizacion', 'hallazgos', 'servicios', 'repuestos', 'historial_estados'
         ]
         read_only_fields = ['recepcionista', 'numero']
 

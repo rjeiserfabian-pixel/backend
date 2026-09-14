@@ -133,6 +133,7 @@ class VentasService:
                 metodo_pago_id=p['metodo_pago_id'],
                 monto=monto,
                 referencia=p.get('referencia', ''),
+                origen_movimiento=MovimientoCaja.OrigenMovimiento.VENTA,
                 venta_origen=venta,
                 creado_por=usuario
             )

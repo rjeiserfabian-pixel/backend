@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import filters
+from rest_framework.permissions import AllowAny
 from .models import Cliente, Proveedor, Transportista
 from .serializers import ClienteSerializer, ProveedorSerializer, TransportistaSerializer
 from .services import ConsultaOrchestrator
@@ -25,6 +26,66 @@ class ClienteViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         # Soft delete: el campo ya existe para esto pero no se usaba.
         instance.estado = False
         instance.save(update_fields=['estado'])
+
+    @action(
+        detail=False, methods=['get'],
+        url_path='kiosko/buscar-cliente',
+        permission_classes=[AllowAny]  # Ruta pública: el kiosko funciona sin sesión de usuario
+    )
+    def kiosko_buscar_cliente(self, request):
+        """
+        Endpoint público para el kiosko de autoatención.
+        Busca un cliente por DNI: primero en la base de datos local,
+        si no existe consulta la API externa de la RENIEC.
+        No requiere autenticación porque el kiosko es una pantalla pública.
+        """
+        dni = request.query_params.get('dni', '').strip()
+        if not dni or len(dni) != 8 or not dni.isdigit():
+            return Response(
+                {'error': 'El DNI debe ser un número de 8 dígitos.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # 1. Buscar en la BD local primero (evita cuota de API externa)
+            cliente = Cliente.objects.filter(dni=dni, estado=True).first()
+            if cliente:
+                serializer = self.get_serializer(cliente)
+                return Response({'origen': 'local', 'data': serializer.data})
+
+            # 2. Si no existe localmente, consultar la API externa
+            orchestrator = ConsultaOrchestrator()
+            datos = orchestrator.consultar_dni(dni)
+            return Response({'origen': 'api', 'data': datos})
+
+        except ValueError as e:
+            logger.warning(f"[Kiosko] Error de API al consultar DNI {dni}: {e}")
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except ConnectionError as e:
+            logger.error(f"[Kiosko] Error de conexión al consultar DNI {dni}: {e}")
+            return Response({'error': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except Exception as e:
+            logger.error(f"[Kiosko] Error inesperado al consultar DNI {dni}: {e}", exc_info=True)
+            return Response(
+                {'error': 'Error interno al procesar la consulta.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(
+        detail=False, methods=['post'],
+        url_path='kiosko/crear-cliente',
+        permission_classes=[AllowAny]  # Ruta pública: el kiosko necesita crear clientes nuevos
+    )
+    def kiosko_crear_cliente(self, request):
+        """
+        Endpoint público para que el kiosko cree un cliente nuevo cuando
+        el DNI no existe en la base de datos y el usuario completa sus datos.
+        """
+        serializer = ClienteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        cliente = serializer.save()
+        logger.info(f"[Kiosko] Cliente creado desde terminal pública: {cliente.id} - DNI: {cliente.dni}")
+        return Response(ClienteSerializer(cliente).data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['post'], url_path='consulta-dni')
     def consulta_dni(self, request):

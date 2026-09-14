@@ -177,6 +177,16 @@ class PermisoPorMetodoMixin:
     permiso_eliminar = None
 
     def get_permissions(self):
+        # Si la acción actual tiene permission_classes propios declarados
+        # (ej. @action(permission_classes=[AllowAny])), se respetan por encima
+        # del comportamiento genérico del mixin, para que los endpoints públicos
+        # (como los del kiosko) puedan coexistir con endpoints protegidos.
+        action_handler = getattr(self, self.action, None)
+        if action_handler and hasattr(action_handler, 'kwargs'):
+            action_perms = action_handler.kwargs.get('permission_classes')
+            if action_perms is not None:
+                return [permission() for permission in action_perms]
+
         method = self.request.method
         if method == "GET":
             codigo = self.permiso_ver

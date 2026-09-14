@@ -17,6 +17,7 @@ from .serializers import (
 )
 from apps.seguridad.permissions import TienePermiso, PermisoPorMetodoMixin
 from rest_framework import filters, pagination
+from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
 from django.http import HttpResponse
 from django.utils import timezone
@@ -145,7 +146,10 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         instance.estado = False
         instance.save()
 
-    @action(detail=False, methods=['get'])
+    @action(
+        detail=False, methods=['get'],
+        permission_classes=[AllowAny]  # Público: el kiosko consulta repuestos sin sesión de usuario
+    )
     def compatibles(self, request):
         """
         Endpoint dinámico para obtener repuestos compatibles con un vehículo.
@@ -160,13 +164,13 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         if not marca:
             return Response({'error': 'La marca del vehiculo es requerida'}, status=400)
 
-        query = Q(aplicaciones__marca_vehiculo__iexact=marca)
+        query = Q(aplicaciones__marca_vehiculo__icontains=marca)
 
         if modelo:
-            query &= (Q(aplicaciones__modelo_vehiculo__isnull=True) | Q(aplicaciones__modelo_vehiculo__iexact=modelo))
+            query &= (Q(aplicaciones__modelo_vehiculo__isnull=True) | Q(aplicaciones__modelo_vehiculo__icontains=modelo) | Q(aplicaciones__modelo_vehiculo=''))
 
         if motor:
-            query &= (Q(aplicaciones__motor__isnull=True) | Q(aplicaciones__motor__iexact=motor))
+            query &= (Q(aplicaciones__motor__isnull=True) | Q(aplicaciones__motor__icontains=motor) | Q(aplicaciones__motor=''))
 
         # Filtro por año: si el año viene, se respetan los rangos.
         # NULL en anio_desde o anio_hasta significa "sin límite en ese extremo".

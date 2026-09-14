@@ -75,11 +75,20 @@ class OrdenTrabajo(models.Model):
 
 
 class OrdenHistorialEstado(models.Model):
+    class MotivoCategoria(models.TextChoices):
+        RECHAZO_CLIENTE = 'RECHAZO_CLIENTE', 'Cliente rechazó la cotización'
+        ERROR_REGISTRO = 'ERROR_REGISTRO', 'Error en el registro'
+        DUPLICADO = 'DUPLICADO', 'Orden duplicada'
+        OTRO = 'OTRO', 'Otro motivo'
+
     orden = models.ForeignKey(OrdenTrabajo, on_delete=models.CASCADE, related_name='historial_estados')
     estado = models.CharField(max_length=30, choices=OrdenTrabajo.Estado.choices)
     fecha_registro = models.DateTimeField(auto_now_add=True, db_index=True)
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT)
     observaciones = models.TextField(null=True, blank=True)
+    # Solo aplica a transiciones a CANCELADO: distingue "el cliente dijo que no"
+    # de un error interno, para poder reportar después por qué se pierden órdenes.
+    motivo_categoria = models.CharField(max_length=30, choices=MotivoCategoria.choices, null=True, blank=True)
 
     class Meta:
         db_table = 'taller_orden_historial_estado'
@@ -115,6 +124,11 @@ class OrdenServicio(models.Model):
     precio_estimado = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     aprobado_cliente = models.BooleanField(default=False, db_index=True)
     completado = models.BooleanField(default=False)
+    # Hallazgo de inspección que dio origen a este servicio (si se generó con
+    # "Convertir a Servicio"). Null si el servicio se agregó directamente.
+    hallazgo_origen = models.ForeignKey(
+        Hallazgo, on_delete=models.SET_NULL, null=True, blank=True, related_name='servicios_generados'
+    )
     
     class Meta:
         db_table = 'taller_orden_servicio'

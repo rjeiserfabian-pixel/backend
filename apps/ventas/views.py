@@ -4,7 +4,7 @@ from django.db.models import Sum
 from rest_framework import viewsets, status, views, pagination
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from decimal import Decimal
 
 from .models import (
@@ -215,6 +215,14 @@ class VentaViewSet(viewsets.ModelViewSet):
     pagination_class = VentaPagination
 
     def get_permissions(self):
+        # Si la acción tiene permission_classes propios (ej. @action(permission_classes=[AllowAny])),
+        # se respetan por encima del comportamiento genérico — permite endpoints públicos del kiosko.
+        action_handler = getattr(self, self.action, None)
+        if action_handler and hasattr(action_handler, 'kwargs'):
+            action_perms = action_handler.kwargs.get('permission_classes')
+            if action_perms is not None:
+                return [permission() for permission in action_perms]
+
         if self.request.method == 'GET':
             return [TienePermiso("VENTAS.POS.VER")]
         return [TienePermiso("VENTAS.POS.CREAR")]
@@ -230,7 +238,11 @@ class VentaViewSet(viewsets.ModelViewSet):
             qs = qs.filter(estado=estado)
         return qs
 
-    @action(detail=False, methods=['post'], url_path='kiosko/generar-ticket')
+    @action(
+        detail=False, methods=['post'],
+        url_path='kiosko/generar-ticket',
+        permission_classes=[AllowAny]  # Público: el kiosko opera sin sesión de usuario
+    )
     def kiosko_generar_ticket(self, request):
         serializer = TicketKioskoCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -411,6 +423,7 @@ class VentaViewSet(viewsets.ModelViewSet):
                             metodo_pago_id=p.get('metodo_id'),
                             monto=monto_pago,
                             referencia=p.get('referencia', '') or f"Ticket {venta.serie_correlativo}",
+                            origen_movimiento=MovimientoCaja.OrigenMovimiento.VENTA,
                             venta_origen=venta,
                             creado_por=request.user
                         )
@@ -624,6 +637,7 @@ class CuentaPorCobrarViewSet(viewsets.ModelViewSet):
                         metodo_pago=metodo_pago,
                         monto=monto_decimal,
                         referencia=pago_data.get('referencia', ''),
+                        origen_movimiento=MovimientoCaja.OrigenMovimiento.COBRO,
                         creado_por=request.user
                     )
                     pago_obj = PagoCuota.objects.create(

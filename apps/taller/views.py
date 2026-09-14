@@ -129,6 +129,9 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
     TRANSICIONES_MANUALES_PERMITIDAS = {
         (OrdenTrabajo.Estado.RECEPCIONADO, OrdenTrabajo.Estado.INSPECCION),
         (OrdenTrabajo.Estado.INSPECCION, OrdenTrabajo.Estado.ESPERANDO_APROBACION),
+        # Atajo: si en recepción ya se sabe qué se necesita (ver "Generar Cotización
+        # Directa" en el frontend), se puede cotizar sin pasar por INSPECCION.
+        (OrdenTrabajo.Estado.RECEPCIONADO, OrdenTrabajo.Estado.ESPERANDO_APROBACION),
     }
 
     def perform_update(self, serializer):
@@ -389,6 +392,11 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         if not motivo:
             raise ValidationError("Debe indicar el motivo de la anulación.")
 
+        categoria = request.data.get('categoria') or None
+        categorias_validas = OrdenHistorialEstado.MotivoCategoria.values
+        if categoria and categoria not in categorias_validas:
+            raise ValidationError(f"Categoría de motivo inválida: '{categoria}'.")
+
         for orp in orden.repuestos.filter(aprobado_cliente=True, instalado=False):
             stock_record = InventarioStock.objects.filter(repuesto=orp.repuesto).first()
             if stock_record:
@@ -415,7 +423,8 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             orden=orden,
             estado=orden.estado,
             usuario=request.user,
-            observaciones=motivo
+            observaciones=motivo,
+            motivo_categoria=categoria
         )
 
         serializer = self.get_serializer(orden)
