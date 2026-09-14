@@ -160,6 +160,11 @@ class Command(BaseCommand):
                 "icono": "store", "ruta": "/inventario/sucursales",
                 "orden": 8, "visible_menu": True, "padre": "INVENTARIO",
             },
+            {
+                "codigo": "STOCK_UBICACIONES", "nombre": "Ubicaciones de Stock",
+                "icono": "map-pin", "ruta": "/inventario/stock-ubicaciones",
+                "orden": 9, "visible_menu": True, "padre": "INVENTARIO",
+            },
             # ── Taller ────────────────────────────────────────────────────────
             {
                 "codigo": "TALLER", "nombre": "Taller",
