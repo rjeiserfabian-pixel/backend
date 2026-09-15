@@ -2,29 +2,35 @@ from decimal import Decimal
 from django.db import transaction
 from rest_framework import viewsets, status
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 
 from .models import Compra, DetalleCompra, CuentaPorPagar, PagoCuenta, TipoComprobanteCompra
 from .serializers import CompraSerializer, CuentaPorPagarSerializer, PagoCuentaSerializer, TipoComprobanteCompraSerializer
 from apps.inventario.models import Repuesto, InventarioStock, MovimientoInventario, UbicacionFisica
-from apps.seguridad.permissions import TienePermiso
+from apps.seguridad.permissions import TienePermiso, PermisoPorMetodoMixin
 
-class TipoComprobanteCompraViewSet(viewsets.ModelViewSet):
+class TipoComprobanteCompraViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
+    permiso_ver = "COMPRAS.VER"
+    permiso_crear = "COMPRAS.CREAR"
+    permiso_editar = "COMPRAS.EDITAR"
     queryset = TipoComprobanteCompra.objects.all()
     serializer_class = TipoComprobanteCompraSerializer
-    permission_classes = [IsAuthenticated]
 
 class CompraViewSet(viewsets.ModelViewSet):
     queryset = Compra.objects.all().select_related('proveedor', 'usuario')
     serializer_class = CompraSerializer
-    permission_classes = [IsAuthenticated]
 
     def get_permissions(self):
         if self.action == 'anular':
             return [TienePermiso("COMPRAS.ELIMINAR")]
-        return super().get_permissions()
+        if self.request.method == 'GET':
+            return [TienePermiso("COMPRAS.VER")]
+        if self.request.method == 'POST':
+            return [TienePermiso("COMPRAS.CREAR")]
+        if self.request.method == 'DELETE':
+            return [TienePermiso("COMPRAS.ELIMINAR")]
+        return [TienePermiso("COMPRAS.EDITAR")]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -221,9 +227,20 @@ class CompraViewSet(viewsets.ModelViewSet):
 
 
 class CuentaPorPagarViewSet(viewsets.ModelViewSet):
+    """
+    Las cuentas por pagar se crean/actualizan automáticamente al registrar una
+    Compra a crédito o un Pago (ver CompraViewSet.create y PagoCuentaViewSet.create).
+    No existe un flujo de negocio para crearlas/editarlas/borrarlas a mano, así que
+    esas rutas de escritura quedan cerradas tras COMPRAS.EDITAR por si alguien las
+    llama directo a la API; el frontend solo consume el GET.
+    """
     queryset = CuentaPorPagar.objects.all().select_related('proveedor', 'compra')
     serializer_class = CuentaPorPagarSerializer
-    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("CUENTAS.POR_PAGAR.VER")]
+        return [TienePermiso("COMPRAS.EDITAR")]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -259,9 +276,20 @@ class CuentaPorPagarViewSet(viewsets.ModelViewSet):
 
 
 class PagoCuentaViewSet(viewsets.ModelViewSet):
+    """
+    Registrar un pago aquí puede generar un egreso real de caja (ver create()),
+    así que la escritura exige el permiso dedicado CUENTAS.POR_PAGAR.REGISTRAR_PAGO
+    y no solo estar autenticado. El frontend solo usa GET y POST; PUT/PATCH/DELETE
+    quedan igual de protegidos por si se llaman directo a la API (editar/borrar un
+    pago ya aplicado a caja rompería la conciliación).
+    """
     queryset = PagoCuenta.objects.all()
     serializer_class = PagoCuentaSerializer
-    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("CUENTAS.POR_PAGAR.VER")]
+        return [TienePermiso("CUENTAS.POR_PAGAR.REGISTRAR_PAGO")]
 
     def get_queryset(self):
         qs = super().get_queryset()

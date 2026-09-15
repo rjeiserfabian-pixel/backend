@@ -10,7 +10,7 @@ from decimal import Decimal
 from .models import (
     Caja, SesionCaja, MovimientoCaja, TipoComprobante, SerieComprobante, MetodoPago,
     Impuesto, Venta, DetalleVenta, CuentaPorCobrar, CuotaCredito, PagoVenta, SerieDocumentoInterno,
-    KioskoTerminal
+    KioskoTerminal, ArqueoCaja
 )
 from .serializers import (
     CajaSerializer, SesionCajaSerializer, MovimientoCajaSerializer,
@@ -113,12 +113,14 @@ class SesionCajaViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(SesionCajaSerializer(sesion).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def cerrar(self, request, pk=None):
         sesion = self.get_object()
         if sesion.estado != SesionCaja.Estado.ABIERTA:
             return Response({"error": "Esta sesión ya está cerrada."}, status=status.HTTP_400_BAD_REQUEST)
 
-        saldo_fisico_declarado = request.data.get('saldo_cierre_real', 0.00)
+        saldo_fisico_declarado = Decimal(str(request.data.get('saldo_cierre_real', 0.00)))
+        motivo_diferencia = (request.data.get('motivo_diferencia') or '').strip()
 
         # Calcular saldo esperado sumando solo movimientos APROBADOS (un movimiento
         # manual PENDIENTE de aprobación, registrado desde el módulo Cajas sobre esta
@@ -126,15 +128,39 @@ class SesionCajaViewSet(viewsets.ReadOnlyModelViewSet):
         movimientos_aprobados = sesion.movimientos.filter(estado_movimiento=MovimientoCaja.EstadoMovimiento.APROBADO)
         ingresos = movimientos_aprobados.filter(tipo=MovimientoCaja.Tipo.INGRESO).aggregate(t=Sum('monto'))['t'] or 0
         egresos = movimientos_aprobados.filter(tipo=MovimientoCaja.Tipo.EGRESO).aggregate(t=Sum('monto'))['t'] or 0
-        saldo_esperado = float(sesion.saldo_inicial) + float(ingresos) - float(egresos)
-        
+        saldo_esperado = Decimal(str(sesion.saldo_inicial)) + Decimal(str(ingresos)) - Decimal(str(egresos))
+        diferencia = saldo_fisico_declarado - saldo_esperado
+
+        # Misma exigencia que el cierre del módulo Cajas: si hay diferencia, el
+        # motivo es obligatorio y queda un ArqueoCaja de auditoría (antes este
+        # cierre "legacy" no dejaba ese respaldo).
+        if diferencia != Decimal('0') and not motivo_diferencia:
+            return Response(
+                {'error': 'Existe una diferencia de caja. Debe ingresar el motivo de la diferencia.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        ArqueoCaja.objects.create(
+            sesion=sesion,
+            saldo_teorico=saldo_esperado,
+            saldo_contado=saldo_fisico_declarado,
+            diferencia=diferencia,
+            motivo_diferencia=motivo_diferencia if diferencia != Decimal('0') else None,
+            es_cierre_final=True,
+            usuario=request.user,
+        )
+
         sesion.saldo_cierre_esperado = saldo_esperado
         sesion.saldo_cierre_real = saldo_fisico_declarado
-        sesion.estado = SesionCaja.Estado.CERRADA
+        sesion.estado = (
+            SesionCaja.Estado.CERRADA_CON_DIFERENCIA
+            if diferencia != Decimal('0')
+            else SesionCaja.Estado.CERRADA
+        )
         from django.utils import timezone
         sesion.fecha_cierre = timezone.now()
         sesion.save()
-        
+
         return Response(SesionCajaSerializer(sesion).data)
 
     @action(detail=True, methods=['get'], url_path='reporte-cierre')

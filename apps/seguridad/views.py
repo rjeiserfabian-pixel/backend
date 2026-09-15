@@ -51,7 +51,7 @@ from .serializers import (
     EmpresaSerializer,
     MiPerfilSerializer,
 )
-from .permissions import TienePermiso
+from .permissions import TienePermiso, PermisoPorMetodoMixin, permisos_efectivos
 
 logger = logging.getLogger(__name__)
 
@@ -372,15 +372,61 @@ class PermisoListView(ListCreateAPIView):
 
 
 class ModuloListView(APIView):
-    """GET /api/seguridad/modulos/ → Lista de módulos del sistema para menú dinámico."""
+    """
+    GET /api/seguridad/modulos/ → Lista de módulos del sistema para menú dinámico,
+    filtrada según los permisos efectivos del usuario autenticado.
+
+    Regla de visibilidad por módulo:
+      - Si tiene submódulos: es visible solo si al menos un hijo es visible.
+      - Si es un módulo hoja: es visible si su `permiso_ver` es nulo (sin
+        restricción) o si el usuario cuenta con ese permiso (vía rol o
+        excepción ALLOW/DENY directa).
+    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        modulos = Modulo.objects.filter(
+        permisos_usuario = permisos_efectivos(request.user)
+
+        padres = Modulo.objects.filter(
             estado=True, visible_menu=True, id_modulo_padre__isnull=True
         ).prefetch_related("submodulos").order_by("orden")
-        serializer = ModuloSerializer(modulos, many=True)
-        return Response({"success": True, "data": serializer.data})
+
+        resultado = []
+        for padre in padres:
+            hijos = list(padre.submodulos.filter(estado=True, visible_menu=True).order_by("orden"))
+            hijos_visibles = [
+                h for h in hijos
+                if not h.permiso_ver or h.permiso_ver in permisos_usuario
+            ]
+
+            if hijos:
+                # Módulo contenedor (sin ruta propia): visible solo si algún hijo lo es.
+                if not hijos_visibles:
+                    continue
+            elif padre.permiso_ver and padre.permiso_ver not in permisos_usuario:
+                # Módulo hoja de primer nivel (ej. Dashboard) con permiso propio no concedido.
+                continue
+
+            data = ModuloSerializer(padre).data
+            data["submodulos"] = ModuloSerializer(hijos_visibles, many=True).data
+            resultado.append(data)
+
+        return Response({"success": True, "data": resultado})
+
+
+class MisPermisosView(APIView):
+    """
+    GET /api/seguridad/mis-permisos/ → Códigos de permiso vigentes del usuario autenticado.
+
+    Pensado para que el frontend muestre/oculte controles (botones de Crear,
+    Editar, Eliminar, etc.) sin duplicar la lógica de roles: el backend sigue
+    siendo la única fuente de verdad y vuelve a validar cada petición.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        codigos = sorted(permisos_efectivos(request.user))
+        return Response({"success": True, "data": {"codigos": codigos}})
 
 
 # ==============================================================================
@@ -391,9 +437,16 @@ class EmpresaView(APIView):
     """
     GET  /api/seguridad/empresa/ → Obtener la configuración de la empresa (Singleton)
     PUT  /api/seguridad/empresa/ → Actualizar la configuración de la empresa
+
+    El GET se deja público a propósito: el Kiosko (pantalla sin login) lo usa
+    para mostrar el nombre/logo de la empresa, y son datos que igual van
+    impresos en cualquier ticket. La escritura sí requiere permiso.
     """
-    # Cambiar esto a IsAuthenticated u otro permiso según necesidad
-    permission_classes = [AllowAny] 
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [TienePermiso("EMPRESA.EDITAR")]
 
     def get_object(self):
         # Implementación singleton: Tomamos la primera empresa o creamos una vacía
@@ -429,11 +482,20 @@ class DepartamentoViewSet(ModelViewSet):
     """
     CRUD completo para Departamentos
     GET, POST, PUT, DELETE /api/seguridad/departamentos/
+
+    Lectura: cualquier usuario autenticado (varias pantallas del sistema —
+    Guías de Remisión, Configuración de Empresa— dependen de leer este
+    catálogo de referencia sin exigirles el permiso UBIGEO.VER). Escritura:
+    reservada a quien administra el catálogo (pantalla Ubicaciones/Ubigeo).
     """
     queryset = Departamento.objects.all()
     serializer_class = DepartamentoSerializer
-    permission_classes = [AllowAny] # Ajustar según seguridad
     pagination_class = None
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAuthenticated()]
+        return [TienePermiso("UBIGEO.VER")]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -449,8 +511,12 @@ class ProvinciaViewSet(ModelViewSet):
     """
     queryset = Provincia.objects.all().select_related('departamento')
     serializer_class = ProvinciaSerializer
-    permission_classes = [AllowAny]
     pagination_class = None
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAuthenticated()]
+        return [TienePermiso("UBIGEO.VER")]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -469,8 +535,12 @@ class DistritoViewSet(ModelViewSet):
     """
     queryset = Distrito.objects.all().select_related('provincia__departamento')
     serializer_class = DistritoSerializer
-    permission_classes = [AllowAny]
     pagination_class = None
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAuthenticated()]
+        return [TienePermiso("UBIGEO.VER")]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -491,13 +561,15 @@ class DistritoViewSet(ModelViewSet):
 from .models import TipoCuentaBancaria, CuentaBancaria
 from .serializers import TipoCuentaBancariaSerializer, CuentaBancariaSerializer
 
-class TipoCuentaBancariaViewSet(ModelViewSet):
+class TipoCuentaBancariaViewSet(PermisoPorMetodoMixin, ModelViewSet):
     """
     CRUD para Tipos de Cuenta Bancaria
     """
+    permiso_ver = "CUENTAS_BANCARIAS.VER"
+    permiso_crear = "CUENTAS_BANCARIAS.CREAR"
+    permiso_editar = "CUENTAS_BANCARIAS.EDITAR"
     queryset = TipoCuentaBancaria.objects.all()
     serializer_class = TipoCuentaBancariaSerializer
-    permission_classes = [AllowAny]
     pagination_class = None
 
     def get_queryset(self):
@@ -507,13 +579,15 @@ class TipoCuentaBancariaViewSet(ModelViewSet):
         return qs
 
 
-class CuentaBancariaViewSet(ModelViewSet):
+class CuentaBancariaViewSet(PermisoPorMetodoMixin, ModelViewSet):
     """
     CRUD para Cuentas Bancarias
     """
+    permiso_ver = "CUENTAS_BANCARIAS.VER"
+    permiso_crear = "CUENTAS_BANCARIAS.CREAR"
+    permiso_editar = "CUENTAS_BANCARIAS.EDITAR"
     queryset = CuentaBancaria.objects.all().select_related('tipo_cuenta')
     serializer_class = CuentaBancariaSerializer
-    permission_classes = [AllowAny]
     pagination_class = None
 
     def get_queryset(self):

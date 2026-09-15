@@ -120,6 +120,12 @@ class Modulo(models.Model):
     orden = models.IntegerField(default=0)
     visible_menu = models.BooleanField(default=True)
     estado = models.BooleanField(default=True)
+    permiso_ver = models.CharField(
+        max_length=100, blank=True, null=True,
+        help_text="Código de Permiso requerido para que este módulo aparezca en el menú del usuario. "
+                   "Si es nulo, el módulo es visible para cualquier usuario autenticado (o, si tiene "
+                   "submódulos, se muestra cuando al menos un hijo es visible).",
+    )
 
     class Meta:
         db_table = "modulos"

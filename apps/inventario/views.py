@@ -15,9 +15,9 @@ from .serializers import (
     InventarioStockSerializer, MovimientoInventarioSerializer, TrasladoInventarioSerializer,
     GuiaRemisionSerializer
 )
-from apps.seguridad.permissions import TienePermiso, PermisoPorMetodoMixin
+from apps.seguridad.permissions import TienePermiso, PermisoPorMetodoMixin, TieneAlgunPermiso
 from rest_framework import filters, pagination
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.http import HttpResponse
 from django.utils import timezone
@@ -55,6 +55,14 @@ class CategoriaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     queryset = Categoria.objects.filter(estado=True).order_by('-id')
     serializer_class = CategoriaSerializer
 
+    def get_permissions(self):
+        # "Ubicaciones de Stock" usa este catálogo solo para el filtro por
+        # categoría; ver el listado ahí no debería exigir el permiso de
+        # gestión completa de Categorías (mismo criterio que RepuestoViewSet).
+        if self.request.method == 'GET':
+            return [TieneAlgunPermiso("INVENTARIO.CATEGORIAS.VER", "INVENTARIO.STOCK_UBICACIONES.VER")]
+        return super().get_permissions()
+
     def perform_destroy(self, instance):
         instance.estado = False
         instance.save()
@@ -67,6 +75,11 @@ class MarcaRepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_eliminar = "INVENTARIO.MARCAS.ELIMINAR"
     queryset = MarcaRepuesto.objects.filter(estado=True).order_by('-id')
     serializer_class = MarcaRepuestoSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TieneAlgunPermiso("INVENTARIO.MARCAS.VER", "INVENTARIO.STOCK_UBICACIONES.VER")]
+        return super().get_permissions()
 
     def perform_destroy(self, instance):
         instance.estado = False
@@ -106,6 +119,24 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     filterset_fields = ['categoria', 'marca']
     search_fields = ['codigo', 'nombre']
     ordering_fields = ['codigo', 'nombre', 'precio_lista']
+
+    def get_permissions(self):
+        # Respeta permission_classes declarados a nivel de @action (ej. 'compatibles'
+        # es público para el kiosko) antes que la regla genérica de abajo.
+        action_handler = getattr(self, self.action, None)
+        if action_handler and hasattr(action_handler, 'kwargs'):
+            action_perms = action_handler.kwargs.get('permission_classes')
+            if action_perms is not None:
+                return [permission() for permission in action_perms]
+
+        # La pantalla "Ubicaciones de Stock" no tiene endpoint propio: lista
+        # repuestos con su stock anidado igual que el catálogo de Repuestos.
+        # Sin este OR, un rol con solo INVENTARIO.STOCK_UBICACIONES.VER (sin
+        # acceso al catálogo completo de Repuestos) se quedaría sin poder ver
+        # esa pantalla aunque el menú sí se la muestre.
+        if self.request.method == 'GET':
+            return [TieneAlgunPermiso("INVENTARIO.REPUESTOS.VER", "INVENTARIO.STOCK_UBICACIONES.VER")]
+        return super().get_permissions()
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -290,13 +321,27 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
 # ──────────────────────────────────────────────
 
 class SucursalViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
-    """CRUD completo de Sucursales."""
-    # No existe un código SUCURSALES.* dedicado; se reutiliza INVENTARIO.ALMACENES.*
-    permiso_ver = "INVENTARIO.ALMACENES.VER"
+    """
+    CRUD completo de Sucursales.
+
+    Lectura: cualquier usuario autenticado — este endpoint alimenta el selector
+    global de sucursal que usa prácticamente toda la app (no solo Inventario),
+    así que exigir un permiso de gestión de almacenes aquí dejaba a roles como
+    Mecánico o Cajero sin poder elegir su propia sucursal. get_queryset() ya
+    limita el resultado a las sucursales asignadas al usuario, así que abrir el
+    GET no expone nada que no debiera ver.
+    Escritura: sigue exigiendo INVENTARIO.ALMACENES.* (no existe un código
+    SUCURSALES.* dedicado en el catálogo).
+    """
     permiso_crear = "INVENTARIO.ALMACENES.CREAR"
     permiso_editar = "INVENTARIO.ALMACENES.EDITAR"
     queryset = Sucursal.objects.filter(estado=True).order_by('nombre')
     serializer_class = SucursalSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return super().get_permissions()
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -376,8 +421,8 @@ class InventarioStockViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     - GET /inventario/stock/?ubicacion=<id> → Ver todos los repuestos en una ubicación
     - PATCH /inventario/stock/<id>/         → Ajustar stock (crea automáticamente el movimiento de Kardex)
     """
-    permiso_ver = "INVENTARIO.REPUESTOS.VER"
-    permiso_editar = "INVENTARIO.REPUESTOS.EDITAR"
+    permiso_ver = "INVENTARIO.STOCK_UBICACIONES.VER"
+    permiso_editar = "INVENTARIO.STOCK_UBICACIONES.EDITAR"
     queryset = (
         InventarioStock.objects
         .select_related('repuesto', 'ubicacion__almacen__sucursal')

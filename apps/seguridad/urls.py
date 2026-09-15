@@ -36,6 +36,7 @@ urlpatterns = [
     # Catálogos
     path("permisos/", views.PermisoListView.as_view(), name="seguridad-permisos"),
     path("modulos/", views.ModuloListView.as_view(), name="seguridad-modulos"),
+    path("mis-permisos/", views.MisPermisosView.as_view(), name="seguridad-mis-permisos"),
 
     # Empresa (Configuración Global)
     path("empresa/", views.EmpresaView.as_view(), name="seguridad-empresa"),

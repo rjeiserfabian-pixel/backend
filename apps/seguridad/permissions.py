@@ -157,6 +157,81 @@ class TienePermiso(BasePermission):
         return False
 
 
+def permisos_efectivos(usuario):
+    """
+    Calcula en bloque el conjunto de códigos de permiso vigentes para un usuario,
+    aplicando la misma regla de conflicto que TienePermiso (DENY explícito > ALLOW
+    explícito > permiso vía rol), pero en pocas queries en vez de una por permiso.
+
+    Uso típico: filtrar el menú dinámico o exponer "mis permisos" al frontend
+    para gatear botones de Crear/Editar/Eliminar sin repetir la lógica de roles.
+
+    Devuelve un set() de strings, p.ej. {"INVENTARIO.REPUESTOS.VER", ...}.
+    """
+    if not usuario or not usuario.is_authenticated:
+        return set()
+
+    if usuario.is_superuser:
+        from .models import Permiso
+        return set(Permiso.objects.filter(estado=True).values_list("codigo", flat=True))
+
+    ahora = timezone.now()
+    vigente = models_Q(fecha_fin__isnull=True) | models_Q(fecha_fin__gte=ahora)
+
+    denies = set(
+        UsuarioPermiso.objects.filter(
+            id_usuario=usuario, tipo="DENY", estado=True
+        ).filter(vigente).values_list("id_permiso__codigo", flat=True)
+    )
+
+    allows = set(
+        UsuarioPermiso.objects.filter(
+            id_usuario=usuario, tipo="ALLOW", estado=True
+        ).filter(vigente).values_list("id_permiso__codigo", flat=True)
+    )
+
+    roles_activos_ids = UsuarioRol.objects.filter(
+        id_usuario=usuario, estado=True,
+    ).filter(
+        models_Q(fecha_expiracion__isnull=True) | models_Q(fecha_expiracion__gte=ahora)
+    ).values_list("id_rol_id", flat=True)
+
+    via_rol = set(
+        RolPermiso.objects.filter(
+            id_rol_id__in=roles_activos_ids
+        ).values_list("id_permiso__codigo", flat=True)
+    )
+
+    return (via_rol | allows) - denies
+
+
+class TieneAlgunPermiso(BasePermission):
+    """
+    Permite el acceso si el usuario tiene AL MENOS UNO de los códigos dados.
+
+    Útil cuando una misma vista de catálogo (ej. RepuestoViewSet) sirve de
+    fuente de datos a más de una pantalla del frontend, cada una pensada para
+    un permiso distinto (ej. "Repuestos" vs. "Ubicaciones de Stock") — sin
+    esto, habría que darle a un rol el permiso más amplio solo para que la
+    pantalla más chica funcione.
+
+    Ejemplo:
+        return [TieneAlgunPermiso("INVENTARIO.REPUESTOS.VER", "INVENTARIO.STOCK_UBICACIONES.VER")]
+    """
+
+    def __init__(self, *codigos):
+        self.codigos = codigos
+
+    def has_permission(self, request, view):
+        usuario = request.user
+        if not usuario or not usuario.is_authenticated:
+            return False
+        if usuario.is_superuser:
+            return True
+        efectivos = permisos_efectivos(usuario)
+        return any(codigo in efectivos for codigo in self.codigos)
+
+
 class PermisoPorMetodoMixin:
     """
     Mixin para ViewSets de catálogo/configuración simples: gatea por método
