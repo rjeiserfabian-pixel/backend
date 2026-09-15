@@ -493,7 +493,7 @@ class InventarioStockViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
                 usuario=self.request.user,
             )
             logger.info(
-                f"Ajuste de stock: {instance.repuesto.codigo} | {diferencia:+d} unidades "
+                f"Ajuste de stock: {instance.repuesto.codigo} | {diferencia:+} unidades "
                 f"→ {stock_despues} | Ubicación: {instance.ubicacion.codigo} | Usuario: {self.request.user}"
             )
 

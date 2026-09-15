@@ -181,6 +181,11 @@ class Permiso(models.Model):
         db_index=True,  # Se filtra frecuentemente por acción
     )  # VER/CREAR/EDITAR/ELIMINAR/APROBAR/CAMBIAR_ESTADO
     estado = models.BooleanField(default=True)
+    # Solo para agrupar la pantalla de Roles y Permisos en dos niveles
+    # (módulo padre → submódulo). No participa en ninguna verificación de
+    # acceso: eso lo sigue resolviendo exclusivamente `codigo` vía TienePermiso.
+    grupo_padre = models.CharField(max_length=50, blank=True, null=True)
+    grupo_submodulo = models.CharField(max_length=100, blank=True, null=True)
 
     class Meta:
         db_table = "permisos"

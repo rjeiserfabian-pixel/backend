@@ -51,24 +51,32 @@
     <!-- Header -->
     <table style="margin-bottom: 20px;">
         <tr>
-            <td style="width: 14%; vertical-align: middle;">
-                {% if empresa_logo_data_uri %}
-                <img src="{{ empresa_logo_data_uri }}" style="max-height: 40px; max-width: 90px;" />
-                {% else %}
-                <!-- Sin logo configurado: iniciales de la empresa como respaldo -->
-                <div style="font-family: serif; font-size: 30px; color: #ea580c; line-height: 1; font-weight: normal;">&Omega;</div>
-                {% endif %}
+            <!-- Logo + datos empresa en una sola celda amplia -->
+            <td style="width: 60%; vertical-align: middle;">
+                <table style="width: 100%;">
+                    <tr>
+                        <td style="width: auto; vertical-align: middle; padding-right: 10px;">
+                            {% if empresa_logo_data_uri %}
+                            <img src="{{ empresa_logo_data_uri }}" style="max-height: 60px; max-width: 120px; display: block;" />
+                            {% else %}
+                            <!-- Sin logo: símbolo Omega como respaldo -->
+                            <div style="font-family: serif; font-size: 40px; color: #ea580c; line-height: 1; font-weight: normal;">&Omega;</div>
+                            {% endif %}
+                        </td>
+                        <td style="vertical-align: middle;">
+                            <div class="header-title text-navy">{{ empresa.razon_social|default:"Empresa no configurada" }}</div>
+                            <div class="header-info-text">
+                                <span class="bold">RUC {{ empresa.ruc|default:"-" }}</span><br>
+                                {{ empresa.direccion|default:"Dirección no configurada" }}{% if empresa.distrito %}, {{ empresa.distrito }}{% endif %}<br>
+                                {% if empresa.telefono %}Tel: {{ empresa.telefono }}{% endif %}{% if empresa.telefono and empresa.email %} | {% endif %}{% if empresa.email %}{{ empresa.email }}{% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                </table>
             </td>
-            <td style="width: 50%; vertical-align: middle;">
-                <div class="header-title text-navy">{{ empresa.razon_social|default:"Empresa no configurada" }}</div>
-                <div class="header-info-text">
-                    <span class="bold">RUC {{ empresa.ruc|default:"-" }}</span><br>
-                    {{ empresa.direccion|default:"Dirección no configurada" }}{% if empresa.distrito %}, {{ empresa.distrito }}{% endif %}<br>
-                    {% if empresa.telefono %}Tel: {{ empresa.telefono }}{% endif %}{% if empresa.telefono and empresa.email %} | {% endif %}{% if empresa.email %}{{ empresa.email }}{% endif %}
-                </div>
-            </td>
-            <td style="width: 36%; vertical-align: top;">
-                <table style="width: 70%; float: right;">
+            <!-- Recuadro de documento -->
+            <td style="width: 40%; vertical-align: top;">
+                <table style="width: 80%; float: right;">
                     <tr>
                         <td style="text-align: center; padding-bottom: 5px;">
                             <span style="color: #64748b; font-size: 11px; font-weight: bold; letter-spacing: 1px;">R.U.C. {{ empresa.ruc|default:"-" }}</span>

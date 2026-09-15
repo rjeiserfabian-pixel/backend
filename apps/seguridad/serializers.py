@@ -157,7 +157,10 @@ class PermisoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Permiso
-        fields = ["id_permiso", "id_modulo", "modulo_nombre", "codigo", "nombre", "accion", "estado"]
+        fields = [
+            "id_permiso", "id_modulo", "modulo_nombre", "codigo", "nombre", "accion", "estado",
+            "grupo_padre", "grupo_submodulo",
+        ]
 
 
 # ==============================================================================
