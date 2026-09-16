@@ -271,8 +271,9 @@ class ReporteCajaView(APIView):
     Parámetros: fecha_inicio, fecha_fin, caja_id (opcional), formato (json|excel|pdf)
     """
     def get_permissions(self):
-        # No existe un código REPORTES.CAJA.VER dedicado; se reutiliza CAJAS.VER.
-        return [TienePermiso("CAJAS.VER")]
+        if self.request.query_params.get('formato') in ('excel', 'pdf'):
+            return [TienePermiso("REPORTES.CAJA.EXPORTAR")]
+        return [TienePermiso("REPORTES.CAJA.VER")]
 
     def get(self, request):
         fecha_inicio, fecha_fin = _parse_date_range(request)
@@ -506,8 +507,8 @@ class ReporteProductosView(APIView):
     Paginado: page, page_size (default 50)
     """
     def get_permissions(self):
-        # No existe un código REPORTES.PRODUCTOS.EXPORTAR dedicado; se
-        # reutiliza REPORTES.PRODUCTOS.VER también para exportar.
+        if self.request.query_params.get('formato') in ('excel', 'pdf'):
+            return [TienePermiso("REPORTES.PRODUCTOS.EXPORTAR")]
         return [TienePermiso("REPORTES.PRODUCTOS.VER")]
 
     def get(self, request):
@@ -601,6 +602,8 @@ class ReporteClientesView(APIView):
     Paginado: page, page_size (default 50)
     """
     def get_permissions(self):
+        if self.request.query_params.get('formato') in ('excel', 'pdf'):
+            return [TienePermiso("REPORTES.CLIENTES.EXPORTAR")]
         return [TienePermiso("REPORTES.CLIENTES.VER")]
 
     def get(self, request):
@@ -694,6 +697,8 @@ class ReporteComprasView(APIView):
     Paginado: page, page_size (default 50)
     """
     def get_permissions(self):
+        if self.request.query_params.get('formato') in ('excel', 'pdf'):
+            return [TienePermiso("REPORTES.COMPRAS.EXPORTAR")]
         return [TienePermiso("REPORTES.COMPRAS.VER")]
 
     def get(self, request):
@@ -791,6 +796,8 @@ class ReporteAvanzadoView(APIView):
     Parámetros: fecha_inicio, fecha_fin, sucursal_id, tipo, formato
     """
     def get_permissions(self):
+        if self.request.query_params.get('formato') in ('excel', 'pdf'):
+            return [TienePermiso("REPORTES.AVANZADO.EXPORTAR")]
         return [TienePermiso("REPORTES.AVANZADO.VER")]
 
     def get(self, request):
@@ -1041,6 +1048,8 @@ class ReporteVehiculosView(APIView):
     Paginado: page, page_size (default 50)
     """
     def get_permissions(self):
+        if self.request.query_params.get('formato') in ('excel', 'pdf'):
+            return [TienePermiso("REPORTES.VEHICULO.EXPORTAR")]
         return [TienePermiso("REPORTES.VEHICULO.VER")]
 
     def get(self, request):
@@ -1129,6 +1138,8 @@ class ReporteKioskosView(APIView):
     kiosko se usa más (y detecte uno que dejó de generar ventas).
     """
     def get_permissions(self):
+        if self.request.query_params.get('formato') in ('excel', 'pdf'):
+            return [TienePermiso("REPORTES.KIOSKOS.EXPORTAR")]
         return [TienePermiso("REPORTES.KIOSKOS.VER")]
 
     def get(self, request):

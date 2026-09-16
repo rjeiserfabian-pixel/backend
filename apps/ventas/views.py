@@ -32,35 +32,45 @@ logger = logging.getLogger(__name__)
 
 class MetodoPagoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_ver = "VENTAS.CONFIGURACION.VER"
+    permiso_crear = "VENTAS.CONFIGURACION.CREAR"
     permiso_editar = "VENTAS.CONFIGURACION.EDITAR"
+    permiso_eliminar = "VENTAS.CONFIGURACION.ELIMINAR"
     queryset = MetodoPago.objects.all()
     serializer_class = MetodoPagoSerializer
 
 
 class ImpuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
-    permiso_ver = "VENTAS.CONFIGURACION.VER"
-    permiso_editar = "VENTAS.CONFIGURACION.EDITAR"
+    permiso_ver = "INVENTARIO.IMPUESTOS.VER"
+    permiso_crear = "INVENTARIO.IMPUESTOS.CREAR"
+    permiso_editar = "INVENTARIO.IMPUESTOS.EDITAR"
+    permiso_eliminar = "INVENTARIO.IMPUESTOS.ELIMINAR"
     queryset = Impuesto.objects.all()
     serializer_class = ImpuestoSerializer
 
 
 class TipoComprobanteViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_ver = "VENTAS.CONFIGURACION.VER"
+    permiso_crear = "VENTAS.CONFIGURACION.CREAR"
     permiso_editar = "VENTAS.CONFIGURACION.EDITAR"
+    permiso_eliminar = "VENTAS.CONFIGURACION.ELIMINAR"
     queryset = TipoComprobante.objects.all()
     serializer_class = TipoComprobanteSerializer
 
 
 class SerieComprobanteViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_ver = "VENTAS.CONFIGURACION.VER"
+    permiso_crear = "VENTAS.CONFIGURACION.CREAR"
     permiso_editar = "VENTAS.CONFIGURACION.EDITAR"
+    permiso_eliminar = "VENTAS.CONFIGURACION.ELIMINAR"
     queryset = SerieComprobante.objects.select_related('sucursal', 'tipo_comprobante').all()
     serializer_class = SerieComprobanteSerializer
     filterset_fields = ['sucursal', 'tipo_comprobante', 'estado']
 
 class SerieDocumentoInternoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
-    permiso_ver = "VENTAS.CONFIGURACION.VER"
-    permiso_editar = "VENTAS.CONFIGURACION.EDITAR"
+    permiso_ver = "SERIES_INTERNAS.VER"
+    permiso_crear = "SERIES_INTERNAS.CREAR"
+    permiso_editar = "SERIES_INTERNAS.EDITAR"
+    permiso_eliminar = "SERIES_INTERNAS.ELIMINAR"
     queryset = SerieDocumentoInterno.objects.select_related('sucursal').all()
     serializer_class = SerieDocumentoInternoSerializer
     filterset_fields = ['sucursal', 'tipo_documento', 'estado']
@@ -538,7 +548,7 @@ class VentaViewSet(viewsets.ModelViewSet):
                             concepto=MovimientoCaja.Concepto.VENTA,
                             metodo_pago_id=p.get('metodo_id'),
                             monto=monto_pago,
-                            referencia=p.get('referencia', '') or f"Ticket {venta.serie_correlativo}",
+                            referencia=p.get('referencia', ''),
                             origen_movimiento=MovimientoCaja.OrigenMovimiento.VENTA,
                             venta_origen=venta,
                             creado_por=request.user

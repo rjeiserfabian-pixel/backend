@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, PermissionDenied
 from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
@@ -18,7 +18,7 @@ from .serializers import (
 from apps.inventario.models import MovimientoInventario, InventarioStock
 from apps.ventas.models import Venta, DetalleVenta
 from apps.ventas.services import VentasService
-from apps.seguridad.permissions import TienePermiso
+from apps.seguridad.permissions import TienePermiso, permisos_efectivos
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -31,13 +31,20 @@ class TipoServicioViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.request.method == 'GET':
             return [TienePermiso("TIPOS_SERVICIO.VER")]
-        # No existe un código ELIMINAR dedicado para Tipos de Servicio; se reutiliza EDITAR.
-        return [TienePermiso("TIPOS_SERVICIO.CREAR" if self.request.method == 'POST' else "TIPOS_SERVICIO.EDITAR")]
+        if self.request.method == 'POST':
+            return [TienePermiso("TIPOS_SERVICIO.CREAR")]
+        if self.request.method == 'DELETE':
+            return [TienePermiso("TIPOS_SERVICIO.ELIMINAR")]
+        return [TienePermiso("TIPOS_SERVICIO.EDITAR")]
 
 class OrdenTrabajoViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
-        if self.action in ('aprobar_servicios', 'finalizar_orden', 'enviar_a_pos'):
+        if self.action == 'aprobar_servicios':
             return [TienePermiso("ORDENES_TRABAJO.APROBAR")]
+        if self.action == 'finalizar_orden':
+            return [TienePermiso("ORDENES_TRABAJO.FINALIZAR")]
+        if self.action == 'enviar_a_pos':
+            return [TienePermiso("VENTAS.POS.CREAR")]
         if self.action == 'anular':
             return [TienePermiso("ORDENES_TRABAJO.CAMBIAR_ESTADO")]
         if self.request.method == 'GET':
@@ -144,6 +151,13 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
                 f"No se puede cambiar el estado de '{estado_anterior}' a '{nuevo_estado}' directamente. "
                 "Usa la acción correspondiente (aprobar, finalizar, enviar a POS o anular)."
             )
+
+        # Enviar la cotización al cliente (→ ESPERANDO_APROBACION) es una responsabilidad
+        # distinta de editar la orden (agregar hallazgos/servicios/repuestos); requiere
+        # ORDENES_TRABAJO.APROBAR aunque el usuario tenga EDITAR.
+        if nuevo_estado == OrdenTrabajo.Estado.ESPERANDO_APROBACION and estado_anterior != nuevo_estado:
+            if 'ORDENES_TRABAJO.APROBAR' not in permisos_efectivos(self.request.user):
+                raise PermissionDenied("No tiene permiso para enviar la cotización al cliente.")
 
         orden = serializer.save()
         
@@ -540,6 +554,8 @@ class HallazgoViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.request.method == 'GET':
             return [TienePermiso("ORDENES_TRABAJO.VER")]
+        if self.request.method == 'DELETE':
+            return [TienePermiso("ORDENES_TRABAJO.ELIMINAR")]
         return [TienePermiso("ORDENES_TRABAJO.EDITAR")]
 
     def perform_create(self, serializer):
@@ -552,6 +568,8 @@ class OrdenServicioViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.request.method == 'GET':
             return [TienePermiso("ORDENES_TRABAJO.VER")]
+        if self.request.method == 'DELETE':
+            return [TienePermiso("ORDENES_TRABAJO.ELIMINAR")]
         return [TienePermiso("ORDENES_TRABAJO.EDITAR")]
 
     @action(detail=True, methods=['patch'])
@@ -568,6 +586,8 @@ class OrdenRepuestoViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.request.method == 'GET':
             return [TienePermiso("ORDENES_TRABAJO.VER")]
+        if self.request.method == 'DELETE':
+            return [TienePermiso("ORDENES_TRABAJO.ELIMINAR")]
         return [TienePermiso("ORDENES_TRABAJO.EDITAR")]
 
     @action(detail=True, methods=['patch'])

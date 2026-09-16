@@ -335,6 +335,7 @@ class SucursalViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     """
     permiso_crear = "INVENTARIO.ALMACENES.CREAR"
     permiso_editar = "INVENTARIO.ALMACENES.EDITAR"
+    permiso_eliminar = "INVENTARIO.ALMACENES.ELIMINAR"
     queryset = Sucursal.objects.filter(estado=True).order_by('nombre')
     serializer_class = SucursalSerializer
 
@@ -363,6 +364,7 @@ class AlmacenViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_ver = "INVENTARIO.ALMACENES.VER"
     permiso_crear = "INVENTARIO.ALMACENES.CREAR"
     permiso_editar = "INVENTARIO.ALMACENES.EDITAR"
+    permiso_eliminar = "INVENTARIO.ALMACENES.ELIMINAR"
     # select_related para evitar N+1 al mostrar sucursal_nombre
     queryset = Almacen.objects.filter(estado=True).select_related('sucursal').order_by('sucursal__nombre', 'nombre')
     serializer_class = AlmacenSerializer
@@ -391,6 +393,7 @@ class UbicacionFisicaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_ver = "INVENTARIO.ALMACENES.VER"
     permiso_crear = "INVENTARIO.ALMACENES.CREAR"
     permiso_editar = "INVENTARIO.ALMACENES.EDITAR"
+    permiso_eliminar = "INVENTARIO.ALMACENES.ELIMINAR"
     # select_related para evitar N+1
     queryset = (
         UbicacionFisica.objects

@@ -186,10 +186,9 @@ class Command(BaseCommand):
                 "orden": 45, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.TRASLADOS.VER",
             },
             {
-                # Impuesto vive en el modelo de Ventas; la página reutiliza VENTAS.CONFIGURACION.*
                 "codigo": "IMPUESTOS", "nombre": "Impuestos (IGV)",
                 "icono": "tags", "ruta": "/inventario/impuestos",
-                "orden": 90, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "VENTAS.CONFIGURACION.VER",
+                "orden": 90, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.IMPUESTOS.VER",
             },
             # ── Taller ────────────────────────────────────────────────────────
             {
@@ -307,10 +306,9 @@ class Command(BaseCommand):
                 "orden": 6, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES.VEHICULO.VER",
             },
             {
-                # ReporteCajaView reutiliza CAJAS.VER (sin REPORTES.CAJA.VER dedicado).
                 "codigo": "REPORTES_CAJA", "nombre": "Reporte de Caja",
                 "icono": "wallet", "ruta": "/reportes/caja",
-                "orden": 7, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "CAJAS.VER",
+                "orden": 7, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES.CAJA.VER",
             },
             {
                 "codigo": "REPORTES_KIOSKOS", "nombre": "Reporte de Kioskos",
@@ -345,12 +343,9 @@ class Command(BaseCommand):
                 "orden": 12, "visible_menu": True, "padre": None, "permiso_ver": None,
             },
             {
-                # Corrección: SerieDocumentoInternoViewSet (ruta series-internas/) en realidad
-                # exige VENTAS.CONFIGURACION.* — el código SERIES_INTERNAS.* del catálogo de
-                # permisos existe pero no lo aplica ningún endpoint (hallazgo aparte).
                 "codigo": "SERIES_INTERNAS", "nombre": "Series Internas",
                 "icono": "list", "ruta": "/seguridad/series-internas",
-                "orden": 1, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "VENTAS.CONFIGURACION.VER",
+                "orden": 1, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "SERIES_INTERNAS.VER",
             },
             {
                 "codigo": "VEHICULOS_TRANSPORTE", "nombre": "Vehículos de Transporte",
@@ -358,15 +353,11 @@ class Command(BaseCommand):
                 "orden": 2, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "VEHICULOS_TRANSPORTE.VER",
             },
             {
-                # Nota: CuentaBancariaViewSet hoy es AllowAny en el backend (sin exigir
-                # este permiso todavía); se deja aquí igual para que el menú refleje la
-                # intención del catálogo de permisos. Ver hallazgo aparte sobre AllowAny.
                 "codigo": "CUENTAS_BANCARIAS", "nombre": "Cuentas Bancarias",
                 "icono": "banknote", "ruta": "/seguridad/cuentas-bancarias",
                 "orden": 3, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "CUENTAS_BANCARIAS.VER",
             },
             {
-                # Nota: Departamento/Provincia/DistritoViewSet hoy son AllowAny.
                 "codigo": "UBIGEO", "nombre": "Ubicaciones",
                 "icono": "map-pin", "ruta": "/seguridad/ubigeo",
                 "orden": 4, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "UBIGEO.VER",
@@ -511,11 +502,16 @@ class Command(BaseCommand):
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.ALMACENES.VER",        "nombre": "Ver almacenes",          "accion": "VER",     "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Almacenes y Sucursales"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.ALMACENES.CREAR",      "nombre": "Crear almacenes",        "accion": "CREAR",   "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Almacenes y Sucursales"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.ALMACENES.EDITAR",     "nombre": "Editar almacenes",       "accion": "EDITAR",  "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Almacenes y Sucursales"},
+            {"modulo": "INVENTARIO", "codigo": "INVENTARIO.ALMACENES.ELIMINAR",   "nombre": "Eliminar almacenes",     "accion": "ELIMINAR","grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Almacenes y Sucursales"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.TRASLADOS.VER",        "nombre": "Ver traslados",          "accion": "VER",     "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Traslados y Guías de Remisión"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.TRASLADOS.CREAR",      "nombre": "Crear traslados",        "accion": "CREAR",   "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Traslados y Guías de Remisión"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.TRASLADOS.APROBAR",    "nombre": "Aprobar traslados",      "accion": "APROBAR", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Traslados y Guías de Remisión"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.STOCK_UBICACIONES.VER",    "nombre": "Ver ubicaciones de stock",         "accion": "VER",    "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Ubicaciones de Stock"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.STOCK_UBICACIONES.EDITAR", "nombre": "Ajustar stock por ubicación",      "accion": "EDITAR", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Ubicaciones de Stock"},
+            {"modulo": "INVENTARIO", "codigo": "INVENTARIO.IMPUESTOS.VER",      "nombre": "Ver impuestos (IGV)",     "accion": "VER",     "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Impuestos (IGV)"},
+            {"modulo": "INVENTARIO", "codigo": "INVENTARIO.IMPUESTOS.CREAR",    "nombre": "Crear impuestos (IGV)",   "accion": "CREAR",   "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Impuestos (IGV)"},
+            {"modulo": "INVENTARIO", "codigo": "INVENTARIO.IMPUESTOS.EDITAR",   "nombre": "Editar impuestos (IGV)",  "accion": "EDITAR",  "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Impuestos (IGV)"},
+            {"modulo": "INVENTARIO", "codigo": "INVENTARIO.IMPUESTOS.ELIMINAR", "nombre": "Eliminar impuestos (IGV)","accion": "ELIMINAR","grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Impuestos (IGV)"},
 
             # ── VEHÍCULOS (submódulo de Taller) ─────────────────────────────────
             {"modulo": "VEHICULOS", "codigo": "VEHICULOS.VER",      "nombre": "Ver vehículos",      "accion": "VER",     "grupo_padre": GP_TALLER, "grupo_submodulo": "Vehículos"},
@@ -529,7 +525,8 @@ class Command(BaseCommand):
             {"modulo": "TALLER", "codigo": "ORDENES_TRABAJO.EDITAR",        "nombre": "EDITAR Órdenes de Trabajo",        "accion": "EDITAR",         "grupo_padre": GP_TALLER, "grupo_submodulo": "Órdenes de Trabajo"},
             {"modulo": "TALLER", "codigo": "ORDENES_TRABAJO.ELIMINAR",      "nombre": "ELIMINAR Órdenes de Trabajo",      "accion": "ELIMINAR",       "grupo_padre": GP_TALLER, "grupo_submodulo": "Órdenes de Trabajo"},
             {"modulo": "TALLER", "codigo": "ORDENES_TRABAJO.CAMBIAR_ESTADO","nombre": "Cambiar Estado Orden de Trabajo",  "accion": "CAMBIAR_ESTADO", "grupo_padre": GP_TALLER, "grupo_submodulo": "Órdenes de Trabajo"},
-            {"modulo": "TALLER", "codigo": "ORDENES_TRABAJO.APROBAR",       "nombre": "Aprobar/Finalizar Orden de Trabajo","accion": "APROBAR",      "grupo_padre": GP_TALLER, "grupo_submodulo": "Órdenes de Trabajo"},
+            {"modulo": "TALLER", "codigo": "ORDENES_TRABAJO.APROBAR",       "nombre": "Aprobar Cotización de Orden de Trabajo","accion": "APROBAR", "grupo_padre": GP_TALLER, "grupo_submodulo": "Órdenes de Trabajo"},
+            {"modulo": "TALLER", "codigo": "ORDENES_TRABAJO.FINALIZAR",     "nombre": "Finalizar Orden de Trabajo (Ejecución)","accion": "FINALIZAR","grupo_padre": GP_TALLER, "grupo_submodulo": "Órdenes de Trabajo"},
             {"modulo": "TALLER", "codigo": "PLANTILLAS_TALLER.VER",         "nombre": "Ver Plantillas de Servicio",       "accion": "VER",            "grupo_padre": GP_TALLER, "grupo_submodulo": "Plantillas de Servicio"},
             {"modulo": "TALLER", "codigo": "PLANTILLAS_TALLER.CREAR",       "nombre": "Crear Plantillas",                 "accion": "CREAR",          "grupo_padre": GP_TALLER, "grupo_submodulo": "Plantillas de Servicio"},
             {"modulo": "TALLER", "codigo": "PLANTILLAS_TALLER.EDITAR",      "nombre": "Editar Plantillas",                "accion": "EDITAR",         "grupo_padre": GP_TALLER, "grupo_submodulo": "Plantillas de Servicio"},
@@ -537,14 +534,17 @@ class Command(BaseCommand):
             {"modulo": "TALLER", "codigo": "TIPOS_SERVICIO.VER",            "nombre": "Ver Tipos de Servicio",            "accion": "VER",            "grupo_padre": GP_TALLER, "grupo_submodulo": "Tipos de Servicio"},
             {"modulo": "TALLER", "codigo": "TIPOS_SERVICIO.CREAR",          "nombre": "Crear Tipos de Servicio",          "accion": "CREAR",          "grupo_padre": GP_TALLER, "grupo_submodulo": "Tipos de Servicio"},
             {"modulo": "TALLER", "codigo": "TIPOS_SERVICIO.EDITAR",         "nombre": "Editar Tipos de Servicio",         "accion": "EDITAR",         "grupo_padre": GP_TALLER, "grupo_submodulo": "Tipos de Servicio"},
+            {"modulo": "TALLER", "codigo": "TIPOS_SERVICIO.ELIMINAR",       "nombre": "Eliminar Tipos de Servicio",       "accion": "ELIMINAR",       "grupo_padre": GP_TALLER, "grupo_submodulo": "Tipos de Servicio"},
 
             # ── VENTAS ────────────────────────────────────────────────────────
             {"modulo": "VENTAS", "codigo": "VENTAS.POS.VER",              "nombre": "Acceder al POS",            "accion": "VER",    "grupo_padre": GP_VENTAS, "grupo_submodulo": "Punto de Venta (POS)"},
             {"modulo": "VENTAS", "codigo": "VENTAS.POS.CREAR",            "nombre": "Registrar venta en el POS", "accion": "CREAR",  "grupo_padre": GP_VENTAS, "grupo_submodulo": "Punto de Venta (POS)"},
             {"modulo": "VENTAS", "codigo": "VENTAS.REGISTRO_MANUAL.VER",  "nombre": "Ver registro manual",       "accion": "VER",    "grupo_padre": GP_VENTAS, "grupo_submodulo": "Registro Manual"},
             {"modulo": "VENTAS", "codigo": "VENTAS.REGISTRO_MANUAL.CREAR","nombre": "Crear venta manual",        "accion": "CREAR",  "grupo_padre": GP_VENTAS, "grupo_submodulo": "Registro Manual"},
-            {"modulo": "VENTAS", "codigo": "VENTAS.CONFIGURACION.VER",    "nombre": "Ver config. de ventas",     "accion": "VER",    "grupo_padre": GP_VENTAS, "grupo_submodulo": "Configuración de Ventas"},
+            {"modulo": "VENTAS", "codigo": "VENTAS.CONFIGURACION.VER",     "nombre": "Ver config. de ventas",     "accion": "VER",     "grupo_padre": GP_VENTAS, "grupo_submodulo": "Configuración de Ventas"},
+            {"modulo": "VENTAS", "codigo": "VENTAS.CONFIGURACION.CREAR",   "nombre": "Crear config. de ventas",   "accion": "CREAR",   "grupo_padre": GP_VENTAS, "grupo_submodulo": "Configuración de Ventas"},
             {"modulo": "VENTAS", "codigo": "VENTAS.CONFIGURACION.EDITAR", "nombre": "Editar config. de ventas",  "accion": "EDITAR", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Configuración de Ventas"},
+            {"modulo": "VENTAS", "codigo": "VENTAS.CONFIGURACION.ELIMINAR","nombre": "Eliminar config. de ventas","accion": "ELIMINAR","grupo_padre": GP_VENTAS, "grupo_submodulo": "Configuración de Ventas"},
 
             # ── CUENTAS ───────────────────────────────────────────────────────
             {"modulo": "CUENTAS", "codigo": "CUENTAS.POR_COBRAR.VER",            "nombre": "Ver cuentas por cobrar",       "accion": "VER",            "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Cobrar"},
@@ -562,12 +562,20 @@ class Command(BaseCommand):
             # ── REPORTES ──────────────────────────────────────────────────────
             {"modulo": "REPORTES", "codigo": "REPORTES.VENTAS.VER",     "nombre": "Ver reporte de ventas",     "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Ventas"},
             {"modulo": "REPORTES", "codigo": "REPORTES.VENTAS.EXPORTAR","nombre": "Exportar reporte de ventas","accion": "EXPORTAR", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Ventas"},
-            {"modulo": "REPORTES", "codigo": "REPORTES.PRODUCTOS.VER",  "nombre": "Ver reporte de productos",  "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Productos"},
-            {"modulo": "REPORTES", "codigo": "REPORTES.CLIENTES.VER",   "nombre": "Ver reporte de clientes",   "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Clientes"},
-            {"modulo": "REPORTES", "codigo": "REPORTES.COMPRAS.VER",    "nombre": "Ver reporte de compras",    "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Compras"},
-            {"modulo": "REPORTES", "codigo": "REPORTES.AVANZADO.VER",   "nombre": "Ver reporte avanzado",      "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte Avanzado"},
-            {"modulo": "REPORTES", "codigo": "REPORTES.VEHICULO.VER",   "nombre": "Ver reporte de vehículos",  "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Vehículos"},
-            {"modulo": "REPORTES", "codigo": "REPORTES.KIOSKOS.VER",    "nombre": "Ver reporte de kioskos",    "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Kioskos"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.PRODUCTOS.VER",      "nombre": "Ver reporte de productos",      "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Productos"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.PRODUCTOS.EXPORTAR", "nombre": "Exportar reporte de productos", "accion": "EXPORTAR", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Productos"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.CLIENTES.VER",       "nombre": "Ver reporte de clientes",       "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Clientes"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.CLIENTES.EXPORTAR",  "nombre": "Exportar reporte de clientes",  "accion": "EXPORTAR", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Clientes"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.COMPRAS.VER",        "nombre": "Ver reporte de compras",        "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Compras"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.COMPRAS.EXPORTAR",   "nombre": "Exportar reporte de compras",   "accion": "EXPORTAR", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Compras"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.AVANZADO.VER",       "nombre": "Ver reporte avanzado",          "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte Avanzado"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.AVANZADO.EXPORTAR",  "nombre": "Exportar reporte avanzado",     "accion": "EXPORTAR", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte Avanzado"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.VEHICULO.VER",       "nombre": "Ver reporte de vehículos",      "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Vehículos"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.VEHICULO.EXPORTAR",  "nombre": "Exportar reporte de vehículos", "accion": "EXPORTAR", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Vehículos"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.KIOSKOS.VER",        "nombre": "Ver reporte de kioskos",        "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Kioskos"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.KIOSKOS.EXPORTAR",   "nombre": "Exportar reporte de kioskos",   "accion": "EXPORTAR", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Kioskos"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.CAJA.VER",           "nombre": "Ver reporte de caja",           "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Caja"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.CAJA.EXPORTAR",      "nombre": "Exportar reporte de caja",      "accion": "EXPORTAR", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Caja"},
 
             # ── KIOSKOS (submódulo de Configuración) ────────────────────────────
             {"modulo": "CONFIG", "codigo": "CONFIGURACION.KIOSKOS.VER",      "nombre": "Ver kioskos",      "accion": "VER",     "grupo_padre": GP_CONFIG, "grupo_submodulo": "Kioskos"},
@@ -591,13 +599,19 @@ class Command(BaseCommand):
             {"modulo": "SERIES_INTERNAS", "codigo": "SERIES_INTERNAS.VER",         "nombre": "Ver series internas",           "accion": "VER",    "grupo_padre": GP_CONFIG, "grupo_submodulo": "Series Internas"},
             {"modulo": "SERIES_INTERNAS", "codigo": "SERIES_INTERNAS.CREAR",       "nombre": "Crear series internas",         "accion": "CREAR",  "grupo_padre": GP_CONFIG, "grupo_submodulo": "Series Internas"},
             {"modulo": "SERIES_INTERNAS", "codigo": "SERIES_INTERNAS.EDITAR",      "nombre": "Editar series internas",        "accion": "EDITAR", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Series Internas"},
+            {"modulo": "SERIES_INTERNAS", "codigo": "SERIES_INTERNAS.ELIMINAR",    "nombre": "Eliminar series internas",      "accion": "ELIMINAR","grupo_padre": GP_CONFIG, "grupo_submodulo": "Series Internas"},
             {"modulo": "VEHICULOS_TRANSPORTE", "codigo": "VEHICULOS_TRANSPORTE.VER",    "nombre": "Ver vehículos de transporte",   "accion": "VER",    "grupo_padre": GP_CONFIG, "grupo_submodulo": "Vehículos de Transporte"},
             {"modulo": "VEHICULOS_TRANSPORTE", "codigo": "VEHICULOS_TRANSPORTE.CREAR",  "nombre": "Crear vehículos de transporte", "accion": "CREAR",  "grupo_padre": GP_CONFIG, "grupo_submodulo": "Vehículos de Transporte"},
             {"modulo": "VEHICULOS_TRANSPORTE", "codigo": "VEHICULOS_TRANSPORTE.EDITAR", "nombre": "Editar vehículos de transporte","accion": "EDITAR", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Vehículos de Transporte"},
+            {"modulo": "VEHICULOS_TRANSPORTE", "codigo": "VEHICULOS_TRANSPORTE.ELIMINAR","nombre": "Eliminar vehículos de transporte","accion": "ELIMINAR","grupo_padre": GP_CONFIG, "grupo_submodulo": "Vehículos de Transporte"},
             {"modulo": "CUENTAS_BANCARIAS", "codigo": "CUENTAS_BANCARIAS.VER",     "nombre": "Ver cuentas bancarias",         "accion": "VER",    "grupo_padre": GP_CONFIG, "grupo_submodulo": "Cuentas Bancarias"},
             {"modulo": "CUENTAS_BANCARIAS", "codigo": "CUENTAS_BANCARIAS.CREAR",   "nombre": "Crear cuentas bancarias",       "accion": "CREAR",  "grupo_padre": GP_CONFIG, "grupo_submodulo": "Cuentas Bancarias"},
             {"modulo": "CUENTAS_BANCARIAS", "codigo": "CUENTAS_BANCARIAS.EDITAR",  "nombre": "Editar cuentas bancarias",      "accion": "EDITAR", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Cuentas Bancarias"},
+            {"modulo": "CUENTAS_BANCARIAS", "codigo": "CUENTAS_BANCARIAS.ELIMINAR","nombre": "Eliminar cuentas bancarias",    "accion": "ELIMINAR","grupo_padre": GP_CONFIG, "grupo_submodulo": "Cuentas Bancarias"},
             {"modulo": "UBIGEO", "codigo": "UBIGEO.VER",                          "nombre": "Ver ubicaciones",               "accion": "VER",    "grupo_padre": GP_CONFIG, "grupo_submodulo": "Ubicaciones (Ubigeo)"},
+            {"modulo": "UBIGEO", "codigo": "UBIGEO.CREAR",                        "nombre": "Crear ubicaciones",             "accion": "CREAR",  "grupo_padre": GP_CONFIG, "grupo_submodulo": "Ubicaciones (Ubigeo)"},
+            {"modulo": "UBIGEO", "codigo": "UBIGEO.EDITAR",                       "nombre": "Editar ubicaciones",            "accion": "EDITAR", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Ubicaciones (Ubigeo)"},
+            {"modulo": "UBIGEO", "codigo": "UBIGEO.ELIMINAR",                     "nombre": "Eliminar ubicaciones",          "accion": "ELIMINAR","grupo_padre": GP_CONFIG, "grupo_submodulo": "Ubicaciones (Ubigeo)"},
             {"modulo": "EMPRESA", "codigo": "EMPRESA.VER",                        "nombre": "Ver datos de la empresa",       "accion": "VER",    "grupo_padre": GP_CONFIG, "grupo_submodulo": "Datos de la Empresa"},
             {"modulo": "EMPRESA", "codigo": "EMPRESA.EDITAR",                     "nombre": "Editar datos de la empresa",    "accion": "EDITAR", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Datos de la Empresa"},
         ]

@@ -70,8 +70,11 @@ class LoginSerializer(serializers.Serializer):
             "usuario": {
                 "id": str(usuario.id_usuario),
                 "username": usuario.username,
+                "nombre": usuario.nombres,
+                "apellidos": usuario.apellidos,
                 "nombre_completo": usuario.nombre_completo,
                 "email": usuario.email,
+                "avatar_url": usuario.avatar_url,
                 "requiere_cambio_password": usuario.requiere_cambio_password,
             },
         }
@@ -340,14 +343,22 @@ class UsuarioDetalleSerializer(serializers.ModelSerializer):
 class MiPerfilSerializer(serializers.ModelSerializer):
     """Serializer para que un usuario pueda actualizar su propio perfil."""
     password = serializers.CharField(write_only=True, required=False, min_length=8)
+    rol_nombre = serializers.SerializerMethodField()
     
     class Meta:
         model = Usuario
         fields = [
             "id_usuario", "username", "email", "nombres", "apellidos",
-            "documento", "telefono", "avatar_url", "password"
+            "documento", "telefono", "avatar_url", "password", "rol_nombre"
         ]
         read_only_fields = ["id_usuario", "username"]
+
+    def get_rol_nombre(self, obj):
+        """Obtiene el nombre del primer rol activo y vigente del usuario."""
+        ur = obj.usuario_roles.filter(estado=True).select_related('id_rol').first()
+        if ur:
+            return ur.id_rol.nombre
+        return None
 
     def validate_email(self, value):
         return value.lower().strip()

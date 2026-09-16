@@ -495,7 +495,11 @@ class DepartamentoViewSet(ModelViewSet):
     def get_permissions(self):
         if self.request.method == "GET":
             return [IsAuthenticated()]
-        return [TienePermiso("UBIGEO.VER")]
+        if self.request.method == "POST":
+            return [TienePermiso("UBIGEO.CREAR")]
+        if self.request.method == "DELETE":
+            return [TienePermiso("UBIGEO.ELIMINAR")]
+        return [TienePermiso("UBIGEO.EDITAR")]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -516,7 +520,11 @@ class ProvinciaViewSet(ModelViewSet):
     def get_permissions(self):
         if self.request.method == "GET":
             return [IsAuthenticated()]
-        return [TienePermiso("UBIGEO.VER")]
+        if self.request.method == "POST":
+            return [TienePermiso("UBIGEO.CREAR")]
+        if self.request.method == "DELETE":
+            return [TienePermiso("UBIGEO.ELIMINAR")]
+        return [TienePermiso("UBIGEO.EDITAR")]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -540,7 +548,11 @@ class DistritoViewSet(ModelViewSet):
     def get_permissions(self):
         if self.request.method == "GET":
             return [IsAuthenticated()]
-        return [TienePermiso("UBIGEO.VER")]
+        if self.request.method == "POST":
+            return [TienePermiso("UBIGEO.CREAR")]
+        if self.request.method == "DELETE":
+            return [TienePermiso("UBIGEO.ELIMINAR")]
+        return [TienePermiso("UBIGEO.EDITAR")]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -568,6 +580,7 @@ class TipoCuentaBancariaViewSet(PermisoPorMetodoMixin, ModelViewSet):
     permiso_ver = "CUENTAS_BANCARIAS.VER"
     permiso_crear = "CUENTAS_BANCARIAS.CREAR"
     permiso_editar = "CUENTAS_BANCARIAS.EDITAR"
+    permiso_eliminar = "CUENTAS_BANCARIAS.ELIMINAR"
     queryset = TipoCuentaBancaria.objects.all()
     serializer_class = TipoCuentaBancariaSerializer
     pagination_class = None
@@ -586,6 +599,7 @@ class CuentaBancariaViewSet(PermisoPorMetodoMixin, ModelViewSet):
     permiso_ver = "CUENTAS_BANCARIAS.VER"
     permiso_crear = "CUENTAS_BANCARIAS.CREAR"
     permiso_editar = "CUENTAS_BANCARIAS.EDITAR"
+    permiso_eliminar = "CUENTAS_BANCARIAS.ELIMINAR"
     queryset = CuentaBancaria.objects.all().select_related('tipo_cuenta')
     serializer_class = CuentaBancariaSerializer
     pagination_class = None

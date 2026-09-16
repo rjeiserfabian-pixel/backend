@@ -160,10 +160,10 @@ from .models import VehiculoTransporte
 from .serializers import VehiculoTransporteSerializer
 
 class VehiculoTransporteViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
-    # No existe VEHICULOS_TRANSPORTE.ELIMINAR en el catálogo; se reutiliza EDITAR.
     permiso_ver = "VEHICULOS_TRANSPORTE.VER"
     permiso_crear = "VEHICULOS_TRANSPORTE.CREAR"
     permiso_editar = "VEHICULOS_TRANSPORTE.EDITAR"
+    permiso_eliminar = "VEHICULOS_TRANSPORTE.ELIMINAR"
     serializer_class = VehiculoTransporteSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['placa', 'marca', 'modelo']
