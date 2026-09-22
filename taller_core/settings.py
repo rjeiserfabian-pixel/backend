@@ -139,6 +139,7 @@ CORS_ALLOWED_ORIGINS = os.environ.get(
     "CORS_ALLOWED_ORIGINS",
     "http://localhost:5173,http://localhost:3000",
 ).split(",")
+CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "False").lower() in ("true", "1", "yes")
 CORS_ALLOW_CREDENTIALS = True
 
 # ---------------------------------------------------------------------------
@@ -150,9 +151,11 @@ USE_I18N = True
 USE_TZ = True
 
 # ---------------------------------------------------------------------------
-# ARCHIVOS ESTÁTICOS
+# ARCHIVOS ESTÁTICOS Y MEDIA
 # ---------------------------------------------------------------------------
 STATIC_URL = "static/"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR  # Los archivos se guardan en empresa/ y avatars/ bajo la raíz del proyecto
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ---------------------------------------------------------------------------

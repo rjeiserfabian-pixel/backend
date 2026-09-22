@@ -128,16 +128,24 @@ class ClienteViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         ruc = request.data.get('ruc')
         if not ruc:
             return Response({'error': 'El campo RUC es obligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
-            
+
         try:
-            cliente = Cliente.objects.filter(ruc=ruc).first()
+            # El RUC se guarda en el mismo campo 'dni' (numero de documento del cliente)
+            cliente = Cliente.objects.filter(dni=ruc).first()
             if cliente:
                 serializer = self.get_serializer(cliente)
                 return Response({'origen': 'local', 'data': serializer.data})
-                
+
             orchestrator = ConsultaOrchestrator()
             datos = orchestrator.consultar_ruc(ruc)
-            return Response({'origen': 'api', 'data': datos})
+            # Normalizamos a la misma forma que consulta_dni (nombres/apellidos)
+            # para que el frontend use un unico manejador de respuesta.
+            return Response({'origen': 'api', 'data': {
+                'dni': datos.get('ruc', ruc),
+                'nombres': datos.get('razon_social', ''),
+                'apellidos': '',
+                'direccion': datos.get('direccion', ''),
+            }})
             
         except ValueError as e:
             logger.warning(f"Error de API al consultar RUC {ruc}: {e}")
