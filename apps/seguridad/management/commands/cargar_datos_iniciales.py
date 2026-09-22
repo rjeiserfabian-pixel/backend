@@ -92,17 +92,17 @@ class Command(BaseCommand):
             {
                 "codigo": "CLIENTES", "nombre": "Clientes",
                 "icono": "users", "ruta": "/contactos/clientes",
-                "orden": 1, "visible_menu": True, "padre": "CONTACTOS", "permiso_ver": "CONTACTOS.CLIENTES.VER",
+                "orden": 1, "visible_menu": True, "padre": "CONTACTOS", "permiso_ver": "CLIENTES.VER_MENU",
             },
             {
                 "codigo": "PROVEEDORES", "nombre": "Proveedores",
                 "icono": "store", "ruta": "/contactos/proveedores",
-                "orden": 2, "visible_menu": True, "padre": "CONTACTOS", "permiso_ver": "CONTACTOS.PROVEEDORES.VER",
+                "orden": 2, "visible_menu": True, "padre": "CONTACTOS", "permiso_ver": "PROVEEDORES.VER_MENU",
             },
             {
                 "codigo": "TRANSPORTISTAS", "nombre": "Transportistas",
                 "icono": "truck", "ruta": "/contactos/transportistas",
-                "orden": 3, "visible_menu": True, "padre": "CONTACTOS", "permiso_ver": "CONTACTOS.TRANSPORTISTAS.VER",
+                "orden": 3, "visible_menu": True, "padre": "CONTACTOS", "permiso_ver": "TRANSPORTISTAS.VER_MENU",
             },
             # ── Seguridad ─────────────────────────────────────────────────────
             {
@@ -113,12 +113,12 @@ class Command(BaseCommand):
             {
                 "codigo": "USUARIOS", "nombre": "Usuarios",
                 "icono": "users", "ruta": "/usuarios",
-                "orden": 1, "visible_menu": True, "padre": "SEGURIDAD", "permiso_ver": "SEGURIDAD.USUARIOS.VER",
+                "orden": 1, "visible_menu": True, "padre": "SEGURIDAD", "permiso_ver": "USUARIOS.VER_MENU",
             },
             {
                 "codigo": "ROLES", "nombre": "Roles y Permisos",
                 "icono": "settings", "ruta": "/roles",
-                "orden": 2, "visible_menu": True, "padre": "SEGURIDAD", "permiso_ver": "SEGURIDAD.ROLES.VER",
+                "orden": 2, "visible_menu": True, "padre": "SEGURIDAD", "permiso_ver": "ROLES.VER_MENU",
             },
             # ── Inventario ────────────────────────────────────────────────────
             {
@@ -129,66 +129,66 @@ class Command(BaseCommand):
             {
                 "codigo": "REPUESTOS", "nombre": "Repuestos",
                 "icono": "package", "ruta": "/inventario/repuestos",
-                "orden": 1, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.REPUESTOS.VER",
+                "orden": 1, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "REPUESTOS.VER_MENU",
             },
             {
                 "codigo": "CATEGORIAS", "nombre": "Categorías",
                 "icono": "tags", "ruta": "/inventario/categorias",
-                "orden": 2, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.CATEGORIAS.VER",
+                "orden": 2, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "CATEGORIAS.VER_MENU",
             },
             {
                 "codigo": "MARCAS", "nombre": "Marcas",
                 "icono": "tag", "ruta": "/inventario/marcas",
-                "orden": 3, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.MARCAS.VER",
+                "orden": 3, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "MARCAS.VER_MENU",
             },
             {
                 "codigo": "KARDEX", "nombre": "Kardex",
                 "icono": "list", "ruta": "/inventario/kardex",
-                "orden": 4, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.KARDEX.VER",
+                "orden": 4, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "KARDEX.VER_MENU",
             },
             {
                 "codigo": "ALMACENES", "nombre": "Almacenes",
                 "icono": "store", "ruta": "/inventario/almacenes",
-                "orden": 5, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.ALMACENES.VER",
+                "orden": 5, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "ALMACENES.VER_MENU",
             },
             {
                 # El backend reutiliza INVENTARIO.REPUESTOS.* para este catálogo auxiliar
                 # (ver UnidadMedidaViewSet) — el menú refleja exactamente esa misma regla.
                 "codigo": "UNIDADES", "nombre": "Unidades",
                 "icono": "ruler", "ruta": "/inventario/unidades",
-                "orden": 6, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.REPUESTOS.VER",
+                "orden": 6, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "UNIDADES.VER_MENU",
             },
             {
                 # El backend reutiliza INVENTARIO.ALMACENES.* (ver UbicacionFisicaViewSet).
                 "codigo": "UBICACIONES", "nombre": "Ubicaciones",
                 "icono": "map-pin", "ruta": "/inventario/ubicaciones",
-                "orden": 7, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.ALMACENES.VER",
+                "orden": 7, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "UBICACIONES.VER_MENU",
             },
             {
                 # El backend reutiliza INVENTARIO.ALMACENES.* (ver SucursalViewSet).
                 "codigo": "SUCURSALES", "nombre": "Sucursales",
                 "icono": "store", "ruta": "/inventario/sucursales",
-                "orden": 8, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.ALMACENES.VER",
+                "orden": 8, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "SUCURSALES.VER_MENU",
             },
             {
                 "codigo": "STOCK_UBICACIONES", "nombre": "Ubicaciones de Stock",
                 "icono": "map-pin", "ruta": "/inventario/stock-ubicaciones",
-                "orden": 9, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.STOCK_UBICACIONES.VER",
+                "orden": 9, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "STOCK_UBICACIONES.VER_MENU",
             },
             {
                 "codigo": "GUIAS_REMISION", "nombre": "Guías de Remisión",
                 "icono": "truck", "ruta": "/inventario/guias-remision",
-                "orden": 10, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.TRASLADOS.VER",
+                "orden": 10, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "GUIAS_REMISION.VER_MENU",
             },
             {
                 "codigo": "TRASLADOS_ALMACEN", "nombre": "Movimiento de Almacén",
                 "icono": "ArrowRightLeft", "ruta": "/inventario/traslados",
-                "orden": 45, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.TRASLADOS.VER",
+                "orden": 45, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "TRASLADOS_ALMACEN.VER_MENU",
             },
             {
                 "codigo": "IMPUESTOS", "nombre": "Impuestos (IGV)",
                 "icono": "tags", "ruta": "/inventario/impuestos",
-                "orden": 90, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "INVENTARIO.IMPUESTOS.VER",
+                "orden": 90, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "IMPUESTOS.VER_MENU",
             },
             # ── Taller ────────────────────────────────────────────────────────
             {
@@ -199,22 +199,22 @@ class Command(BaseCommand):
             {
                 "codigo": "VEHICULOS", "nombre": "Vehículos",
                 "icono": "car", "ruta": "/vehiculos",
-                "orden": 1, "visible_menu": True, "padre": "TALLER", "permiso_ver": "VEHICULOS.VER",
+                "orden": 1, "visible_menu": True, "padre": "TALLER", "permiso_ver": "VEHICULOS.VER_MENU",
             },
             {
                 "codigo": "ORDENES_TRABAJO", "nombre": "Órdenes de Trabajo",
                 "icono": "clipboard-list", "ruta": "/taller/ordenes",
-                "orden": 2, "visible_menu": True, "padre": "TALLER", "permiso_ver": "ORDENES_TRABAJO.VER",
+                "orden": 2, "visible_menu": True, "padre": "TALLER", "permiso_ver": "ORDENES_TRABAJO.VER_MENU",
             },
             {
                 "codigo": "PLANTILLAS_TALLER", "nombre": "Plantillas de Servicio",
                 "icono": "filetext", "ruta": "/taller/plantillas",
-                "orden": 3, "visible_menu": True, "padre": "TALLER", "permiso_ver": "PLANTILLAS_TALLER.VER",
+                "orden": 3, "visible_menu": True, "padre": "TALLER", "permiso_ver": "PLANTILLAS_TALLER.VER_MENU",
             },
             {
                 "codigo": "TIPOS_SERVICIO", "nombre": "Tipos de Servicio",
                 "icono": "list-checks", "ruta": "/taller/tipos-servicio",
-                "orden": 4, "visible_menu": True, "padre": "TALLER", "permiso_ver": "TIPOS_SERVICIO.VER",
+                "orden": 4, "visible_menu": True, "padre": "TALLER", "permiso_ver": "TIPOS_SERVICIO.VER_MENU",
             },
             # ── Ventas ────────────────────────────────────────────────────────
             {
@@ -225,17 +225,17 @@ class Command(BaseCommand):
             {
                 "codigo": "POS", "nombre": "Punto de Venta (POS)",
                 "icono": "credit-card", "ruta": "/ventas/pos",
-                "orden": 1, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "VENTAS.POS.VER",
+                "orden": 1, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "POS.VER_MENU",
             },
             {
                 "codigo": "REGISTRO_MANUAL_VENTAS", "nombre": "Registro Manual",
                 "icono": "filetext", "ruta": "/ventas/registro-manual",
-                "orden": 2, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "VENTAS.REGISTRO_MANUAL.VER",
+                "orden": 2, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "REGISTRO_MANUAL_VENTAS.VER_MENU",
             },
             {
                 "codigo": "CAJA_CONFIG", "nombre": "Configuración de Ventas",
                 "icono": "settings", "ruta": "/ventas/configuracion",
-                "orden": 3, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "VENTAS.CONFIGURACION.VER",
+                "orden": 3, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "CAJA_CONFIG.VER_MENU",
             },
             # ── Cuentas ───────────────────────────────────────────────────────
             {
@@ -246,12 +246,12 @@ class Command(BaseCommand):
             {
                 "codigo": "POR_COBRAR", "nombre": "Por Cobrar",
                 "icono": "credit-card", "ruta": "/cuentas/por-cobrar",
-                "orden": 1, "visible_menu": True, "padre": "CUENTAS", "permiso_ver": "CUENTAS.POR_COBRAR.VER",
+                "orden": 1, "visible_menu": True, "padre": "CUENTAS", "permiso_ver": "POR_COBRAR.VER_MENU",
             },
             {
                 "codigo": "COMPRAS_CXP", "nombre": "Por Pagar",
                 "icono": "credit-card", "ruta": "/compras/cuentas-por-pagar",
-                "orden": 2, "visible_menu": True, "padre": "CUENTAS", "permiso_ver": "CUENTAS.POR_PAGAR.VER",
+                "orden": 2, "visible_menu": True, "padre": "CUENTAS", "permiso_ver": "COMPRAS_CXP.VER_MENU",
             },
             # ── Compras ───────────────────────────────────────────────────────
             {
@@ -262,12 +262,12 @@ class Command(BaseCommand):
             {
                 "codigo": "COMPRAS_HISTORIAL", "nombre": "Registro de Compras",
                 "icono": "shopping-cart", "ruta": "/compras",
-                "orden": 1, "visible_menu": True, "padre": "COMPRAS", "permiso_ver": "COMPRAS.VER",
+                "orden": 1, "visible_menu": True, "padre": "COMPRAS", "permiso_ver": "COMPRAS_HISTORIAL.VER_MENU",
             },
             {
                 "codigo": "COMPRAS_TIPO_COMPROBANTE", "nombre": "Tipos de Comprobante",
                 "icono": "filetext", "ruta": "/compras/tipos-comprobante",
-                "orden": 2, "visible_menu": True, "padre": "COMPRAS", "permiso_ver": "COMPRAS.VER",
+                "orden": 2, "visible_menu": True, "padre": "COMPRAS", "permiso_ver": "COMPRAS_TIPO_COMPROBANTE.VER_MENU",
             },
             # ── Reportes ──────────────────────────────────────────────────────
             {
@@ -278,32 +278,32 @@ class Command(BaseCommand):
             {
                 "codigo": "REPORTES_VENTAS", "nombre": "Reporte de Ventas",
                 "icono": "filetext", "ruta": "/reportes/ventas",
-                "orden": 1, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES.VENTAS.VER",
+                "orden": 1, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES_VENTAS.VER_MENU",
             },
             {
                 "codigo": "REPORTES_PRODUCTOS", "nombre": "Reporte de Productos",
                 "icono": "package", "ruta": "/reportes/productos",
-                "orden": 2, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES.PRODUCTOS.VER",
+                "orden": 2, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES_PRODUCTOS.VER_MENU",
             },
             {
                 "codigo": "REPORTES_CLIENTES", "nombre": "Reporte de Clientes",
                 "icono": "users", "ruta": "/reportes/clientes",
-                "orden": 3, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES.CLIENTES.VER",
+                "orden": 3, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES_CLIENTES.VER_MENU",
             },
             {
                 "codigo": "REPORTES_COMPRAS", "nombre": "Reporte Compra",
                 "icono": "shopping-cart", "ruta": "/reportes/compras",
-                "orden": 4, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES.COMPRAS.VER",
+                "orden": 4, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES_COMPRAS.VER_MENU",
             },
             {
                 "codigo": "REPORTES_AVANZADO", "nombre": "Reporte Avanzado",
                 "icono": "banknote", "ruta": "/reportes/avanzado",
-                "orden": 5, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES.AVANZADO.VER",
+                "orden": 5, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES_AVANZADO.VER_MENU",
             },
             {
                 "codigo": "REPORTES_VEHICULOS", "nombre": "Reporte Vehículo",
                 "icono": "car", "ruta": "/reportes/vehiculos",
-                "orden": 6, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES.VEHICULO.VER",
+                "orden": 6, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES_VEHICULOS.VER_MENU",
             },
             {
                 "codigo": "REPORTES_CAJA", "nombre": "Reporte de Caja",
@@ -313,7 +313,7 @@ class Command(BaseCommand):
             {
                 "codigo": "REPORTES_KIOSKOS", "nombre": "Reporte de Kioskos",
                 "icono": "layoutdashboard", "ruta": "/reportes/kioskos",
-                "orden": 8, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES.KIOSKOS.VER",
+                "orden": 8, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES_KIOSKOS.VER_MENU",
             },
             # ── Cajas ─────────────────────────────────────────────────────────
             {
@@ -324,17 +324,17 @@ class Command(BaseCommand):
             {
                 "codigo": "CAJAS_DASHBOARD", "nombre": "Dashboard Cajas",
                 "icono": "wallet", "ruta": "/cajas",
-                "orden": 1, "visible_menu": True, "padre": "CAJAS", "permiso_ver": "CAJAS.VER",
+                "orden": 1, "visible_menu": True, "padre": "CAJAS", "permiso_ver": "CAJAS_DASHBOARD.VER_MENU",
             },
             {
                 "codigo": "CAJAS_TRANSFERENCIAS", "nombre": "Transferencias",
                 "icono": "arrowrightleft", "ruta": "/cajas/transferencias",
-                "orden": 2, "visible_menu": True, "padre": "CAJAS", "permiso_ver": "CAJAS.TRANSFERENCIAS.VER",
+                "orden": 2, "visible_menu": True, "padre": "CAJAS", "permiso_ver": "CAJAS_TRANSFERENCIAS.VER_MENU",
             },
             {
                 "codigo": "CAJAS_HISTORIAL", "nombre": "Historial de Cajas",
                 "icono": "history", "ruta": "/cajas/historial",
-                "orden": 3, "visible_menu": True, "padre": "CAJAS", "permiso_ver": "CAJAS.HISTORIAL.VER",
+                "orden": 3, "visible_menu": True, "padre": "CAJAS", "permiso_ver": "CAJAS_HISTORIAL.VER_MENU",
             },
             # ── Configuración ─────────────────────────────────────────────────
             {
@@ -345,33 +345,33 @@ class Command(BaseCommand):
             {
                 "codigo": "SERIES_INTERNAS", "nombre": "Series Internas",
                 "icono": "list", "ruta": "/seguridad/series-internas",
-                "orden": 1, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "SERIES_INTERNAS.VER",
+                "orden": 1, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "SERIES_INTERNAS.VER_MENU",
             },
             {
                 "codigo": "VEHICULOS_TRANSPORTE", "nombre": "Vehículos de Transporte",
                 "icono": "truck", "ruta": "/configuracion/vehiculos-transporte",
-                "orden": 2, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "VEHICULOS_TRANSPORTE.VER",
+                "orden": 2, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "VEHICULOS_TRANSPORTE.VER_MENU",
             },
             {
                 "codigo": "CUENTAS_BANCARIAS", "nombre": "Cuentas Bancarias",
                 "icono": "banknote", "ruta": "/seguridad/cuentas-bancarias",
-                "orden": 3, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "CUENTAS_BANCARIAS.VER",
+                "orden": 3, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "CUENTAS_BANCARIAS.VER_MENU",
             },
             {
                 "codigo": "UBIGEO", "nombre": "Ubicaciones",
                 "icono": "map-pin", "ruta": "/seguridad/ubigeo",
-                "orden": 4, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "UBIGEO.VER",
+                "orden": 4, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "UBIGEO.VER_MENU",
             },
             {
                 # Nota: EmpresaView hoy es AllowAny.
                 "codigo": "EMPRESA", "nombre": "Empresa",
                 "icono": "building", "ruta": "/seguridad/empresa",
-                "orden": 5, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "EMPRESA.VER",
+                "orden": 5, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "EMPRESA.VER_MENU",
             },
             {
                 "codigo": "KIOSKOS", "nombre": "Kioskos",
                 "icono": "layoutdashboard", "ruta": "/configuracion/kioskos",
-                "orden": 6, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "CONFIGURACION.KIOSKOS.VER",
+                "orden": 6, "visible_menu": True, "padre": "CONFIG", "permiso_ver": "KIOSKOS.VER_MENU",
             },
         ]
 
@@ -527,6 +527,8 @@ class Command(BaseCommand):
             {"modulo": "TALLER", "codigo": "ORDENES_TRABAJO.CAMBIAR_ESTADO","nombre": "Cambiar Estado Orden de Trabajo",  "accion": "CAMBIAR_ESTADO", "grupo_padre": GP_TALLER, "grupo_submodulo": "Órdenes de Trabajo"},
             {"modulo": "TALLER", "codigo": "ORDENES_TRABAJO.APROBAR",       "nombre": "Aprobar Cotización de Orden de Trabajo","accion": "APROBAR", "grupo_padre": GP_TALLER, "grupo_submodulo": "Órdenes de Trabajo"},
             {"modulo": "TALLER", "codigo": "ORDENES_TRABAJO.FINALIZAR",     "nombre": "Finalizar Orden de Trabajo (Ejecución)","accion": "FINALIZAR","grupo_padre": GP_TALLER, "grupo_submodulo": "Órdenes de Trabajo"},
+            {"modulo": "TALLER", "codigo": "ORDENES_TRABAJO.EXTENDER_VENCIMIENTO", "nombre": "Extender vencimiento de cotización", "accion": "EXTENDER_VENCIMIENTO", "grupo_padre": GP_TALLER, "grupo_submodulo": "Órdenes de Trabajo"},
+            {"modulo": "TALLER", "codigo": "ORDENES_TRABAJO.PROMETER_ENTREGA", "nombre": "Prometer/editar fecha de entrega", "accion": "PROMETER_ENTREGA", "grupo_padre": GP_TALLER, "grupo_submodulo": "Órdenes de Trabajo"},
             {"modulo": "TALLER", "codigo": "PLANTILLAS_TALLER.VER",         "nombre": "Ver Plantillas de Servicio",       "accion": "VER",            "grupo_padre": GP_TALLER, "grupo_submodulo": "Plantillas de Servicio"},
             {"modulo": "TALLER", "codigo": "PLANTILLAS_TALLER.CREAR",       "nombre": "Crear Plantillas",                 "accion": "CREAR",          "grupo_padre": GP_TALLER, "grupo_submodulo": "Plantillas de Servicio"},
             {"modulo": "TALLER", "codigo": "PLANTILLAS_TALLER.EDITAR",      "nombre": "Editar Plantillas",                "accion": "EDITAR",         "grupo_padre": GP_TALLER, "grupo_submodulo": "Plantillas de Servicio"},
@@ -614,6 +616,52 @@ class Command(BaseCommand):
             {"modulo": "UBIGEO", "codigo": "UBIGEO.ELIMINAR",                     "nombre": "Eliminar ubicaciones",          "accion": "ELIMINAR","grupo_padre": GP_CONFIG, "grupo_submodulo": "Ubicaciones (Ubigeo)"},
             {"modulo": "EMPRESA", "codigo": "EMPRESA.VER",                        "nombre": "Ver datos de la empresa",       "accion": "VER",    "grupo_padre": GP_CONFIG, "grupo_submodulo": "Datos de la Empresa"},
             {"modulo": "EMPRESA", "codigo": "EMPRESA.EDITAR",                     "nombre": "Editar datos de la empresa",    "accion": "EDITAR", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Datos de la Empresa"},
+
+            # ── VER_MENU: visibilidad en el menú, independiente del permiso de datos ──
+            {"modulo": "CONTACTOS", "codigo": "CLIENTES.VER_MENU", "nombre": "Mostrar \"Clientes\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CONTACTOS, "grupo_submodulo": "Clientes"},
+            {"modulo": "CONTACTOS", "codigo": "PROVEEDORES.VER_MENU", "nombre": "Mostrar \"Proveedores\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CONTACTOS, "grupo_submodulo": "Proveedores"},
+            {"modulo": "CONTACTOS", "codigo": "TRANSPORTISTAS.VER_MENU", "nombre": "Mostrar \"Transportistas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CONTACTOS, "grupo_submodulo": "Transportistas"},
+            {"modulo": "SEGURIDAD", "codigo": "USUARIOS.VER_MENU", "nombre": "Mostrar \"Usuarios\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Usuarios"},
+            {"modulo": "SEGURIDAD", "codigo": "ROLES.VER_MENU", "nombre": "Mostrar \"Roles y Permisos\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Roles y Permisos"},
+            {"modulo": "INVENTARIO", "codigo": "REPUESTOS.VER_MENU", "nombre": "Mostrar \"Repuestos\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Repuestos"},
+            {"modulo": "INVENTARIO", "codigo": "CATEGORIAS.VER_MENU", "nombre": "Mostrar \"Categorías\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Categorías"},
+            {"modulo": "INVENTARIO", "codigo": "MARCAS.VER_MENU", "nombre": "Mostrar \"Marcas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Marcas"},
+            {"modulo": "INVENTARIO", "codigo": "KARDEX.VER_MENU", "nombre": "Mostrar \"Kardex\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Kardex"},
+            {"modulo": "INVENTARIO", "codigo": "ALMACENES.VER_MENU", "nombre": "Mostrar \"Almacenes\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Almacenes y Sucursales"},
+            {"modulo": "INVENTARIO", "codigo": "UNIDADES.VER_MENU", "nombre": "Mostrar \"Unidades\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Repuestos"},
+            {"modulo": "INVENTARIO", "codigo": "UBICACIONES.VER_MENU", "nombre": "Mostrar \"Ubicaciones\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Almacenes y Sucursales"},
+            {"modulo": "INVENTARIO", "codigo": "SUCURSALES.VER_MENU", "nombre": "Mostrar \"Sucursales\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Almacenes y Sucursales"},
+            {"modulo": "INVENTARIO", "codigo": "STOCK_UBICACIONES.VER_MENU", "nombre": "Mostrar \"Ubicaciones de Stock\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Ubicaciones de Stock"},
+            {"modulo": "INVENTARIO", "codigo": "GUIAS_REMISION.VER_MENU", "nombre": "Mostrar \"Guías de Remisión\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Traslados y Guías de Remisión"},
+            {"modulo": "INVENTARIO", "codigo": "TRASLADOS_ALMACEN.VER_MENU", "nombre": "Mostrar \"Movimiento de Almacén\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Traslados y Guías de Remisión"},
+            {"modulo": "INVENTARIO", "codigo": "IMPUESTOS.VER_MENU", "nombre": "Mostrar \"Impuestos (IGV)\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Impuestos (IGV)"},
+            {"modulo": "VEHICULOS", "codigo": "VEHICULOS.VER_MENU", "nombre": "Mostrar \"Vehículos\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_TALLER, "grupo_submodulo": "Vehículos"},
+            {"modulo": "TALLER", "codigo": "ORDENES_TRABAJO.VER_MENU", "nombre": "Mostrar \"Órdenes de Trabajo\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_TALLER, "grupo_submodulo": "Órdenes de Trabajo"},
+            {"modulo": "TALLER", "codigo": "PLANTILLAS_TALLER.VER_MENU", "nombre": "Mostrar \"Plantillas de Servicio\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_TALLER, "grupo_submodulo": "Plantillas de Servicio"},
+            {"modulo": "TALLER", "codigo": "TIPOS_SERVICIO.VER_MENU", "nombre": "Mostrar \"Tipos de Servicio\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_TALLER, "grupo_submodulo": "Tipos de Servicio"},
+            {"modulo": "VENTAS", "codigo": "POS.VER_MENU", "nombre": "Mostrar \"Punto de Venta (POS)\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Punto de Venta (POS)"},
+            {"modulo": "VENTAS", "codigo": "REGISTRO_MANUAL_VENTAS.VER_MENU", "nombre": "Mostrar \"Registro Manual\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Registro Manual"},
+            {"modulo": "VENTAS", "codigo": "CAJA_CONFIG.VER_MENU", "nombre": "Mostrar \"Configuración de Ventas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Configuración de Ventas"},
+            {"modulo": "CUENTAS", "codigo": "POR_COBRAR.VER_MENU", "nombre": "Mostrar \"Por Cobrar\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Cobrar"},
+            {"modulo": "CUENTAS", "codigo": "COMPRAS_CXP.VER_MENU", "nombre": "Mostrar \"Por Pagar\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Pagar"},
+            {"modulo": "COMPRAS", "codigo": "COMPRAS_HISTORIAL.VER_MENU", "nombre": "Mostrar \"Registro de Compras\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_COMPRAS, "grupo_submodulo": None},
+            {"modulo": "COMPRAS", "codigo": "COMPRAS_TIPO_COMPROBANTE.VER_MENU", "nombre": "Mostrar \"Tipos de Comprobante\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_COMPRAS, "grupo_submodulo": None},
+            {"modulo": "REPORTES", "codigo": "REPORTES_VENTAS.VER_MENU", "nombre": "Mostrar \"Reporte de Ventas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Ventas"},
+            {"modulo": "REPORTES", "codigo": "REPORTES_PRODUCTOS.VER_MENU", "nombre": "Mostrar \"Reporte de Productos\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Productos"},
+            {"modulo": "REPORTES", "codigo": "REPORTES_CLIENTES.VER_MENU", "nombre": "Mostrar \"Reporte de Clientes\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Clientes"},
+            {"modulo": "REPORTES", "codigo": "REPORTES_COMPRAS.VER_MENU", "nombre": "Mostrar \"Reporte Compra\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Compras"},
+            {"modulo": "REPORTES", "codigo": "REPORTES_AVANZADO.VER_MENU", "nombre": "Mostrar \"Reporte Avanzado\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte Avanzado"},
+            {"modulo": "REPORTES", "codigo": "REPORTES_VEHICULOS.VER_MENU", "nombre": "Mostrar \"Reporte Vehículo\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Vehículos"},
+            {"modulo": "REPORTES", "codigo": "REPORTES_KIOSKOS.VER_MENU", "nombre": "Mostrar \"Reporte de Kioskos\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Kioskos"},
+            {"modulo": "CAJAS", "codigo": "CAJAS_DASHBOARD.VER_MENU", "nombre": "Mostrar \"Dashboard Cajas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CAJAS, "grupo_submodulo": "Dashboard de Cajas"},
+            {"modulo": "CAJAS", "codigo": "CAJAS_TRANSFERENCIAS.VER_MENU", "nombre": "Mostrar \"Transferencias\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CAJAS, "grupo_submodulo": "Transferencias"},
+            {"modulo": "CAJAS", "codigo": "CAJAS_HISTORIAL.VER_MENU", "nombre": "Mostrar \"Historial de Cajas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CAJAS, "grupo_submodulo": "Historial de Sesiones"},
+            {"modulo": "SERIES_INTERNAS", "codigo": "SERIES_INTERNAS.VER_MENU", "nombre": "Mostrar \"Series Internas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Series Internas"},
+            {"modulo": "VEHICULOS_TRANSPORTE", "codigo": "VEHICULOS_TRANSPORTE.VER_MENU", "nombre": "Mostrar \"Vehículos de Transporte\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Vehículos de Transporte"},
+            {"modulo": "CUENTAS_BANCARIAS", "codigo": "CUENTAS_BANCARIAS.VER_MENU", "nombre": "Mostrar \"Cuentas Bancarias\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Cuentas Bancarias"},
+            {"modulo": "UBIGEO", "codigo": "UBIGEO.VER_MENU", "nombre": "Mostrar \"Ubicaciones\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Ubicaciones (Ubigeo)"},
+            {"modulo": "EMPRESA", "codigo": "EMPRESA.VER_MENU", "nombre": "Mostrar \"Empresa\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Datos de la Empresa"},
+            {"modulo": "CONFIG", "codigo": "KIOSKOS.VER_MENU", "nombre": "Mostrar \"Kioskos\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Kioskos"},
         ]
 
         permisos = {}

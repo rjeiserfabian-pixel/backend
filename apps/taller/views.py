@@ -55,6 +55,27 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             return [TienePermiso("ORDENES_TRABAJO.ELIMINAR")]
         return [TienePermiso("ORDENES_TRABAJO.EDITAR")]
 
+    def update(self, request, *args, **kwargs):
+        # Extender el vencimiento de la cotización es una acción sensible
+        # aparte de "editar la orden" en general (motivo, kilometraje, etc.):
+        # exige su propio permiso aunque ambas viajen por el mismo PATCH
+        # genérico del ViewSet. Ocultar el botón en el frontend no alcanza,
+        # ya que este mismo endpoint acepta el campo sin distinción.
+        if "fecha_vencimiento_cotizacion" in request.data:
+            if "ORDENES_TRABAJO.EXTENDER_VENCIMIENTO" not in permisos_efectivos(request.user):
+                raise PermissionDenied(
+                    "No tienes permiso para extender el vencimiento de la cotización."
+                )
+        # Prometer/editar la fecha de entrega al cliente es igual de sensible,
+        # pero con su propio permiso (a diferencia del vencimiento, el
+        # Mecánico sí lo conserva por defecto).
+        if "fecha_estimada_entrega" in request.data:
+            if "ORDENES_TRABAJO.PROMETER_ENTREGA" not in permisos_efectivos(request.user):
+                raise PermissionDenied(
+                    "No tienes permiso para prometer/editar la fecha de entrega."
+                )
+        return super().update(request, *args, **kwargs)
+
     def get_queryset(self):
         # Evitar N+1 en las consultas, usando select_related para FK y prefetch para M:N
         queryset = OrdenTrabajo.objects.select_related(
