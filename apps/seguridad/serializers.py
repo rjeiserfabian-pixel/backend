@@ -84,10 +84,52 @@ class LoginSerializer(serializers.Serializer):
 # EMPRESA Y UBIGEO
 # ==============================================================================
 
+class EmpresaPublicSerializer(serializers.ModelSerializer):
+    """
+    Para el GET público que usa el Kiosko (sin login): solo los datos que
+    van impresas en un ticket. Nunca incluye credenciales SUNAT.
+    """
+    class Meta:
+        model = Empresa
+        fields = [
+            'id', 'razon_social', 'ruc', 'direccion', 'departamento', 'provincia',
+            'distrito', 'telefono', 'email', 'web', 'logo', 'dias_validez_cotizacion',
+        ]
+
+
 class EmpresaSerializer(serializers.ModelSerializer):
+    """
+    Para el panel de configuración (autenticado). Las credenciales SUNAT
+    sensibles son write_only: se pueden guardar pero el GET nunca las
+    devuelve. Se exponen flags *_configurada de solo lectura para que el
+    frontend muestre "Configurado" sin necesitar el valor real.
+    """
+    sunat_clave_secundaria = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, allow_null=True
+    )
+    sunat_gre_client_secret = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, allow_null=True
+    )
+    sunat_clave_secundaria_configurada = serializers.SerializerMethodField()
+    sunat_gre_client_secret_configurada = serializers.SerializerMethodField()
+
     class Meta:
         model = Empresa
         fields = '__all__'
+
+    def get_sunat_clave_secundaria_configurada(self, obj):
+        return bool(obj.sunat_clave_secundaria)
+
+    def get_sunat_gre_client_secret_configurada(self, obj):
+        return bool(obj.sunat_gre_client_secret)
+
+    def update(self, instance, validated_data):
+        # Un secreto en blanco significa "no lo toques", no "bórralo": solo
+        # se sobreescribe cuando el usuario ingresa un valor nuevo de verdad.
+        for campo in ('sunat_clave_secundaria', 'sunat_gre_client_secret'):
+            if campo in validated_data and not validated_data[campo]:
+                validated_data.pop(campo)
+        return super().update(instance, validated_data)
 
 
 # ==============================================================================

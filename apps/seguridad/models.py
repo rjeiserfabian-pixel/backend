@@ -428,9 +428,29 @@ class Empresa(models.Model):
     
     # Parámetros globales
     dias_validez_cotizacion = models.PositiveIntegerField(
-        default=15, 
+        default=15,
         help_text="Días de validez por defecto para las cotizaciones generadas."
     )
+
+    # ──────────────────────────────────────────────
+    # FACTURACIÓN ELECTRÓNICA (SUNAT / Guías de Remisión Electrónica)
+    # ──────────────────────────────────────────────
+    # Credenciales propias de CADA empresa/taller (no son una API key
+    # compartida de la plataforma como TOKENPERU_TOKEN), por eso se guardan
+    # aquí editables desde la configuración en vez de en variables de
+    # entorno. sunat_clave_secundaria y sunat_gre_client_secret son
+    # sensibles: EmpresaSerializer las marca write_only para que nunca
+    # salgan en una respuesta GET (ver también EmpresaPublicSerializer, que
+    # ni siquiera incluye estos campos, usado en el GET público del Kiosko).
+    class ModoSunat(models.TextChoices):
+        BETA = 'BETA', 'Pruebas (Beta)'
+        PRODUCCION = 'PRODUCCION', 'Producción'
+
+    sunat_modo = models.CharField(max_length=10, choices=ModoSunat.choices, default=ModoSunat.BETA)
+    sunat_usuario_secundario = models.CharField(max_length=100, blank=True, null=True)
+    sunat_clave_secundaria = models.CharField(max_length=255, blank=True, null=True)
+    sunat_gre_client_id = models.CharField(max_length=255, blank=True, null=True)
+    sunat_gre_client_secret = models.CharField(max_length=255, blank=True, null=True)
 
     class Meta:
         db_table = "empresa"

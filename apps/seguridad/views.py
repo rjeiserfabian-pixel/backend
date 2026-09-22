@@ -49,6 +49,7 @@ from .serializers import (
     PermisoSerializer,
     ModuloSerializer,
     EmpresaSerializer,
+    EmpresaPublicSerializer,
     MiPerfilSerializer,
 )
 from .permissions import TienePermiso, PermisoPorMetodoMixin, permisos_efectivos
@@ -459,7 +460,12 @@ class EmpresaView(APIView):
 
     def get(self, request):
         empresa = self.get_object()
-        serializer = EmpresaSerializer(empresa)
+        # El Kiosko (anónimo) nunca debe recibir credenciales SUNAT; el panel
+        # de administración (autenticado) sí ve el estado (configurado o no).
+        if request.user and request.user.is_authenticated:
+            serializer = EmpresaSerializer(empresa)
+        else:
+            serializer = EmpresaPublicSerializer(empresa)
         return Response({"success": True, "data": serializer.data})
 
     def put(self, request):
