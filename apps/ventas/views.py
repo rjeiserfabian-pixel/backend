@@ -729,8 +729,47 @@ class CuentaPorCobrarViewSet(viewsets.ModelViewSet):
         page = self.paginate_queryset(qs)
         if page is not None:
             return self.get_paginated_response(page)
-            
+
         return Response(qs)
+
+    @action(detail=False, methods=['get'], url_path='cuotas-vencidas')
+    def cuotas_vencidas(self, request):
+        """
+        Para la campanita de alertas del header: cuotas de crédito vencidas
+        (fecha_vencimiento pasada y con saldo pendiente) ordenadas por las más
+        urgentes primero (más antiguas vencidas). Se limita a 30 resultados
+        para no sobrecargar el desplegable; `total` lleva la cuenta real.
+        Filtra por sucursal si se manda `sucursal_id` (vía Venta.sucursal).
+        """
+        from django.utils import timezone
+
+        hoy = timezone.localdate()
+        sucursal_id = request.query_params.get('sucursal_id')
+        LIMITE = 30
+
+        qs = CuotaCredito.objects.select_related(
+            'cuenta_cobrar__venta__cliente'
+        ).filter(
+            fecha_vencimiento__lt=hoy,
+            saldo_pendiente__gt=0
+        )
+        if sucursal_id:
+            qs = qs.filter(cuenta_cobrar__venta__sucursal_id=sucursal_id)
+        qs = qs.order_by('fecha_vencimiento')
+
+        total = qs.count()
+        data = [{
+            'id': c.id,
+            'cuenta_cobrar_id': c.cuenta_cobrar_id,
+            'cliente_nombre': f"{c.cuenta_cobrar.venta.cliente.nombres} {c.cuenta_cobrar.venta.cliente.apellidos}".strip(),
+            'codigo_credito': c.cuenta_cobrar.codigo_credito,
+            'numero_cuota': c.numero_cuota,
+            'saldo_pendiente': c.saldo_pendiente,
+            'fecha_vencimiento': c.fecha_vencimiento,
+            'dias_vencido': (hoy - c.fecha_vencimiento).days,
+        } for c in qs[:LIMITE]]
+
+        return Response({'total': total, 'results': data})
 
     @action(detail=False, methods=['post'], url_path='pagar-cuota/(?P<cuota_id>[^/.]+)')
     def pagar_cuota(self, request, cuota_id=None):

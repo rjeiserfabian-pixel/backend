@@ -270,8 +270,39 @@ class CuentaPorPagarViewSet(viewsets.ModelViewSet):
         page = self.paginate_queryset(qs)
         if page is not None:
             return self.get_paginated_response(page)
-            
+
         return Response(qs)
+
+    @action(detail=False, methods=['get'], url_path='vencidas')
+    def vencidas(self, request):
+        """
+        Para la campanita de alertas del header: cuentas por pagar vencidas
+        (fecha_vencimiento pasada y con saldo pendiente), ordenadas por las
+        más urgentes primero (más antiguas vencidas). Se limita a 30
+        resultados; `total` lleva la cuenta real. Compra no tiene sucursal
+        propia en este sistema, así que esto es a nivel de toda la empresa.
+        """
+        from django.utils import timezone
+
+        hoy = timezone.now().date()
+        LIMITE = 30
+
+        qs = CuentaPorPagar.objects.select_related('proveedor').filter(
+            fecha_vencimiento__lt=hoy,
+            saldo_pendiente__gt=0
+        ).exclude(estado='Anulada').order_by('fecha_vencimiento')
+
+        total = qs.count()
+        data = [{
+            'id': c.id,
+            'proveedor_id': c.proveedor_id,
+            'proveedor_nombre': c.proveedor.nombre_o_razon_social,
+            'saldo_pendiente': c.saldo_pendiente,
+            'fecha_vencimiento': c.fecha_vencimiento,
+            'dias_vencido': (hoy - c.fecha_vencimiento).days,
+        } for c in qs[:LIMITE]]
+
+        return Response({'total': total, 'results': data})
 
 
 
