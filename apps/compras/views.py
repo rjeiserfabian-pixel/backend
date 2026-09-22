@@ -149,8 +149,8 @@ class CompraViewSet(viewsets.ModelViewSet):
             fecha_vencimiento = data.get('fecha_vencimiento')
             if not fecha_vencimiento:
                 fecha_vencimiento = compra.fecha_emision
-            
-            CuentaPorPagar.objects.create(
+
+            cuenta = CuentaPorPagar.objects.create(
                 compra=compra,
                 proveedor=compra.proveedor,
                 monto_total=compra.total,
@@ -159,6 +159,71 @@ class CompraViewSet(viewsets.ModelViewSet):
                 fecha_vencimiento=fecha_vencimiento,
                 estado='Pendiente'
             )
+
+            # Pago inicial opcional (ej. "se paga un adelanto al proveedor al
+            # momento de la compra"). Reutiliza el mismo modelo PagoCuenta que
+            # los abonos posteriores (ModalAbonar), así el pago queda visible
+            # de inmediato en el historial de pagos y en el detalle de la
+            # cuenta por pagar sin lógica adicional.
+            monto_inicial_raw = data.get('monto_inicial')
+            monto_inicial = Decimal(str(monto_inicial_raw)) if monto_inicial_raw not in (None, '', '0') else Decimal('0')
+            if monto_inicial > 0:
+                if monto_inicial > compra.total:
+                    raise ValidationError('El pago inicial no puede ser mayor al total de la compra.')
+
+                from apps.ventas.models import SesionCaja, MovimientoCaja, MetodoPago
+
+                afecta_caja_inicial = data.get('afecta_caja_inicial', True)
+                referencia_inicial = data.get('referencia_inicial') or f"Inicial compra {compra.serie}-{compra.numero_comprobante}"
+
+                metodo_pago_obj = None
+                metodo_pago_inicial_id = data.get('metodo_pago_inicial_id')
+                if metodo_pago_inicial_id:
+                    metodo_pago_obj = MetodoPago.objects.filter(id=metodo_pago_inicial_id).first()
+                if not metodo_pago_obj:
+                    metodo_pago_obj = MetodoPago.objects.filter(estado=True).first()
+                if not metodo_pago_obj:
+                    raise ValidationError('No hay métodos de pago configurados para registrar el pago inicial.')
+
+                movimiento = None
+                if afecta_caja_inicial:
+                    sesion = SesionCaja.objects.filter(usuario=request.user, estado=SesionCaja.Estado.ABIERTA).first()
+                    if not sesion:
+                        raise ValidationError(
+                            'Debe abrir su caja para registrar el pago inicial que afecta caja. '
+                            'Si el pago se hizo por otro medio (ej. transferencia bancaria), desmarque "Afecta a Caja".'
+                        )
+                    movimiento = MovimientoCaja.objects.create(
+                        sesion=sesion,
+                        tipo=MovimientoCaja.Tipo.EGRESO,
+                        concepto=MovimientoCaja.Concepto.PAGO_PROVEEDOR,
+                        metodo_pago=metodo_pago_obj,
+                        monto=monto_inicial,
+                        referencia=referencia_inicial,
+                        origen_movimiento=MovimientoCaja.OrigenMovimiento.PAGO_PROVEEDOR,
+                        referencia_origen=f"CXP-{cuenta.id}",
+                        creado_por=request.user,
+                    )
+
+                PagoCuenta.objects.create(
+                    cuenta_por_pagar=cuenta,
+                    monto_abonado=monto_inicial,
+                    fecha_pago=compra.fecha_emision,
+                    metodo_pago=metodo_pago_obj.nombre,
+                    referencia=referencia_inicial,
+                    afecta_caja=afecta_caja_inicial,
+                    movimiento_caja=movimiento,
+                    usuario=request.user,
+                )
+
+                cuenta.monto_pagado = monto_inicial
+                cuenta.saldo_pendiente = cuenta.monto_total - cuenta.monto_pagado
+                if cuenta.saldo_pendiente <= 0:
+                    cuenta.estado = 'Pagada'
+                    cuenta.saldo_pendiente = 0
+                else:
+                    cuenta.estado = 'Parcial'
+                cuenta.save()
 
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
