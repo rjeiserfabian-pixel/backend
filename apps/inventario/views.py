@@ -3,7 +3,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
-from django.db.models import Q, Prefetch
+from django.db.models import Q, Prefetch, Count
 from .models import (
     UnidadMedida, Categoria, MarcaRepuesto, Repuesto, AplicacionRepuesto,
     Sucursal, Almacen, UbicacionFisica, InventarioStock, MovimientoInventario,
@@ -185,6 +185,10 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         """
         Endpoint dinámico para obtener repuestos compatibles con un vehículo.
         Query Params esperados: marca (obligatorio), modelo (opcional), motor (opcional), anio (opcional)
+        Opcionales para el catálogo del kiosko: search (nombre/código) y
+        categoria (id de Categoria) — ambos se aplican SIEMPRE sobre el
+        subconjunto ya compatible con el vehículo, nunca lo reemplazan: el
+        cliente jamás debe ver un repuesto que no aplique a su vehículo.
         Lógica: NULL en anio_desde/anio_hasta = sin restricción de año (aplica a todos).
         """
         marca = request.query_params.get('marca', '').strip()
@@ -213,7 +217,38 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
             except (ValueError, TypeError):
                 logger.warning(f"Valor de año inválido recibido en /compatibles/: {anio}")
 
-        repuestos = self.get_queryset().filter(query).distinct()
+        # El join contra 'aplicaciones' puede duplicar filas del mismo repuesto
+        # (varias aplicaciones que matchean). Se resuelve a una lista de IDs
+        # distintos primero, y de ahí en adelante se trabaja con un queryset
+        # limpio (sin joins) — así el conteo por categoría y la paginación no
+        # arrastran duplicados ni requieren un .distinct() por cada operación.
+        ids_compatibles = list(
+            self.get_queryset().filter(query).values_list('id', flat=True).distinct()
+        )
+        repuestos_compatibles = self.get_queryset().filter(id__in=ids_compatibles)
+
+        # "search" y "categoria" SIEMPRE se aplican sobre repuestos_compatibles,
+        # nunca sobre el catálogo completo: es la garantía de que el cliente
+        # solo puede buscar/filtrar dentro de lo que ya es compatible con su
+        # vehículo, para no confundirlo con un repuesto que no le sirve.
+        search = request.query_params.get('search', '').strip()
+        if search:
+            repuestos_compatibles = repuestos_compatibles.filter(
+                Q(nombre__icontains=search) | Q(codigo__icontains=search)
+            )
+
+        # Categorías presentes en el resultado (antes de aplicar el filtro de
+        # categoría en sí), para que el frontend pinte solo los chips que
+        # realmente tienen repuestos para este vehículo + búsqueda actual.
+        categorias_disponibles = [
+            {'id': c['categoria_id'], 'nombre': c['categoria__nombre'], 'total': c['total']}
+            for c in repuestos_compatibles.values('categoria_id', 'categoria__nombre')
+                .annotate(total=Count('id')).order_by('categoria__nombre')
+        ]
+
+        categoria_id = request.query_params.get('categoria')
+        if categoria_id:
+            repuestos_compatibles = repuestos_compatibles.filter(categoria_id=categoria_id)
 
         # Si la request viene de un kiosko registrado, además del stock global
         # (stock_total_disponible, para el catálogo interno) se agrega el stock
@@ -237,15 +272,17 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
                 )
             return items
 
-        page = self.paginate_queryset(repuestos)
+        page = self.paginate_queryset(repuestos_compatibles)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             data = _anexar_stock_sucursal(serializer.data, page)
-            return self.get_paginated_response(data)
+            response = self.get_paginated_response(data)
+            response.data['categorias_disponibles'] = categorias_disponibles
+            return response
 
-        serializer = self.get_serializer(repuestos, many=True)
-        data = _anexar_stock_sucursal(serializer.data, repuestos)
-        return Response(data)
+        serializer = self.get_serializer(repuestos_compatibles, many=True)
+        data = _anexar_stock_sucursal(serializer.data, repuestos_compatibles)
+        return Response({'results': data, 'categorias_disponibles': categorias_disponibles})
 
     @action(detail=False, methods=['get'])
     def exportar_excel(self, request):
