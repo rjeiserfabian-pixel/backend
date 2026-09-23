@@ -26,6 +26,24 @@ logger = logging.getLogger(__name__)
 
 # Alcances en orden de amplitud (de más restrictivo a más amplio)
 JERARQUIA_ALCANCE = ["PROPIO", "ASIGNADO", "TALLER", "GLOBAL"]
+_PRIORIDAD_ALCANCE = {alcance: prioridad for prioridad, alcance in enumerate(JERARQUIA_ALCANCE)}
+
+
+def _alcance_mas_amplio(alcances):
+    """
+    Dado un conjunto de alcances (ej. porque un usuario tiene varios roles
+    activos que otorgan el mismo permiso con alcances distintos, o varias
+    excepciones ALLOW directas vigentes), devuelve el más amplio según
+    JERARQUIA_ALCANCE.
+
+    Un valor desconocido/None (dato corrupto o alcance no configurado)
+    se trata como el más restrictivo posible, nunca como el más amplio:
+    ante la duda, el sistema deniega alcance antes que sobre-otorgarlo.
+    """
+    alcances = [a for a in alcances if a]
+    if not alcances:
+        return "PROPIO"
+    return max(alcances, key=lambda a: _PRIORIDAD_ALCANCE.get(a, -1))
 
 
 class TienePermiso(BasePermission):
@@ -80,22 +98,30 @@ class TienePermiso(BasePermission):
             return False
 
         # Paso 3: Verificar excepción ALLOW directa en usuario_permisos
-        allow_directo = UsuarioPermiso.objects.filter(
+        # Puede haber más de una excepción ALLOW vigente para el mismo permiso
+        # (ej. dos concesiones temporales superpuestas con alcances distintos);
+        # no hay unicidad garantizada a nivel de BD, así que se resuelve con la
+        # misma regla "gana el alcance más amplio" que en el paso 4, en vez de
+        # quedarse con la primera fila que devuelva la consulta sin orden.
+        alcances_allow_directo = list(UsuarioPermiso.objects.filter(
             id_usuario=usuario,
             id_permiso__codigo=self.codigo_permiso,
             tipo="ALLOW",
             estado=True,
         ).filter(
             models_Q(fecha_fin__isnull=True) | models_Q(fecha_fin__gte=timezone.now())
-        ).first()
+        ).values_list("alcance", flat=True))
 
-        if allow_directo:
-            request.alcance_efectivo = allow_directo.alcance or "PROPIO"
+        if alcances_allow_directo:
+            request.alcance_efectivo = _alcance_mas_amplio(alcances_allow_directo)
             logger.debug("Permiso ALLOW directo para [%s] en [%s]. Alcance: %s", usuario.username, self.codigo_permiso, request.alcance_efectivo)
             return True
 
         # Paso 4: Verificar permiso vía roles activos
-        # select_related para evitar N+1 al acceder a id_rol e id_permiso
+        # Un usuario puede tener varios roles activos que otorguen el mismo
+        # permiso con alcances distintos (ej. "Cajero" con PROPIO y "Supervisor
+        # de Turno" con TALLER); se toma el más amplio de todos con la misma
+        # regla, en vez de una fila arbitraria sin orden garantizado.
         roles_activos_ids = UsuarioRol.objects.filter(
             id_usuario=usuario,
             estado=True,
@@ -103,16 +129,16 @@ class TienePermiso(BasePermission):
             models_Q(fecha_expiracion__isnull=True) | models_Q(fecha_expiracion__gte=timezone.now())
         ).values_list("id_rol_id", flat=True)
 
-        rol_permiso = RolPermiso.objects.filter(
+        alcances_via_rol = list(RolPermiso.objects.filter(
             id_rol_id__in=roles_activos_ids,
             id_permiso__codigo=self.codigo_permiso,
-        ).select_related("id_permiso").first()
+        ).values_list("alcance", flat=True))
 
-        if not rol_permiso:
+        if not alcances_via_rol:
             logger.info("Sin permiso [%s] para usuario [%s].", self.codigo_permiso, usuario.username)
             return False
 
-        request.alcance_efectivo = rol_permiso.alcance
+        request.alcance_efectivo = _alcance_mas_amplio(alcances_via_rol)
         logger.debug("Permiso vía rol para [%s] en [%s]. Alcance: %s", usuario.username, self.codigo_permiso, request.alcance_efectivo)
         return True
 

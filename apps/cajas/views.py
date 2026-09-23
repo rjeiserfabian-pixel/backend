@@ -388,7 +388,8 @@ class TransferenciaViewSet(viewsets.mixins.CreateModelMixin,
     Al crearse, genera dos MovimientoCaja atómicamente.
     """
     queryset = TransferenciaCaja.objects.select_related(
-        'sesion_origen__caja', 'sesion_destino__caja', 'usuario'
+        'sesion_origen__caja', 'sesion_origen__usuario',
+        'sesion_destino__caja', 'sesion_destino__usuario', 'usuario'
     ).all()
     serializer_class   = TransferenciaCajaSerializer
     pagination_class   = CajasPagination
@@ -431,6 +432,29 @@ class TransferenciaViewSet(viewsets.mixins.CreateModelMixin,
             return Response({'error': 'La sesión de caja origen no está abierta.'}, status=400)
         if not sesion_destino:
             return Response({'error': 'La sesión de caja destino no está abierta.'}, status=400)
+
+        # Segregación de funciones según el alcance efectivo del permiso
+        # CAJAS.TRANSFERENCIAS.CREAR (ver apps.seguridad.permissions.TienePermiso,
+        # que deja el alcance calculado en request.alcance_efectivo):
+        #   - GLOBAL / TALLER → puede transferir desde la caja abierta de cualquier
+        #     usuario (rol Administrador / supervisor de tesorería).
+        #   - PROPIO / ASIGNADO (o sin alcance resuelto, por seguridad) → solo puede
+        #     sacar dinero de SU PROPIA sesión abierta; sigue pudiendo elegir como
+        #     destino la caja de cualquier otro usuario.
+        # El superusuario de Django siempre tiene alcance GLOBAL (ver TienePermiso),
+        # pero se valida explícito aquí también por si se llama con otro flujo de auth.
+        alcance = getattr(request, 'alcance_efectivo', 'PROPIO')
+        if not request.user.is_superuser and alcance not in ('GLOBAL', 'TALLER'):
+            if str(sesion_origen.usuario_id) != str(request.user.pk):
+                logger.warning(
+                    "[Cajas] Transferencia denegada: %s (alcance=%s) intentó sacar dinero "
+                    "de la sesión %s, que pertenece a otro usuario.",
+                    request.user, alcance, sesion_origen.id
+                )
+                return Response(
+                    {'error': 'No tienes permiso para transferir dinero desde una caja que no es tuya. Solo puedes transferir desde tu propia caja abierta.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
 
         # Verificar saldo suficiente en origen
         saldo_origen = _calcular_saldo_teorico(sesion_origen)

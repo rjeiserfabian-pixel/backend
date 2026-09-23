@@ -104,15 +104,18 @@ class MovimientoCajaCreateSerializer(serializers.ModelSerializer):
 class TransferenciaCajaSerializer(serializers.ModelSerializer):
     caja_origen_nombre  = serializers.CharField(source='sesion_origen.caja.nombre', read_only=True)
     caja_destino_nombre = serializers.CharField(source='sesion_destino.caja.nombre', read_only=True)
+    cajero_origen_nombre  = serializers.SerializerMethodField()
+    cajero_destino_nombre = serializers.SerializerMethodField()
     usuario_nombre      = serializers.SerializerMethodField()
     estado_display      = serializers.CharField(source='get_estado_display', read_only=True)
+    numero_documento    = serializers.SerializerMethodField()
 
     class Meta:
         model = TransferenciaCaja
         fields = [
-            'id',
-            'sesion_origen', 'caja_origen_nombre',
-            'sesion_destino', 'caja_destino_nombre',
+            'id', 'numero_documento',
+            'sesion_origen', 'caja_origen_nombre', 'cajero_origen_nombre',
+            'sesion_destino', 'caja_destino_nombre', 'cajero_destino_nombre',
             'monto', 'motivo', 'estado', 'estado_display',
             'usuario', 'usuario_nombre', 'fecha',
         ]
@@ -121,6 +124,17 @@ class TransferenciaCajaSerializer(serializers.ModelSerializer):
 
     def get_usuario_nombre(self, obj):
         return f"{obj.usuario.nombres} {obj.usuario.apellidos}".strip() or obj.usuario.username
+
+    def get_cajero_origen_nombre(self, obj):
+        u = obj.sesion_origen.usuario
+        return f"{u.nombres} {u.apellidos}".strip() or u.username
+
+    def get_cajero_destino_nombre(self, obj):
+        u = obj.sesion_destino.usuario
+        return f"{u.nombres} {u.apellidos}".strip() or u.username
+
+    def get_numero_documento(self, obj):
+        return f"TC-{str(obj.id).zfill(6)}"
 
 
 class ArqueoCajaSerializer(serializers.ModelSerializer):
