@@ -8,7 +8,8 @@ from django.utils import timezone
 from apps.inventario.models import Repuesto, InventarioStock, MovimientoInventario
 from .models import (
     Venta, DetalleVenta, SerieComprobante, SesionCaja,
-    MovimientoCaja, PagoVenta, CuentaPorCobrar, CuotaCredito, Impuesto
+    MovimientoCaja, PagoVenta, CuentaPorCobrar, CuotaCredito, Impuesto,
+    MetodoPago
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,78 @@ class VentasService:
         subtotal = (total / factor).quantize(Decimal('0.01'))
         igv = total - subtotal
         return subtotal, igv
+
+    @staticmethod
+    def preparar_pagos_para_caja(pagos_data: list, total_venta: Decimal) -> tuple[list, Decimal, Decimal]:
+        """
+        Normaliza pagos de venta para caja.
+
+        `monto_recibido` conserva lo que entrego el cliente, pero los movimientos
+        de caja deben sumar solo el total real de la venta. Si hay vuelto, se
+        descuenta del pago en efectivo.
+        """
+        total_venta = Decimal(str(total_venta)).quantize(Decimal('0.01'))
+        pagos_normalizados = []
+        total_recibido = Decimal('0.00')
+
+        for pago in pagos_data or []:
+            metodo_pago_id = pago.get('metodo_pago_id') or pago.get('metodo_id')
+            if not metodo_pago_id:
+                raise ValueError("Cada pago debe indicar un metodo de pago.")
+
+            metodo_pago = MetodoPago.objects.filter(id=metodo_pago_id, estado=True).first()
+            if not metodo_pago:
+                raise ValueError("Uno de los metodos de pago no existe o esta inactivo.")
+
+            try:
+                monto = Decimal(str(pago.get('monto') or 0)).quantize(Decimal('0.01'))
+            except Exception as exc:
+                raise ValueError("El monto de pago no es valido.") from exc
+
+            if monto <= 0:
+                raise ValueError("Cada pago debe tener un monto mayor a cero.")
+
+            referencia = (pago.get('referencia') or '').strip()
+            if metodo_pago.requiere_referencia and not referencia:
+                raise ValueError(f"El metodo de pago {metodo_pago.nombre} requiere referencia.")
+
+            pagos_normalizados.append({
+                'metodo_pago': metodo_pago,
+                'monto_recibido': monto,
+                'monto_caja': monto,
+                'referencia': referencia,
+            })
+            total_recibido += monto
+
+        if not pagos_normalizados:
+            raise ValueError("Debe indicar al menos un metodo de pago.")
+
+        if total_recibido < total_venta:
+            raise ValueError(f"El monto pagado ({total_recibido}) es menor al total de la venta ({total_venta}).")
+
+        vuelto = (total_recibido - total_venta).quantize(Decimal('0.01'))
+        if vuelto > 0:
+            vuelto_restante = vuelto
+            for pago in pagos_normalizados:
+                nombre_metodo = (pago['metodo_pago'].nombre or '').strip().lower()
+                es_efectivo = 'efectivo' in nombre_metodo or 'cash' in nombre_metodo
+                if not es_efectivo:
+                    continue
+
+                descuento = min(pago['monto_caja'], vuelto_restante)
+                pago['monto_caja'] -= descuento
+                vuelto_restante -= descuento
+                if vuelto_restante <= 0:
+                    break
+
+            if vuelto_restante > 0:
+                raise ValueError("El vuelto solo puede descontarse de pagos en efectivo.")
+
+        pagos_caja = [p for p in pagos_normalizados if p['monto_caja'] > 0]
+        if sum(p['monto_caja'] for p in pagos_caja) != total_venta:
+            raise ValueError("Los pagos aplicados a caja no cuadran con el total de la venta.")
+
+        return pagos_caja, total_recibido, vuelto
 
     @staticmethod
     @transaction.atomic
@@ -126,12 +199,15 @@ class VentasService:
         venta.serie_correlativo = correlativo
         venta.sesion_caja = sesion_caja
         venta.fecha_emision = timezone.now()
+        pagos_caja, monto_recibido, vuelto = VentasService.preparar_pagos_para_caja(pagos_data, venta.total)
+        venta.monto_recibido = monto_recibido
+        venta.vuelto = vuelto
         venta.save()
 
         # 3. Registrar Pagos y Movimientos de Caja
         total_pagado = Decimal('0.00')
-        for p in pagos_data:
-            monto = Decimal(str(p['monto']))
+        for p in pagos_caja:
+            monto = p['monto_caja']
             total_pagado += monto
             
             # Movimiento en la caja
@@ -139,9 +215,9 @@ class VentasService:
                 sesion=sesion_caja,
                 tipo=MovimientoCaja.Tipo.INGRESO,
                 concepto=MovimientoCaja.Concepto.VENTA,
-                metodo_pago_id=p['metodo_pago_id'],
+                metodo_pago=p['metodo_pago'],
                 monto=monto,
-                referencia=p.get('referencia', ''),
+                referencia=p['referencia'],
                 origen_movimiento=MovimientoCaja.OrigenMovimiento.VENTA,
                 venta_origen=venta,
                 creado_por=usuario

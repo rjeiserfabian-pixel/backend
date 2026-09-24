@@ -116,8 +116,11 @@ class VehiculoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         placa = placa.replace("-", "").replace(" ", "").upper()
         
         try:
-            # Buscar en base local primero para ahorrar cuotas de la API
-            vehiculo = Vehiculo.objects.filter(placa=placa).first()
+            # Buscar en base local primero para ahorrar cuotas de la API.
+            # estado=True: un vehículo eliminado (soft-delete) no debe
+            # "resucitar" con datos viejos/manuales en vez de re-consultar
+            # las APIs externas.
+            vehiculo = Vehiculo.objects.filter(placa=placa, estado=True).first()
             if vehiculo:
                 serializer = self.get_serializer(vehiculo)
                 return Response({'origen': 'local', 'data': serializer.data})
@@ -184,8 +187,10 @@ class VehiculoTransporteViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         placa = placa.replace("-", "").replace(" ", "").upper()
         
         try:
-            # Buscar en base local primero
-            vehiculo = VehiculoTransporte.objects.filter(placa=placa).first()
+            # Buscar en base local primero. estado=True: un vehículo eliminado
+            # (soft-delete) no debe "resucitar" con datos viejos en vez de
+            # re-consultar las APIs externas.
+            vehiculo = VehiculoTransporte.objects.filter(placa=placa, estado=True).first()
             if vehiculo:
                 serializer = self.get_serializer(vehiculo)
                 return Response({'origen': 'local', 'data': serializer.data})

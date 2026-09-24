@@ -1,6 +1,6 @@
 import logging
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from rest_framework import viewsets, status, views, pagination
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -321,7 +321,7 @@ class VentaViewSet(viewsets.ModelViewSet):
         return [TienePermiso("VENTAS.POS.CREAR")]
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = super().get_queryset().select_related('cliente', 'vehiculo').prefetch_related('pagos__movimiento_caja')
         estado = self.request.query_params.get('estado')
         if estado == 'PENDIENTE':
             qs = qs.filter(estado=Venta.Estado.PRE_VENTA)
@@ -336,7 +336,32 @@ class VentaViewSet(viewsets.ModelViewSet):
         sucursal = self.request.query_params.get('sucursal')
         if sucursal:
             qs = qs.filter(sucursal_id=sucursal)
-        return qs
+
+        cliente = (self.request.query_params.get('cliente') or '').strip()
+        if cliente:
+            qs = qs.filter(
+                Q(cliente__nombres__icontains=cliente) |
+                Q(cliente__apellidos__icontains=cliente) |
+                Q(cliente__dni__icontains=cliente)
+            )
+
+        referencia = (self.request.query_params.get('referencia') or '').strip()
+        if referencia:
+            qs = qs.filter(
+                Q(ticket_kiosko__icontains=referencia) |
+                Q(serie_correlativo__icontains=referencia) |
+                Q(pagos__movimiento_caja__referencia__icontains=referencia)
+            )
+
+        fecha_desde = self.request.query_params.get('fecha_desde')
+        if fecha_desde:
+            qs = qs.filter(creado_en__date__gte=fecha_desde)
+
+        fecha_hasta = self.request.query_params.get('fecha_hasta')
+        if fecha_hasta:
+            qs = qs.filter(creado_en__date__lte=fecha_hasta)
+
+        return qs.distinct()
 
     @action(
         detail=False, methods=['post'],
@@ -535,29 +560,41 @@ class VentaViewSet(viewsets.ModelViewSet):
                     return Response({"error": "Sesión de caja abierta requerida para venta normal."}, status=status.HTTP_400_BAD_REQUEST)
                 venta.sesion_caja = sesion
 
+            pagos_caja = []
+            if not es_registro_manual and sesion and data.get('pagos') and venta.estado != Venta.Estado.AL_CREDITO:
+                try:
+                    pagos_caja, monto_recibido_calculado, vuelto_calculado = VentasService.preparar_pagos_para_caja(
+                        data['pagos'],
+                        venta.total
+                    )
+                except ValueError as exc:
+                    transaction.set_rollback(True)
+                    return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+                if vuelto_calculado > 0:
+                    venta.monto_recibido = monto_recibido_calculado
+                    venta.vuelto = vuelto_calculado
+
             venta.save()
             
             # Registrar pagos (ignorar si es venta al crédito, ya que los pagos se harán por cuotas)
-            if not es_registro_manual and sesion and data.get('pagos') and venta.estado != Venta.Estado.AL_CREDITO:
-                for p in data['pagos']:
-                    monto_pago = p.get('monto', 0)
-                    if float(monto_pago) > 0:
-                        movimiento = MovimientoCaja.objects.create(
-                            sesion=sesion,
-                            tipo=MovimientoCaja.Tipo.INGRESO,
-                            concepto=MovimientoCaja.Concepto.VENTA,
-                            metodo_pago_id=p.get('metodo_id'),
-                            monto=monto_pago,
-                            referencia=p.get('referencia', ''),
-                            origen_movimiento=MovimientoCaja.OrigenMovimiento.VENTA,
-                            venta_origen=venta,
-                            creado_por=request.user
-                        )
-                        PagoVenta.objects.create(
-                            venta=venta,
-                            movimiento_caja=movimiento,
-                            monto=monto_pago
-                        )
+            for p in pagos_caja:
+                movimiento = MovimientoCaja.objects.create(
+                    sesion=sesion,
+                    tipo=MovimientoCaja.Tipo.INGRESO,
+                    concepto=MovimientoCaja.Concepto.VENTA,
+                    metodo_pago=p['metodo_pago'],
+                    monto=p['monto_caja'],
+                    referencia=p['referencia'],
+                    origen_movimiento=MovimientoCaja.OrigenMovimiento.VENTA,
+                    venta_origen=venta,
+                    creado_por=request.user
+                )
+                PagoVenta.objects.create(
+                    venta=venta,
+                    movimiento_caja=movimiento,
+                    monto=p['monto_caja']
+                )
             
             # 2. Procesar (Stock, etc)
             almacen_origen = None

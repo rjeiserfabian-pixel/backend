@@ -164,6 +164,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 TOKENPERU_TOKEN = os.environ.get("TOKENPERU_TOKEN")
 APISPERU_TOKEN = os.environ.get("APISPERU_TOKEN")
 YUPAY_TOKEN = os.environ.get("YUPAY_TOKEN")
+# API complementaria de consulta vehicular (aporta "color", que Yupay no trae).
+# No confundir con json.com.pe (otro proveedor distinto, no integrado).
+JSON_PE_TOKEN = os.environ.get("JSON_PE_TOKEN")
 
 # ---------------------------------------------------------------------------
 # LOGGING — Nunca usar print(). Logs estructurados con contexto.

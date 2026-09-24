@@ -110,6 +110,7 @@ class PagoVentaSerializer(serializers.ModelSerializer):
 class VentaSerializer(serializers.ModelSerializer):
     detalles = DetalleVentaSerializer(many=True, read_only=True)
     pagos = PagoVentaSerializer(many=True, read_only=True)
+    referencia_origen = serializers.SerializerMethodField()
     cliente_nombre = serializers.CharField(source='cliente.nombres', read_only=True)
     cliente_apellidos = serializers.CharField(source='cliente.apellidos', read_only=True)
     cliente_dni = serializers.CharField(source='cliente.dni', read_only=True)
@@ -122,6 +123,12 @@ class VentaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Venta
         fields = '__all__'
+
+    def get_referencia_origen(self, obj):
+        if obj.ticket_kiosko:
+            return obj.ticket_kiosko
+        guia = getattr(obj, 'guia_remision_origen', None)
+        return str(guia) if guia else ''
 
 
 class TicketKioskoCreateSerializer(serializers.Serializer):
@@ -216,5 +223,4 @@ class SerieDocumentoInternoSerializer(serializers.ModelSerializer):
     class Meta:
         model = SerieDocumentoInterno
         fields = '__all__'
-
 

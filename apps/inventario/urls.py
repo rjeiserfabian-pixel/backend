@@ -3,9 +3,9 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     UnidadMedidaViewSet, CategoriaViewSet, MarcaRepuestoViewSet, RepuestoViewSet,
     SucursalViewSet, AlmacenViewSet, UbicacionFisicaViewSet,
-    InventarioStockViewSet, MovimientoInventarioViewSet, TrasladoInventarioViewSet,
-    GuiaRemisionViewSet
+    InventarioStockViewSet, MovimientoInventarioViewSet, TrasladoInventarioViewSet
 )
+from .guias_views import GuiaRemisionViewSet
 
 router = DefaultRouter()
 

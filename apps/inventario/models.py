@@ -376,10 +376,13 @@ class TrasladoInventarioDetalle(models.Model):
 class GuiaRemision(models.Model):
     class Estado(models.TextChoices):
         CREADA = 'CREADA', 'Creada'
+        LISTA_PARA_SALIDA = 'LISTA_PARA_SALIDA', 'Lista para Salida'
         EN_TRASLADO = 'EN_TRASLADO', 'En Traslado'
         COMPLETADA = 'COMPLETADA', 'Completada'
+        FACTURADA = 'FACTURADA', 'Facturada'
 
     sucursal = models.ForeignKey('inventario.Sucursal', on_delete=models.RESTRICT, related_name='guias_remision')
+    almacen_origen = models.ForeignKey('inventario.Almacen', on_delete=models.RESTRICT, null=True, blank=True, related_name='guias_remision_origen')
     serie = models.ForeignKey('ventas.SerieDocumentoInterno', on_delete=models.RESTRICT, null=True, blank=True)
     correlativo = models.IntegerField(default=0)
     fecha_emision = models.DateTimeField(auto_now_add=True)
@@ -399,6 +402,25 @@ class GuiaRemision(models.Model):
     # Transporte (Se asignan al dar salida)
     transportista = models.ForeignKey(Transportista, on_delete=models.RESTRICT, null=True, blank=True)
     vehiculo = models.ForeignKey(VehiculoTransporte, on_delete=models.RESTRICT, null=True, blank=True)
+
+    fecha_salida = models.DateTimeField(null=True, blank=True)
+    fecha_entrega = models.DateTimeField(null=True, blank=True)
+    entregado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.RESTRICT,
+        null=True,
+        blank=True,
+        related_name='guias_entregadas'
+    )
+    recibido_por = models.CharField(max_length=150, null=True, blank=True)
+    observacion_entrega = models.TextField(null=True, blank=True)
+    venta_generada = models.OneToOneField(
+        'ventas.Venta',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='guia_remision_origen'
+    )
     
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.CREADA)
 
@@ -426,4 +448,3 @@ class GuiaRemisionDetalle(models.Model):
 
     def __str__(self):
         return f"Detalle {self.id} - {self.repuesto.nombre}"
-

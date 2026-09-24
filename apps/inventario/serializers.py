@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from decimal import Decimal
 from .models import (
     UnidadMedida, Categoria, MarcaRepuesto, Repuesto, AplicacionRepuesto,
     Sucursal, Almacen, UbicacionFisica, InventarioStock, MovimientoInventario,
@@ -282,29 +283,53 @@ class GuiaRemisionDetalleSerializer(serializers.ModelSerializer):
 class GuiaRemisionSerializer(serializers.ModelSerializer):
     detalles = GuiaRemisionDetalleSerializer(many=True, read_only=True)
     cliente_nombre = serializers.SerializerMethodField()
+    almacen_origen_nombre = serializers.CharField(source='almacen_origen.nombre', read_only=True)
     ubigeo_partida_nombre = serializers.CharField(source='ubigeo_partida.nombre', read_only=True)
     ubigeo_llegada_nombre = serializers.CharField(source='ubigeo_llegada.nombre', read_only=True)
     transportista_nombre = serializers.SerializerMethodField()
     vehiculo_placa = serializers.CharField(source='vehiculo.placa', read_only=True)
     serie_prefijo = serializers.CharField(source='serie.prefijo', read_only=True)
+    numero_documento = serializers.SerializerMethodField()
+    total_facturable = serializers.SerializerMethodField()
+    entregado_por_nombre = serializers.SerializerMethodField()
+    venta_generada_serie = serializers.CharField(source='venta_generada.serie_correlativo', read_only=True)
 
     # Write-only para creación
     detalles_datos = serializers.ListField(
         child=serializers.DictField(),
         write_only=True,
-        required=True
+        required=False
     )
 
     class Meta:
         model = GuiaRemision
         fields = [
-            'id', 'sucursal', 'serie', 'serie_prefijo', 'correlativo', 'fecha_emision', 'fecha_traslado',
+            'id', 'sucursal', 'almacen_origen', 'almacen_origen_nombre', 'serie', 'serie_prefijo',
+            'correlativo', 'numero_documento', 'total_facturable', 'fecha_emision', 'fecha_traslado',
             'cliente', 'cliente_nombre', 'ubigeo_partida', 'ubigeo_partida_nombre', 'punto_partida',
             'ubigeo_llegada', 'ubigeo_llegada_nombre', 'punto_llegada', 'motivo_traslado', 'observaciones',
             'transportista', 'transportista_nombre', 'vehiculo', 'vehiculo_placa', 'estado',
+            'fecha_salida', 'fecha_entrega', 'entregado_por', 'entregado_por_nombre',
+            'recibido_por', 'observacion_entrega', 'venta_generada', 'venta_generada_serie',
             'detalles', 'detalles_datos'
         ]
-        read_only_fields = ('fecha_emision', 'estado')
+        read_only_fields = (
+            'fecha_emision', 'estado', 'fecha_salida', 'fecha_entrega',
+            'entregado_por', 'venta_generada'
+        )
+
+    def get_numero_documento(self, obj):
+        if obj.serie and obj.correlativo:
+            return f"{obj.serie.prefijo}-{str(obj.correlativo).zfill(obj.serie.longitud_correlativo)}"
+        return f"GR-{str(obj.id).zfill(6)}" if obj.id else None
+
+    def get_total_facturable(self, obj):
+        total = Decimal('0.00')
+        for detalle in obj.detalles.all():
+            precio = Decimal(str(detalle.repuesto.precio_lista or 0))
+            cantidad = Decimal(str(detalle.cantidad))
+            total += precio * cantidad
+        return total.quantize(Decimal('0.01'))
 
     def get_cliente_nombre(self, obj):
         if obj.cliente:
@@ -315,3 +340,8 @@ class GuiaRemisionSerializer(serializers.ModelSerializer):
         if obj.transportista:
             return obj.transportista.nombre_o_razon_social
         return '-'
+
+    def get_entregado_por_nombre(self, obj):
+        if obj.entregado_por:
+            return getattr(obj.entregado_por, 'nombre_completo', str(obj.entregado_por))
+        return None
