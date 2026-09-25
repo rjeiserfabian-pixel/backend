@@ -369,13 +369,16 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             subtotal_acumulado = 0
             
             # Repuestos
-            for rep in orden.repuestos.filter(aprobado_cliente=True, instalado=True):
+            # select_related('repuesto') evita una query extra por línea al
+            # leer rep.repuesto.precio_compra para el costo histórico.
+            for rep in orden.repuestos.filter(aprobado_cliente=True, instalado=True).select_related('repuesto'):
                 subtotal_linea = rep.cantidad * rep.precio_unitario
                 DetalleVenta.objects.create(
                     venta=venta,
                     repuesto=rep.repuesto,
                     cantidad=rep.cantidad,
                     precio_unitario=rep.precio_unitario,
+                    costo_unitario=rep.repuesto.precio_compra,
                     subtotal_linea=subtotal_linea
                 )
                 subtotal_acumulado += subtotal_linea

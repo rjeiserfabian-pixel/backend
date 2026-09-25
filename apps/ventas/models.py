@@ -269,7 +269,12 @@ class DetalleVenta(models.Model):
     cantidad = models.DecimalField(max_digits=12, decimal_places=2)
     precio_unitario = models.DecimalField(max_digits=10, decimal_places=2)
     descuento = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    
+    # Costo del repuesto al momento de la venta (copiado de Repuesto.precio_compra
+    # al crear la línea), para que el margen/utilidad de ventas pasadas no cambie
+    # si el costo del repuesto se actualiza después. Null en líneas de servicio
+    # (descripcion_servicio, sin repuesto) y en filas creadas antes de este campo.
+    costo_unitario = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+
     impuesto_aplicado = models.ForeignKey(Impuesto, on_delete=models.RESTRICT, related_name='detalles_venta', null=True, blank=True)
     monto_impuesto = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     subtotal_linea = models.DecimalField(max_digits=10, decimal_places=2)  # cantidad * precio_unitario - descuento

@@ -158,6 +158,7 @@ class VentasService:
                 repuesto=repuesto,
                 cantidad=cantidad,
                 precio_unitario=precio_unitario,
+                costo_unitario=repuesto.precio_compra,
                 subtotal_linea=subtotal_linea
             )
             

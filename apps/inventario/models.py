@@ -62,6 +62,7 @@ class MarcaRepuesto(models.Model):
 
 class Repuesto(models.Model):
     codigo = models.CharField(max_length=50, unique=True, db_index=True)
+    codigo_barra = models.CharField(max_length=64, unique=True, db_index=True, null=True, blank=True)
     nombre = models.CharField(max_length=200)
     categoria = models.ForeignKey(Categoria, on_delete=models.RESTRICT, related_name='repuestos')
     marca = models.ForeignKey(MarcaRepuesto, on_delete=models.RESTRICT, related_name='repuestos')

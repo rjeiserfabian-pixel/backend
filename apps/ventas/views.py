@@ -524,8 +524,8 @@ class VentaViewSet(viewsets.ModelViewSet):
                     sub = cantidad * precio
                     subtotal_acumulado += sub
                     DetalleVenta.objects.create(
-                        venta=venta, repuesto=repuesto, cantidad=cantidad, 
-                        precio_unitario=precio, subtotal_linea=sub
+                        venta=venta, repuesto=repuesto, cantidad=cantidad,
+                        precio_unitario=precio, costo_unitario=repuesto.precio_compra, subtotal_linea=sub
                     )
                     
                 venta.total = subtotal_acumulado

@@ -268,6 +268,7 @@ class GuiaRemisionViewSet(viewsets.ModelViewSet):
                 almacen_origen=guia.almacen_origen,
                 cantidad=detalle.cantidad,
                 precio_unitario=precio_unitario,
+                costo_unitario=detalle.repuesto.precio_compra,
                 impuesto_aplicado=detalle.repuesto.tipo_igv,
                 subtotal_linea=subtotal_linea,
             )

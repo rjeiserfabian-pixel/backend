@@ -157,6 +157,77 @@ class ClienteViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
             logger.error(f"Error interno inesperado al consultar RUC {ruc}: {e}", exc_info=True)
             return Response({'error': 'Error interno del servidor al procesar la consulta.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    def _resumen_vehiculos(self, cliente):
+        """Vehículos asociados al cliente con un resumen de sus ingresos al
+        taller. prefetch_related evita N+1: una sola query trae todas las
+        órdenes de todos los vehículos del cliente."""
+        vehiculos_qs = cliente.vehiculos.filter(estado=True).prefetch_related('ordenes_trabajo').order_by('placa')
+        data = []
+        for v in vehiculos_qs:
+            ordenes = list(v.ordenes_trabajo.all())
+            ultima_orden = max(ordenes, key=lambda o: o.fecha_ingreso) if ordenes else None
+            data.append({
+                'id': v.id,
+                'placa': v.placa,
+                'marca': v.marca,
+                'modelo': v.modelo,
+                'anio_fabricacion': v.anio_fabricacion,
+                'total_ordenes': len(ordenes),
+                'ultimo_ingreso': ultima_orden.fecha_ingreso if ultima_orden else None,
+                'ultimo_estado': ultima_orden.get_estado_display() if ultima_orden else None,
+            })
+        return data
+
+    @action(detail=True, methods=['get'], url_path='vehiculos')
+    def vehiculos(self, request, pk=None):
+        """Vehículos que este cliente tiene o ha tenido asociados, con
+        cuántas veces ingresó cada uno al taller y su último estado."""
+        cliente = self.get_object()
+        vehiculos_data = self._resumen_vehiculos(cliente)
+        return Response({
+            'cliente': {
+                'id': cliente.id,
+                'tipo_documento': cliente.tipo_documento,
+                'dni': cliente.dni,
+                'nombres': cliente.nombres,
+                'apellidos': cliente.apellidos,
+                'telefono': cliente.telefono,
+                'direccion': cliente.direccion,
+            },
+            'total_vehiculos': len(vehiculos_data),
+            'vehiculos': vehiculos_data,
+        })
+
+    @action(detail=True, methods=['get'], url_path='vehiculos/pdf')
+    def vehiculos_pdf(self, request, pk=None):
+        """Ficha en PDF de los vehículos asociados a un cliente, para
+        entregar al gerente o al propio cliente."""
+        cliente = self.get_object()
+        vehiculos_data = self._resumen_vehiculos(cliente)
+
+        from apps.seguridad.pdf_utils import contexto_empresa_pdf
+
+        context = {
+            'cliente': cliente,
+            'vehiculos': vehiculos_data,
+            'total_vehiculos': len(vehiculos_data),
+            **contexto_empresa_pdf(),
+        }
+
+        from django.template.loader import render_to_string
+        from django.http import HttpResponse
+        from xhtml2pdf import pisa
+
+        html_string = render_to_string('clientes/vehiculos_pdf.html', context)
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="vehiculos_{cliente.dni}.pdf"'
+
+        pisa_status = pisa.CreatePDF(html_string, dest=response)
+        if pisa_status.err:
+            logger.error(f"Error generando PDF de vehículos para cliente {cliente.dni}")
+            return HttpResponse('Error generando PDF', status=500)
+        return response
+
 
 class ProveedorViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_ver = "CONTACTOS.PROVEEDORES.VER"

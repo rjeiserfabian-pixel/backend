@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -11,6 +12,47 @@ from apps.clientes.models import Cliente
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _serializar_orden_historial(orden):
+    """Una orden de trabajo (un ingreso al taller) con sus servicios y
+    repuestos, en el formato que usa tanto la pantalla de historial como el
+    PDF de la ficha del vehículo."""
+    servicios = list(orden.servicios.all())
+    repuestos = list(orden.repuestos.all())
+    total_servicios = sum((s.precio_estimado for s in servicios), Decimal('0'))
+    total_repuestos = sum((r.total for r in repuestos), Decimal('0'))
+    return {
+        'numero': orden.numero,
+        'estado': orden.estado,
+        'estado_display': orden.get_estado_display(),
+        'fecha_ingreso': orden.fecha_ingreso,
+        'fecha_finalizacion': orden.fecha_finalizacion,
+        'motivo_ingreso': orden.motivo_ingreso,
+        'kilometraje_ingreso': orden.kilometraje_ingreso,
+        'cliente': {
+            'id': orden.cliente_id,
+            'nombre': f"{orden.cliente.nombres} {orden.cliente.apellidos}".strip(),
+            'documento': orden.cliente.dni,
+        } if orden.cliente_id else None,
+        'servicios': [
+            {'descripcion': s.descripcion, 'precio_estimado': s.precio_estimado, 'completado': s.completado}
+            for s in servicios
+        ],
+        'repuestos': [
+            {
+                'descripcion': r.repuesto.nombre,
+                'cantidad': r.cantidad,
+                'precio_unitario': r.precio_unitario,
+                'total': r.total,
+                'instalado': r.instalado,
+            }
+            for r in repuestos
+        ],
+        'total_servicios': total_servicios,
+        'total_repuestos': total_repuestos,
+        'total_general': total_servicios + total_repuestos,
+    }
 
 class VehiculoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_ver = "VEHICULOS.VER"
@@ -158,6 +200,90 @@ class VehiculoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
             return Response({'error': 'Cliente no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
         vehiculo.clientes.add(cliente)
         return Response(self.get_serializer(vehiculo).data)
+
+    @action(detail=True, methods=['get'], url_path='historial')
+    def historial(self, request, pk=None):
+        """
+        Ficha del vehículo: cuántas veces ingresó al taller y qué servicios/
+        repuestos se le hicieron en cada ingreso. Paginado (Regla Python
+        Seguro 1) porque un vehículo con muchos años en el sistema puede
+        acumular decenas de órdenes.
+        """
+        vehiculo = self.get_object()
+        page = max(int(request.query_params.get('page', 1)), 1)
+        page_size = min(int(request.query_params.get('page_size', 20)), 100)
+
+        ordenes_qs = (
+            vehiculo.ordenes_trabajo
+            .select_related('cliente')
+            .prefetch_related('servicios', 'repuestos__repuesto')
+            .order_by('-fecha_ingreso')
+        )
+        total = ordenes_qs.count()
+        offset = (page - 1) * page_size
+        ordenes_pagina = ordenes_qs[offset: offset + page_size]
+
+        return Response({
+            'vehiculo': {
+                'id': vehiculo.id,
+                'placa': vehiculo.placa,
+                'marca': vehiculo.marca,
+                'modelo': vehiculo.modelo,
+                'anio_fabricacion': vehiculo.anio_fabricacion,
+                'color': vehiculo.color,
+                'kilometraje_actual': vehiculo.kilometraje_actual,
+                'propietarios': [
+                    {'id': c.id, 'nombre': f"{c.nombres} {c.apellidos}".strip(), 'documento': c.dni}
+                    for c in vehiculo.clientes.all()
+                ],
+            },
+            'total_ordenes': total,
+            'ordenes': [_serializar_orden_historial(o) for o in ordenes_pagina],
+            'page': page,
+            'page_size': page_size,
+            'total_pages': (total + page_size - 1) // page_size if total else 0,
+        })
+
+    @action(detail=True, methods=['get'], url_path='historial/pdf')
+    def historial_pdf(self, request, pk=None):
+        """Ficha completa del vehículo en PDF, agrupada por cada ingreso al
+        taller con sus servicios y repuestos, para entregar al cliente o
+        archivar. Sin paginar (es para imprimir el expediente completo), con
+        un tope defensivo de 500 órdenes."""
+        vehiculo = self.get_object()
+        ordenes_qs = (
+            vehiculo.ordenes_trabajo
+            .select_related('cliente')
+            .prefetch_related('servicios', 'repuestos__repuesto')
+            .order_by('-fecha_ingreso')[:500]
+        )
+        ordenes_data = [_serializar_orden_historial(o) for o in ordenes_qs]
+        total_general = sum((o['total_general'] for o in ordenes_data), Decimal('0'))
+
+        from apps.seguridad.pdf_utils import contexto_empresa_pdf
+
+        context = {
+            'vehiculo': vehiculo,
+            'propietarios': vehiculo.clientes.all(),
+            'ordenes': ordenes_data,
+            'total_ordenes': len(ordenes_data),
+            'total_general': total_general,
+            **contexto_empresa_pdf(),
+        }
+
+        from django.template.loader import render_to_string
+        from django.http import HttpResponse
+        from xhtml2pdf import pisa
+
+        html_string = render_to_string('vehiculos/historial_pdf.html', context)
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="historial_{vehiculo.placa}.pdf"'
+
+        pisa_status = pisa.CreatePDF(html_string, dest=response)
+        if pisa_status.err:
+            logger.error(f"Error generando PDF de historial para vehículo {vehiculo.placa}")
+            return HttpResponse('Error generando PDF', status=500)
+        return response
 
 from .models import VehiculoTransporte
 from .serializers import VehiculoTransporteSerializer

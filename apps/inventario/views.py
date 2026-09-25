@@ -117,8 +117,8 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     pagination_class = RepuestoPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['categoria', 'marca']
-    search_fields = ['codigo', 'nombre']
-    ordering_fields = ['codigo', 'nombre', 'precio_lista']
+    search_fields = ['codigo', 'codigo_barra', 'nombre']
+    ordering_fields = ['codigo', 'codigo_barra', 'nombre', 'precio_lista']
 
     def get_permissions(self):
         # Respeta permission_classes declarados a nivel de @action (ej. 'compatibles'
@@ -234,7 +234,9 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         search = request.query_params.get('search', '').strip()
         if search:
             repuestos_compatibles = repuestos_compatibles.filter(
-                Q(nombre__icontains=search) | Q(codigo__icontains=search)
+                Q(nombre__icontains=search) |
+                Q(codigo__icontains=search) |
+                Q(codigo_barra__icontains=search)
             )
 
         # Categorías presentes en el resultado (antes de aplicar el filtro de
@@ -292,12 +294,13 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         ws = wb.active
         ws.title = "Repuestos"
         
-        headers = ["Código", "Nombre", "Categoría", "Marca", "Stock Global", "P. Lista", "P. Compra"]
+        headers = ["Código", "Código de Barras", "Nombre", "Categoría", "Marca", "Stock Global", "P. Lista", "P. Compra"]
         ws.append(headers)
         
         for r in repuestos:
             ws.append([
                 r.codigo,
+                r.codigo_barra or '',
                 r.nombre,
                 r.categoria.nombre if r.categoria else '',
                 r.marca.nombre if r.marca else '',
@@ -326,18 +329,19 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         elements.append(Paragraph(f"Generado el: {timezone.now().strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
         elements.append(Spacer(1, 12))
         
-        data = [["Código", "Nombre", "Categoría", "Marca", "Stock Global", "P. Lista"]]
+        data = [["Código", "Cód. Barras", "Nombre", "Categoría", "Marca", "Stock", "P. Lista"]]
         for r in repuestos:
             data.append([
                 r.codigo,
-                r.nombre[:30] + ('...' if len(r.nombre)>30 else ''),
+                r.codigo_barra or '',
+                r.nombre[:26] + ('...' if len(r.nombre)>26 else ''),
                 r.categoria.nombre if r.categoria else '',
                 r.marca.nombre if r.marca else '',
                 str(r.stock_total_disponible),
                 f"S/ {r.precio_lista}"
             ])
             
-        table = Table(data, colWidths=[80, 200, 100, 100, 80, 80])
+        table = Table(data, colWidths=[70, 95, 175, 95, 95, 60, 70])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1976d2")),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),

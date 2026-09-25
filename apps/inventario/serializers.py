@@ -67,6 +67,7 @@ class InventarioStockResumenSerializer(serializers.ModelSerializer):
 
 
 class RepuestoSerializer(serializers.ModelSerializer):
+    codigo_barra = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     aplicaciones = AplicacionRepuestoSerializer(many=True, required=False)
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
     marca_nombre = serializers.CharField(source='marca.nombre', read_only=True)
@@ -83,6 +84,21 @@ class RepuestoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Repuesto
         fields = '__all__'
+
+    def validate_codigo_barra(self, value):
+        if value is None:
+            return None
+
+        value = str(value).strip()
+        if not value:
+            return None
+
+        qs = Repuesto.objects.filter(codigo_barra__iexact=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError('Ya existe un repuesto registrado con este codigo de barras.')
+        return value
 
     def create(self, validated_data):
         aplicaciones_data = validated_data.pop('aplicaciones', [])
