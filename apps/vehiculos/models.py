@@ -13,7 +13,12 @@ class Vehiculo(models.Model):
     color = models.CharField(max_length=50, null=True, blank=True)
     numero_motor = models.CharField(max_length=100, null=True, blank=True)
     kilometraje_actual = models.IntegerField(null=True, blank=True)
-    
+    tipo_combustible = models.CharField(
+        max_length=10,
+        choices=[('GASOLINA', 'Gasolinero'), ('PETROLEO', 'Petrolero')],
+        null=True, blank=True,
+    )
+
     # Relación M:N con clientes para mantener trazabilidad histórica
     clientes = models.ManyToManyField('clientes.Cliente', related_name='vehiculos', blank=True)
     

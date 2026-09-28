@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.seguridad.models import Usuario
+from apps.seguridad.models import Usuario, UsuarioSucursal
 from apps.clientes.models import Cliente
 from apps.vehiculos.models import Vehiculo
 from apps.taller.models import OrdenTrabajo, OrdenRepuesto
@@ -251,3 +251,60 @@ class OrdenTrabajoTests(TestCase):
         orp = OrdenRepuesto.objects.get(id=orp_id)
         self.assertFalse(orp.instalado)
         self.assertFalse(orp.aprobado_cliente)
+
+
+class ConsultaVehiculoPublicaTests(TestCase):
+    def setUp(self):
+        self.client_api = APIClient()
+        self.cliente = Cliente.objects.create(dni='70000001', nombres='Cliente', apellidos='Publico')
+        self.vehiculo = Vehiculo.objects.create(placa='PUB-001', marca='Toyota', modelo='Hilux')
+        self.vehiculo.clientes.add(self.cliente)
+
+        self.sucursal_a = Sucursal.objects.create(nombre='Sucursal Estado A')
+        self.sucursal_b = Sucursal.objects.create(nombre='Sucursal Estado B')
+        self.recepcionista_a = Usuario.objects.create_user(
+            username='recep_estado_a', email='recep_estado_a@example.com',
+            nombres='Recep', apellidos='A', password='x',
+        )
+        self.recepcionista_b = Usuario.objects.create_user(
+            username='recep_estado_b', email='recep_estado_b@example.com',
+            nombres='Recep', apellidos='B', password='x',
+        )
+        UsuarioSucursal.objects.create(id_usuario=self.recepcionista_a, sucursal=self.sucursal_a)
+        UsuarioSucursal.objects.create(id_usuario=self.recepcionista_b, sucursal=self.sucursal_b)
+
+        self.orden_a = OrdenTrabajo.objects.create(
+            numero='PUB-A',
+            cliente=self.cliente,
+            vehiculo=self.vehiculo,
+            recepcionista=self.recepcionista_a,
+            estado='APROBADO',
+        )
+        self.orden_b = OrdenTrabajo.objects.create(
+            numero='PUB-B',
+            cliente=self.cliente,
+            vehiculo=self.vehiculo,
+            recepcionista=self.recepcionista_b,
+            estado='INSPECCION',
+        )
+
+    def test_consulta_publica_sin_sucursal_mantiene_comportamiento_global(self):
+        resp = self.client_api.post('/api/taller/public/consulta-vehiculo/', {
+            'placa': 'PUB-001',
+            'dni': '70000001',
+        }, format='json')
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertTrue(resp.data['has_active_order'])
+        self.assertEqual(resp.data['orden']['numero'], 'PUB-B')
+
+    def test_consulta_publica_con_sucursal_filtra_la_orden(self):
+        resp = self.client_api.post('/api/taller/public/consulta-vehiculo/', {
+            'placa': 'PUB-001',
+            'dni': '70000001',
+            'sucursal_id': self.sucursal_a.id,
+        }, format='json')
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertTrue(resp.data['has_active_order'])
+        self.assertEqual(resp.data['orden']['numero'], 'PUB-A')

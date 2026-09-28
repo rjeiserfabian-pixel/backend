@@ -237,6 +237,11 @@ class Command(BaseCommand):
                 "icono": "settings", "ruta": "/ventas/configuracion",
                 "orden": 3, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "CAJA_CONFIG.VER_MENU",
             },
+            {
+                "codigo": "COMPROBANTES_ELECTRONICOS", "nombre": "Comprobantes Electrónicos",
+                "icono": "send", "ruta": "/facturacion/comprobantes",
+                "orden": 4, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "COMPROBANTES_ELECTRONICOS.VER_MENU",
+            },
             # ── Cuentas ───────────────────────────────────────────────────────
             {
                 "codigo": "CUENTAS", "nombre": "Cuentas",
@@ -547,6 +552,10 @@ class Command(BaseCommand):
             {"modulo": "VENTAS", "codigo": "VENTAS.CONFIGURACION.CREAR",   "nombre": "Crear config. de ventas",   "accion": "CREAR",   "grupo_padre": GP_VENTAS, "grupo_submodulo": "Configuración de Ventas"},
             {"modulo": "VENTAS", "codigo": "VENTAS.CONFIGURACION.EDITAR", "nombre": "Editar config. de ventas",  "accion": "EDITAR", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Configuración de Ventas"},
             {"modulo": "VENTAS", "codigo": "VENTAS.CONFIGURACION.ELIMINAR","nombre": "Eliminar config. de ventas","accion": "ELIMINAR","grupo_padre": GP_VENTAS, "grupo_submodulo": "Configuración de Ventas"},
+            {"modulo": "VENTAS", "codigo": "FACTURACION.COMPROBANTES.VER",    "nombre": "Ver comprobantes electrónicos",                  "accion": "VER",    "grupo_padre": GP_VENTAS, "grupo_submodulo": "Comprobantes Electrónicos"},
+            {"modulo": "VENTAS", "codigo": "FACTURACION.COMPROBANTES.CREAR",  "nombre": "Preparar comprobantes/notas electrónicas",        "accion": "CREAR",  "grupo_padre": GP_VENTAS, "grupo_submodulo": "Comprobantes Electrónicos"},
+            {"modulo": "VENTAS", "codigo": "FACTURACION.COMPROBANTES.EMITIR", "nombre": "Emitir/reintentar comprobantes ante SUNAT",       "accion": "EMITIR", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Comprobantes Electrónicos"},
+            {"modulo": "VENTAS", "codigo": "FACTURACION.COMPROBANTES.ANULAR", "nombre": "Solicitar baja de comprobantes ante SUNAT",       "accion": "ANULAR", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Comprobantes Electrónicos"},
 
             # ── CUENTAS ───────────────────────────────────────────────────────
             {"modulo": "CUENTAS", "codigo": "CUENTAS.POR_COBRAR.VER",            "nombre": "Ver cuentas por cobrar",       "accion": "VER",            "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Cobrar"},
@@ -642,6 +651,7 @@ class Command(BaseCommand):
             {"modulo": "VENTAS", "codigo": "POS.VER_MENU", "nombre": "Mostrar \"Punto de Venta (POS)\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Punto de Venta (POS)"},
             {"modulo": "VENTAS", "codigo": "REGISTRO_MANUAL_VENTAS.VER_MENU", "nombre": "Mostrar \"Registro Manual\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Registro Manual"},
             {"modulo": "VENTAS", "codigo": "CAJA_CONFIG.VER_MENU", "nombre": "Mostrar \"Configuración de Ventas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Configuración de Ventas"},
+            {"modulo": "VENTAS", "codigo": "COMPROBANTES_ELECTRONICOS.VER_MENU", "nombre": "Mostrar \"Comprobantes Electrónicos\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Comprobantes Electrónicos"},
             {"modulo": "CUENTAS", "codigo": "POR_COBRAR.VER_MENU", "nombre": "Mostrar \"Por Cobrar\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Cobrar"},
             {"modulo": "CUENTAS", "codigo": "COMPRAS_CXP.VER_MENU", "nombre": "Mostrar \"Por Pagar\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Pagar"},
             {"modulo": "COMPRAS", "codigo": "COMPRAS_HISTORIAL.VER_MENU", "nombre": "Mostrar \"Registro de Compras\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_COMPRAS, "grupo_submodulo": None},

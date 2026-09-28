@@ -416,8 +416,17 @@ class Empresa(models.Model):
     Se utiliza para la facturación, reportes y diseño de tickets.
     """
     razon_social = models.CharField(max_length=200)
+    nombre_comercial = models.CharField(
+        max_length=200, blank=True, null=True,
+        help_text="Usado por la API de facturación electrónica; si está vacío se usa razón social."
+    )
     ruc = models.CharField(max_length=20)
     direccion = models.CharField(max_length=255)
+    ubigeo = models.CharField(
+        max_length=6, blank=True, null=True,
+        help_text="Código de ubigeo INEI (6 dígitos), requerido para emitir comprobantes electrónicos."
+    )
+    urbanizacion = models.CharField(max_length=150, blank=True, null=True)
     departamento = models.CharField(max_length=100, blank=True, null=True)
     provincia = models.CharField(max_length=100, blank=True, null=True)
     distrito = models.CharField(max_length=100, blank=True, null=True)

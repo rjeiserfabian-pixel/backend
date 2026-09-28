@@ -148,6 +148,26 @@ class VehiculoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         vehiculo.clientes.add(cliente)
         return Response(self.get_serializer(vehiculo).data)
 
+    @action(
+        detail=True, methods=['post'],
+        url_path='kiosko/actualizar-combustible',
+        permission_classes=[AllowAny]  # Público: el kiosko opera sin sesión
+    )
+    def kiosko_actualizar_combustible(self, request, pk=None):
+        """
+        Endpoint público para que el kiosko complete el tipo de combustible
+        de un vehículo ya registrado que todavía no lo tiene. Nunca sobrescribe
+        un valor ya guardado (aditivo, igual que vincular-cliente).
+        """
+        vehiculo = self.get_object()
+        tipo_combustible = request.data.get('tipo_combustible')
+        if tipo_combustible not in ('GASOLINA', 'PETROLEO'):
+            return Response({'error': 'tipo_combustible debe ser GASOLINA o PETROLEO.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not vehiculo.tipo_combustible:
+            vehiculo.tipo_combustible = tipo_combustible
+            vehiculo.save(update_fields=['tipo_combustible'])
+        return Response(self.get_serializer(vehiculo).data)
+
     @action(detail=False, methods=['post'], url_path='consulta-placa')
     def consulta_placa(self, request):
         placa = request.data.get('placa')

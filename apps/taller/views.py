@@ -695,6 +695,7 @@ class ConsultaVehiculoPublicaView(APIView):
     def post(self, request):
         placa = request.data.get('placa')
         dni = request.data.get('dni')
+        sucursal_id = request.data.get('sucursal_id')
         
         if not placa or not dni:
             return Response({'error': 'Placa y DNI son requeridos'}, status=status.HTTP_400_BAD_REQUEST)
@@ -704,7 +705,17 @@ class ConsultaVehiculoPublicaView(APIView):
             return Response({'error': 'Vehículo no encontrado o credenciales incorrectas'}, status=status.HTTP_404_NOT_FOUND)
             
         # Buscar la última orden activa (que no esté FACTURADA ni CANCELADA)
-        orden = OrdenTrabajo.objects.filter(vehiculo=vehiculo).exclude(estado__in=['FACTURADO', 'CANCELADO']).order_by('-fecha_ingreso').first()
+        ordenes_qs = (
+            OrdenTrabajo.objects
+            .filter(vehiculo=vehiculo)
+            .exclude(estado__in=['FACTURADO', 'CANCELADO'])
+        )
+        if sucursal_id:
+            ordenes_qs = ordenes_qs.filter(
+                recepcionista__sucursales_asignadas__sucursal_id=sucursal_id,
+                recepcionista__sucursales_asignadas__estado=True,
+            ).distinct()
+        orden = ordenes_qs.order_by('-fecha_ingreso').first()
         
         # Validar credenciales: El DNI debe ser del dueño (vehiculo.clientes) o del cliente que dejó la orden activa (orden.cliente.dni)
         es_propietario = vehiculo.clientes.filter(dni=dni).exists()
@@ -768,4 +779,3 @@ class ConsultaVehiculoPublicaView(APIView):
                 'total_estimado': total_estimado
             }
         })
-

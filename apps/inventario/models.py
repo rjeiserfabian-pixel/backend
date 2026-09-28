@@ -17,6 +17,10 @@ class UnidadMedida(models.Model):
     nombre = models.CharField(max_length=50, unique=True, db_index=True)
     abreviatura = models.CharField(max_length=10)
     permite_decimales = models.BooleanField(default=False)
+    codigo_sunat = models.CharField(
+        max_length=10, blank=True, null=True,
+        help_text="Código de unidad de medida SUNAT (catálogo 03), ej: NIU, KGM."
+    )
     estado = models.BooleanField(default=True)
 
     class Meta:
@@ -73,6 +77,11 @@ class Repuesto(models.Model):
     # Impuesto asignado por defecto a este repuesto (ej. IGV 18%)
     tipo_igv = models.ForeignKey('ventas.Impuesto', on_delete=models.RESTRICT, related_name='repuestos', null=True, blank=True)
 
+    codigo_sunat = models.CharField(
+        max_length=20, blank=True, null=True,
+        help_text="Código de clasificación SUNAT (UNSPSC) requerido para emitir comprobantes electrónicos."
+    )
+
 
     # Campo legacy eliminado.
 
@@ -85,6 +94,10 @@ class Repuesto(models.Model):
     alerta_precio = models.BooleanField(
         default=False,
         help_text="Se marca automáticamente si el margen cae por debajo del mínimo de la categoría al registrar una compra"
+    )
+    visible_en_kiosko = models.BooleanField(
+        default=False,
+        help_text="Define si este repuesto se muestra en el catalogo publico del kiosko."
     )
     estado = models.BooleanField(default=True)
 
@@ -125,7 +138,11 @@ class AplicacionRepuesto(models.Model):
     repuesto = models.ForeignKey(Repuesto, on_delete=models.CASCADE, related_name='aplicaciones')
     marca_vehiculo = models.CharField(max_length=100, db_index=True)
     modelo_vehiculo = models.CharField(max_length=100, null=True, blank=True, db_index=True)
-    motor = models.CharField(max_length=100, null=True, blank=True)
+    tipo_combustible = models.CharField(
+        max_length=10,
+        choices=[('GASOLINA', 'Gasolinero'), ('PETROLEO', 'Petrolero')],
+        null=True, blank=True,
+    )
     anio_desde = models.IntegerField(null=True, blank=True)   # Año inicial de compatibilidad (opcional)
     anio_hasta = models.IntegerField(null=True, blank=True)   # Año final de compatibilidad (opcional)
 

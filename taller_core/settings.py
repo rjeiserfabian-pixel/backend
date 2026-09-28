@@ -50,6 +50,7 @@ LOCAL_APPS = [
     "apps.compras",
     "apps.reportes",
     "apps.cajas",
+    "apps.facturacion",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -163,6 +164,10 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ---------------------------------------------------------------------------
 TOKENPERU_TOKEN = os.environ.get("TOKENPERU_TOKEN")
 APISPERU_TOKEN = os.environ.get("APISPERU_TOKEN")
+
+# API SUNAT propia del taller (facturación electrónica). Ver
+# apps/facturacion/client.py y la documentación 'API_SUNAT_Mejorado.pdf'.
+API_SUNAT_BASE_URL = os.environ.get("API_SUNAT_BASE_URL", "http://localhost/API_SUNAT")
 YUPAY_TOKEN = os.environ.get("YUPAY_TOKEN")
 # API complementaria de consulta vehicular (aporta "color", que Yupay no trae).
 # No confundir con json.com.pe (otro proveedor distinto, no integrado).

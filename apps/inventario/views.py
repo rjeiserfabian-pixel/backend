@@ -153,6 +153,10 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         sucursal = self.request.query_params.get('sucursal')
         if sucursal:
             qs = qs.filter(inventario_stock__ubicacion__almacen__sucursal_id=sucursal).distinct()
+
+        visible_en_kiosko = self.request.query_params.get('visible_en_kiosko')
+        if visible_en_kiosko in ('true', 'false', '1', '0'):
+            qs = qs.filter(visible_en_kiosko=visible_en_kiosko in ('true', '1'))
             
         return qs
 
@@ -184,7 +188,7 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     def compatibles(self, request):
         """
         Endpoint dinámico para obtener repuestos compatibles con un vehículo.
-        Query Params esperados: marca (obligatorio), modelo (opcional), motor (opcional), anio (opcional)
+        Query Params esperados: marca (obligatorio), modelo (opcional), tipo_combustible (opcional, GASOLINA/PETROLEO), anio (opcional)
         Opcionales para el catálogo del kiosko: search (nombre/código) y
         categoria (id de Categoria) — ambos se aplican SIEMPRE sobre el
         subconjunto ya compatible con el vehículo, nunca lo reemplazan: el
@@ -193,7 +197,7 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         """
         marca = request.query_params.get('marca', '').strip()
         modelo = request.query_params.get('modelo', '').strip()
-        motor = request.query_params.get('motor', '').strip()
+        tipo_combustible = request.query_params.get('tipo_combustible', '').strip()
         anio = request.query_params.get('anio', None)
 
         if not marca:
@@ -204,8 +208,8 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         if modelo:
             query &= (Q(aplicaciones__modelo_vehiculo__isnull=True) | Q(aplicaciones__modelo_vehiculo__icontains=modelo) | Q(aplicaciones__modelo_vehiculo=''))
 
-        if motor:
-            query &= (Q(aplicaciones__motor__isnull=True) | Q(aplicaciones__motor__icontains=motor) | Q(aplicaciones__motor=''))
+        if tipo_combustible:
+            query &= (Q(aplicaciones__tipo_combustible__isnull=True) | Q(aplicaciones__tipo_combustible='') | Q(aplicaciones__tipo_combustible=tipo_combustible))
 
         # Filtro por año: si el año viene, se respetan los rangos.
         # NULL en anio_desde o anio_hasta significa "sin límite en ese extremo".
@@ -225,7 +229,7 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         ids_compatibles = list(
             self.get_queryset().filter(query).values_list('id', flat=True).distinct()
         )
-        repuestos_compatibles = self.get_queryset().filter(id__in=ids_compatibles)
+        repuestos_compatibles = self.get_queryset().filter(id__in=ids_compatibles, visible_en_kiosko=True)
 
         # "search" y "categoria" SIEMPRE se aplican sobre repuestos_compatibles,
         # nunca sobre el catálogo completo: es la garantía de que el cliente
