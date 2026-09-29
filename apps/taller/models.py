@@ -178,3 +178,29 @@ class PlantillaPreventiva(models.Model):
 
     def __str__(self):
         return self.nombre
+
+
+class PlantillaCorrectiva(models.Model):
+    """
+    Servicios correctivos estandarizados para seleccionar en la recepción.
+    Permite registrar rápidamente los problemas/fallas reportados por el cliente
+    mediante un checklist, en lugar de escribirlos manualmente.
+    """
+    nombre = models.CharField(max_length=150, unique=True, db_index=True)
+    descripcion = models.TextField(null=True, blank=True)
+    precio_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    tiempo_estimado_minutos = models.IntegerField(
+        null=True, blank=True,
+        help_text="Tiempo aproximado estimado para este correctivo"
+    )
+    activo = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        db_table = 'taller_plantilla_correctiva'
+        verbose_name = 'Plantilla Correctiva'
+        verbose_name_plural = 'Plantillas Correctivas'
+        ordering = ['nombre']
+
+    def __str__(self):
+        return self.nombre
+

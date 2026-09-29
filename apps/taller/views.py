@@ -8,12 +8,12 @@ from rest_framework.exceptions import ValidationError, PermissionDenied
 from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
-from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva, TipoServicio, OrdenHistorialEstado
+from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva, PlantillaCorrectiva, TipoServicio, OrdenHistorialEstado
 from apps.vehiculos.models import Vehiculo
 from .serializers import (
     OrdenTrabajoListSerializer, OrdenTrabajoDetailSerializer,
     HallazgoSerializer, OrdenServicioSerializer, OrdenRepuestoSerializer,
-    PlantillaPreventivaSerializer, TipoServicioSerializer
+    PlantillaPreventivaSerializer, PlantillaCorrectivaSerializer, TipoServicioSerializer
 )
 from .services import aprobar_cotizacion_orden
 from apps.inventario.models import MovimientoInventario, InventarioStock
@@ -611,6 +611,32 @@ class OrdenRepuestoViewSet(viewsets.ModelViewSet):
 class PlantillaPreventivaViewSet(viewsets.ModelViewSet):
     queryset = PlantillaPreventiva.objects.all()
     serializer_class = PlantillaPreventivaSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("PLANTILLAS_TALLER.VER")]
+        if self.request.method == 'POST':
+            return [TienePermiso("PLANTILLAS_TALLER.CREAR")]
+        if self.request.method == 'DELETE':
+            return [TienePermiso("PLANTILLAS_TALLER.ELIMINAR")]
+        return [TienePermiso("PLANTILLAS_TALLER.EDITAR")]
+
+
+class PlantillaCorrectivaViewSet(viewsets.ModelViewSet):
+    """
+    CRUD de plantillas correctivas. Reutiliza los mismos permisos de
+    PLANTILLAS_TALLER para no requerir nuevos perfiles de acceso.
+    Filtro ?activo=true disponible para que NuevaOrdenPage solo cargue
+    las plantillas visibles en recepción.
+    """
+    serializer_class = PlantillaCorrectivaSerializer
+
+    def get_queryset(self):
+        qs = PlantillaCorrectiva.objects.all()
+        activo = self.request.query_params.get('activo')
+        if activo is not None:
+            qs = qs.filter(activo=(activo.lower() == 'true'))
+        return qs
 
     def get_permissions(self):
         if self.request.method == 'GET':

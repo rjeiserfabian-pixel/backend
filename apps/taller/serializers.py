@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva, TipoServicio, OrdenHistorialEstado
+from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva, TipoServicio, OrdenHistorialEstado, PlantillaCorrectiva
 from apps.vehiculos.serializers import VehiculoSerializer
 from apps.inventario.models import InventarioStock
 from apps.inventario.serializers import RepuestoSerializer
@@ -130,4 +130,10 @@ class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
 class PlantillaPreventivaSerializer(serializers.ModelSerializer):
     class Meta:
         model = PlantillaPreventiva
+        fields = '__all__'
+
+
+class PlantillaCorrectivaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlantillaCorrectiva
         fields = '__all__'
