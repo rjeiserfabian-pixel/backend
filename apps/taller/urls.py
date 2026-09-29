@@ -4,7 +4,7 @@ from .views import (
     OrdenTrabajoViewSet, HallazgoViewSet, 
     OrdenServicioViewSet, OrdenRepuestoViewSet,
     PlantillaPreventivaViewSet, ConsultaVehiculoPublicaView,
-    TipoServicioViewSet
+    AprobarCotizacionPublicaView, TipoServicioViewSet
 )
 
 router = DefaultRouter()
@@ -17,5 +17,6 @@ router.register(r'tipos-servicio', TipoServicioViewSet, basename='tipo_servicio'
 
 urlpatterns = [
     path('public/consulta-vehiculo/', ConsultaVehiculoPublicaView.as_view(), name='consulta_vehiculo_publica'),
+    path('public/aprobar-cotizacion/', AprobarCotizacionPublicaView.as_view(), name='aprobar_cotizacion_publica'),
     path('', include(router.urls)),
 ]

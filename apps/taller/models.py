@@ -84,7 +84,7 @@ class OrdenHistorialEstado(models.Model):
     orden = models.ForeignKey(OrdenTrabajo, on_delete=models.CASCADE, related_name='historial_estados')
     estado = models.CharField(max_length=30, choices=OrdenTrabajo.Estado.choices)
     fecha_registro = models.DateTimeField(auto_now_add=True, db_index=True)
-    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, null=True, blank=True)
     observaciones = models.TextField(null=True, blank=True)
     # Solo aplica a transiciones a CANCELADO: distingue "el cliente dijo que no"
     # de un error interno, para poder reportar después por qué se pierden órdenes.

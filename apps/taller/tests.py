@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 from apps.seguridad.models import Usuario, UsuarioSucursal
 from apps.clientes.models import Cliente
 from apps.vehiculos.models import Vehiculo
-from apps.taller.models import OrdenTrabajo, OrdenRepuesto
+from apps.taller.models import OrdenHistorialEstado, OrdenServicio, OrdenTrabajo, OrdenRepuesto
 from apps.inventario.models import (
     Categoria, MarcaRepuesto, Repuesto, Sucursal, Almacen, UbicacionFisica, InventarioStock
 )
@@ -252,6 +252,37 @@ class OrdenTrabajoTests(TestCase):
         self.assertFalse(orp.instalado)
         self.assertFalse(orp.aprobado_cliente)
 
+    def test_no_permite_agregar_repuesto_sin_stock_a_cotizacion(self):
+        resp = self._crear_orden()
+        orden_id = resp.data['id']
+
+        repuesto_sin_stock = Repuesto.objects.create(
+            codigo='REP-SIN-STOCK-OT',
+            nombre='Repuesto Sin Stock OT',
+            categoria=self.repuesto.categoria,
+            marca=self.repuesto.marca,
+            precio_compra=Decimal('5.00'),
+            precio_por_mayor=Decimal('8.00'),
+            precio_cash=Decimal('9.00'),
+            precio_lista=Decimal('10.00'),
+        )
+        InventarioStock.objects.create(
+            repuesto=repuesto_sin_stock,
+            ubicacion=self.ubicacion,
+            stock_disponible=Decimal('0.00'),
+        )
+
+        resp_rep = self.client.post('/api/taller/repuestos/', {
+            'orden': orden_id,
+            'repuesto': repuesto_sin_stock.id,
+            'cantidad': '1',
+            'precio_unitario': '10.00',
+        }, format='json')
+
+        self.assertEqual(resp_rep.status_code, 400, resp_rep.data)
+        self.assertIn('stock disponible suficiente', str(resp_rep.data))
+        self.assertFalse(OrdenRepuesto.objects.filter(orden_id=orden_id, repuesto=repuesto_sin_stock).exists())
+
 
 class ConsultaVehiculoPublicaTests(TestCase):
     def setUp(self):
@@ -308,3 +339,137 @@ class ConsultaVehiculoPublicaTests(TestCase):
         self.assertEqual(resp.status_code, 200, resp.data)
         self.assertTrue(resp.data['has_active_order'])
         self.assertEqual(resp.data['orden']['numero'], 'PUB-A')
+
+    def test_consulta_publica_muestra_cotizacion_pendiente_completa(self):
+        orden = OrdenTrabajo.objects.create(
+            numero='PUB-COT',
+            cliente=self.cliente,
+            vehiculo=self.vehiculo,
+            recepcionista=self.recepcionista_a,
+            estado='ESPERANDO_APROBACION',
+        )
+        servicio = OrdenServicio.objects.create(
+            orden=orden,
+            descripcion='Cambio de aceite',
+            precio_estimado=Decimal('30.00'),
+            aprobado_cliente=False,
+        )
+
+        resp = self.client_api.post('/api/taller/public/consulta-vehiculo/', {
+            'placa': 'PUB-001',
+            'dni': '70000001',
+        }, format='json')
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertTrue(resp.data['orden']['cotizacion_pendiente'])
+        self.assertEqual(resp.data['orden']['servicios'][0]['id'], servicio.id)
+        self.assertFalse(resp.data['orden']['servicios'][0]['aprobado_cliente'])
+
+    def test_cliente_aprueba_cotizacion_desde_estado_vehiculo(self):
+        orden = OrdenTrabajo.objects.create(
+            numero='PUB-APR',
+            cliente=self.cliente,
+            vehiculo=self.vehiculo,
+            recepcionista=self.recepcionista_a,
+            estado='ESPERANDO_APROBACION',
+        )
+        servicio = OrdenServicio.objects.create(
+            orden=orden,
+            descripcion='Alineamiento',
+            precio_estimado=Decimal('50.00'),
+            aprobado_cliente=False,
+        )
+
+        resp = self.client_api.post('/api/taller/public/aprobar-cotizacion/', {
+            'placa': 'PUB-001',
+            'dni': '70000001',
+            'servicios_aprobados': [servicio.id],
+            'repuestos_aprobados': [],
+        }, format='json')
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        orden.refresh_from_db()
+        servicio.refresh_from_db()
+        self.assertEqual(orden.estado, 'APROBADO')
+        self.assertTrue(servicio.aprobado_cliente)
+
+        historial = OrdenHistorialEstado.objects.filter(orden=orden, estado='APROBADO').latest('fecha_registro')
+        self.assertIsNone(historial.usuario)
+        self.assertIn('Estado de Vehiculo', historial.observaciones)
+
+    def test_cliente_no_puede_aprobar_dos_veces_desde_estado_vehiculo(self):
+        orden = OrdenTrabajo.objects.create(
+            numero='PUB-APR2',
+            cliente=self.cliente,
+            vehiculo=self.vehiculo,
+            recepcionista=self.recepcionista_a,
+            estado='ESPERANDO_APROBACION',
+        )
+        servicio = OrdenServicio.objects.create(
+            orden=orden,
+            descripcion='Balanceo',
+            precio_estimado=Decimal('25.00'),
+        )
+        payload = {
+            'placa': 'PUB-001',
+            'dni': '70000001',
+            'servicios_aprobados': [servicio.id],
+            'repuestos_aprobados': [],
+        }
+
+        primera = self.client_api.post('/api/taller/public/aprobar-cotizacion/', payload, format='json')
+        segunda = self.client_api.post('/api/taller/public/aprobar-cotizacion/', payload, format='json')
+
+        self.assertEqual(primera.status_code, 200, primera.data)
+        self.assertEqual(segunda.status_code, 400)
+
+    def test_cliente_no_puede_aprobar_repuesto_sin_stock_suficiente(self):
+        categoria = Categoria.objects.create(nombre='Categoria Sin Stock Publico')
+        marca = MarcaRepuesto.objects.create(nombre='Marca Sin Stock Publico')
+        repuesto = Repuesto.objects.create(
+            codigo='REP-SIN-STOCK-PUB',
+            nombre='Repuesto Sin Stock Publico',
+            categoria=categoria,
+            marca=marca,
+            precio_compra=Decimal('5.00'),
+            precio_por_mayor=Decimal('8.00'),
+            precio_cash=Decimal('9.00'),
+            precio_lista=Decimal('10.00'),
+        )
+        almacen = Almacen.objects.create(sucursal=self.sucursal_a, nombre='Almacen Sin Stock Publico')
+        ubicacion = UbicacionFisica.objects.create(almacen=almacen, codigo='GENERAL')
+        stock = InventarioStock.objects.create(
+            repuesto=repuesto,
+            ubicacion=ubicacion,
+            stock_disponible=Decimal('0.00'),
+        )
+        orden = OrdenTrabajo.objects.create(
+            numero='PUB-STOCK',
+            cliente=self.cliente,
+            vehiculo=self.vehiculo,
+            recepcionista=self.recepcionista_a,
+            estado='ESPERANDO_APROBACION',
+        )
+        orden_repuesto = OrdenRepuesto.objects.create(
+            orden=orden,
+            repuesto=repuesto,
+            cantidad=Decimal('1.00'),
+            precio_unitario=Decimal('10.00'),
+        )
+
+        resp = self.client_api.post('/api/taller/public/aprobar-cotizacion/', {
+            'placa': 'PUB-001',
+            'dni': '70000001',
+            'repuestos_aprobados': [orden_repuesto.id],
+            'servicios_aprobados': [],
+        }, format='json')
+
+        self.assertEqual(resp.status_code, 400, resp.data)
+        self.assertIn('stock disponible suficiente', str(resp.data['error']))
+        orden.refresh_from_db()
+        orden_repuesto.refresh_from_db()
+        stock.refresh_from_db()
+        self.assertEqual(orden.estado, 'ESPERANDO_APROBACION')
+        self.assertFalse(orden_repuesto.aprobado_cliente)
+        self.assertEqual(stock.stock_disponible, Decimal('0.00'))
+        self.assertEqual(stock.stock_reservado, Decimal('0.00'))

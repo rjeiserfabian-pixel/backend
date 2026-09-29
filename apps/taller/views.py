@@ -15,6 +15,7 @@ from .serializers import (
     HallazgoSerializer, OrdenServicioSerializer, OrdenRepuestoSerializer,
     PlantillaPreventivaSerializer, TipoServicioSerializer
 )
+from .services import aprobar_cotizacion_orden
 from apps.inventario.models import MovimientoInventario, InventarioStock
 from apps.ventas.models import Venta, DetalleVenta
 from apps.ventas.services import VentasService
@@ -177,7 +178,7 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         # distinta de editar la orden (agregar hallazgos/servicios/repuestos); requiere
         # ORDENES_TRABAJO.APROBAR aunque el usuario tenga EDITAR.
         if nuevo_estado == OrdenTrabajo.Estado.ESPERANDO_APROBACION and estado_anterior != nuevo_estado:
-            if 'ORDENES_TRABAJO.APROBAR' not in permisos_efectivos(self.request.user):
+            if not self.request.user.is_superuser and 'ORDENES_TRABAJO.APROBAR' not in permisos_efectivos(self.request.user):
                 raise PermissionDenied("No tiene permiso para enviar la cotización al cliente.")
 
         orden = serializer.save()
@@ -213,89 +214,20 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         # Validar payload
         servicios_ids = request.data.get('servicios_aprobados', [])
         repuestos_ids = request.data.get('repuestos_aprobados', [])
-        
-        with transaction.atomic():
-            # Actualizar servicios
-            OrdenServicio.objects.filter(orden=orden, id__in=servicios_ids).update(aprobado_cliente=True)
-            OrdenServicio.objects.filter(orden=orden).exclude(id__in=servicios_ids).update(aprobado_cliente=False)
 
-            # Actualizar repuestos y reservar stock
-            repuestos_a_aprobar = OrdenRepuesto.objects.filter(orden=orden, id__in=repuestos_ids)
-            for orp in repuestos_a_aprobar:
-                if not orp.aprobado_cliente:  # Solo si no estaba aprobado antes
-                    orp.aprobado_cliente = True
-                    orp.save(update_fields=['aprobado_cliente'])
-
-                    # Reservar stock
-                    stock_record = InventarioStock.objects.select_for_update().filter(
-                        repuesto=orp.repuesto, stock_disponible__gte=orp.cantidad
-                    ).first()
-                    if not stock_record:
-                        stock_record = InventarioStock.objects.select_for_update().filter(repuesto=orp.repuesto).first()
-
-                    if stock_record:
-                        stock_record.stock_disponible -= orp.cantidad
-                        stock_record.stock_reservado += orp.cantidad
-                        stock_record.save()
-
-                        MovimientoInventario.objects.create(
-                            repuesto=orp.repuesto,
-                            ubicacion=stock_record.ubicacion,
-                            tipo_movimiento=MovimientoInventario.TipoMovimiento.RESERVA,
-                            cantidad=-orp.cantidad,
-                            stock_resultante=stock_record.stock_disponible,
-                            motivo=f"Reserva para OT-{orden.numero}",
-                            usuario=request.user,
-                            referencia_id=orden.id,
-                            referencia_tipo='OT'
-                        )
-
-            # Liberar la reserva de los repuestos que dejan de estar aprobados en este envío.
-            # Sin esto, reaprobar el mismo repuesto en una llamada posterior lo reservaría
-            # una segunda vez sobre la misma cantidad física (bug detectado y corregido).
-            repuestos_a_desaprobar = OrdenRepuesto.objects.filter(
-                orden=orden, aprobado_cliente=True
-            ).exclude(id__in=repuestos_ids)
-            for orp in repuestos_a_desaprobar:
-                if orp.instalado:
-                    raise ValidationError(
-                        f"No se puede quitar la aprobación del repuesto '{orp.repuesto.codigo}': "
-                        "ya fue instalado. Revierta la instalación primero."
-                    )
-                stock_record = InventarioStock.objects.select_for_update().filter(repuesto=orp.repuesto).first()
-                if stock_record:
-                    stock_record.stock_disponible += orp.cantidad
-                    stock_record.stock_reservado -= orp.cantidad
-                    stock_record.save()
-
-                    MovimientoInventario.objects.create(
-                        repuesto=orp.repuesto,
-                        ubicacion=stock_record.ubicacion,
-                        tipo_movimiento=MovimientoInventario.TipoMovimiento.RESERVA,
-                        cantidad=orp.cantidad,
-                        stock_resultante=stock_record.stock_disponible,
-                        motivo=f"Liberación de reserva por desaprobación en OT-{orden.numero}",
-                        usuario=request.user,
-                        referencia_id=orden.id,
-                        referencia_tipo='OT'
-                    )
-
-            # Desaprobar los no seleccionados
-            OrdenRepuesto.objects.filter(orden=orden).exclude(id__in=repuestos_ids).update(aprobado_cliente=False)
-
-            orden.estado = OrdenTrabajo.Estado.APROBADO
-            orden.save()
-
-            OrdenHistorialEstado.objects.create(
-                orden=orden,
-                estado=orden.estado,
+        try:
+            aprobar_cotizacion_orden(
+                orden,
+                servicios_ids,
+                repuestos_ids,
                 usuario=request.user,
             )
+        except ValidationError as exc:
+            detail = exc.detail[0] if isinstance(exc.detail, list) else exc.detail
+            return Response({'error': detail}, status=status.HTTP_400_BAD_REQUEST)
 
-            logger.info(f"OT-{orden.numero} aprobada por cliente. Servicios: {servicios_ids}, Repuestos: {repuestos_ids}")
-            
-        return Response({'status': 'ok', 'message': 'Aprobación registrada correctamente.'})
-
+        return Response({'status': 'ok', 'message': 'Aprobacion registrada correctamente.'})
+        
     @action(detail=True, methods=['post'])
     def finalizar_orden(self, request, pk=None):
         orden = self.get_object()
@@ -745,37 +677,108 @@ class ConsultaVehiculoPublicaView(APIView):
                 'message': 'Su vehículo no tiene reparaciones activas'
             })
             
+        cotizacion_pendiente = orden.estado == OrdenTrabajo.Estado.ESPERANDO_APROBACION
+
         # Preparar resumen de la orden
+        servicios_qs = orden.servicios.all() if cotizacion_pendiente else orden.servicios.filter(aprobado_cliente=True)
         servicios = [
             {
+                'id': s.id,
                 'descripcion': s.descripcion,
                 'completado': s.completado,
-                'precio': s.precio_estimado
+                'precio': s.precio_estimado,
+                'aprobado_cliente': s.aprobado_cliente
             }
-            for s in orden.servicios.filter(aprobado_cliente=True)
+            for s in servicios_qs
         ]
-        
+
+        repuestos_qs = orden.repuestos.select_related('repuesto')
+        if not cotizacion_pendiente:
+            repuestos_qs = repuestos_qs.filter(aprobado_cliente=True)
         repuestos = [
             {
+                'id': r.id,
                 'descripcion': r.repuesto.nombre if r.repuesto else 'Repuesto',
                 'instalado': r.instalado,
                 'precio': r.precio_unitario,
-                'cantidad': r.cantidad
+                'cantidad': r.cantidad,
+                'aprobado_cliente': r.aprobado_cliente
             }
-            for r in orden.repuestos.select_related('repuesto').filter(aprobado_cliente=True)
+            for r in repuestos_qs
         ]
         
         total_estimado = sum([float(s['precio']) for s in servicios]) + sum([float(r['precio']) * float(r['cantidad']) for r in repuestos])
+        cotizacion_vencida = bool(orden.fecha_vencimiento_cotizacion and timezone.now() > orden.fecha_vencimiento_cotizacion)
         
         return Response({
             'vehiculo': vehiculo_data,
             'has_active_order': True,
             'orden': {
+                'id': orden.id,
                 'numero': orden.numero,
                 'estado': orden.estado,
                 'fecha_ingreso': orden.fecha_ingreso,
+                'fecha_vencimiento_cotizacion': orden.fecha_vencimiento_cotizacion,
+                'cotizacion_pendiente': cotizacion_pendiente,
+                'cotizacion_vencida': cotizacion_vencida,
                 'servicios': servicios,
                 'repuestos': repuestos,
                 'total_estimado': total_estimado
             }
+        })
+
+
+class AprobarCotizacionPublicaView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        placa = request.data.get('placa')
+        dni = request.data.get('dni')
+        sucursal_id = request.data.get('sucursal_id')
+
+        if not placa or not dni:
+            return Response({'error': 'Placa y DNI son requeridos'}, status=status.HTTP_400_BAD_REQUEST)
+
+        vehiculo = Vehiculo.objects.filter(placa__iexact=placa).first()
+        if not vehiculo:
+            return Response({'error': 'Vehiculo no encontrado o credenciales incorrectas'}, status=status.HTTP_404_NOT_FOUND)
+
+        ordenes_qs = (
+            OrdenTrabajo.objects
+            .filter(vehiculo=vehiculo)
+            .exclude(estado__in=['FACTURADO', 'CANCELADO'])
+        )
+        if sucursal_id:
+            ordenes_qs = ordenes_qs.filter(
+                recepcionista__sucursales_asignadas__sucursal_id=sucursal_id,
+                recepcionista__sucursales_asignadas__estado=True,
+            ).distinct()
+        orden = ordenes_qs.order_by('-fecha_ingreso').first()
+
+        es_propietario = vehiculo.clientes.filter(dni=dni).exists()
+        es_cliente_orden = orden and orden.cliente and orden.cliente.dni == dni
+
+        if not es_propietario and not es_cliente_orden:
+            return Response({'error': 'Vehiculo no encontrado o credenciales incorrectas'}, status=status.HTTP_404_NOT_FOUND)
+        if not orden:
+            return Response({'error': 'No hay una orden activa para aprobar.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            aprobar_cotizacion_orden(
+                orden,
+                request.data.get('servicios_aprobados', []),
+                request.data.get('repuestos_aprobados', []),
+                usuario=None,
+                observaciones='Aprobado por el cliente desde Estado de Vehiculo.',
+                exigir_esperando_aprobacion=True,
+                exigir_seleccion=True,
+            )
+        except ValidationError as exc:
+            detail = exc.detail[0] if isinstance(exc.detail, list) else exc.detail
+            return Response({'error': detail}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            'status': 'ok',
+            'message': 'Cotizacion aprobada correctamente.',
+            'estado': OrdenTrabajo.Estado.APROBADO,
         })
