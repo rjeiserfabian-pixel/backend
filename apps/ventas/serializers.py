@@ -2,11 +2,13 @@ from rest_framework import serializers
 from .models import (
     Caja, SesionCaja, MovimientoCaja, TipoComprobante, SerieComprobante, MetodoPago,
     Impuesto, Venta, DetalleVenta, PagoVenta, CuentaPorCobrar, CuotaCredito, PagoCuota,
-    KioskoTerminal
+    KioskoTerminal, Proforma, ProformaDetalle
 )
 from apps.inventario.serializers import RepuestoSerializer
 from apps.clientes.serializers import ClienteSerializer
 from apps.vehiculos.serializers import VehiculoSerializer
+from decimal import Decimal
+from .services import VentasService
 
 
 # ──────────────────────────────────────────────
@@ -131,6 +133,155 @@ class VentaSerializer(serializers.ModelSerializer):
         return str(guia) if guia else ''
 
 
+class ProformaDetalleSerializer(serializers.ModelSerializer):
+    repuesto_nombre = serializers.CharField(source='repuesto.nombre', read_only=True)
+    repuesto_codigo = serializers.CharField(source='repuesto.codigo', read_only=True)
+    repuesto_unidad_medida = serializers.CharField(source='repuesto.unidad_medida.abreviatura', read_only=True)
+
+    class Meta:
+        model = ProformaDetalle
+        fields = '__all__'
+        read_only_fields = ('proforma', 'subtotal_linea')
+
+
+class ProformaSerializer(serializers.ModelSerializer):
+    detalles = ProformaDetalleSerializer(many=True)
+    cliente_nombre = serializers.CharField(source='cliente.nombres', read_only=True)
+    cliente_apellidos = serializers.CharField(source='cliente.apellidos', read_only=True)
+    cliente_dni = serializers.CharField(source='cliente.dni', read_only=True)
+    cliente_telefono = serializers.CharField(source='cliente.telefono', read_only=True)
+    sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)
+    creado_por_nombre = serializers.CharField(source='creado_por.nombre_completo', read_only=True)
+    venta_generada_ticket = serializers.CharField(source='venta_generada.ticket_kiosko', read_only=True)
+
+    class Meta:
+        model = Proforma
+        fields = '__all__'
+        read_only_fields = (
+            'numero', 'subtotal', 'igv', 'descuento_total', 'total',
+            'creado_por', 'creado_en', 'actualizado_en', 'convertido_en', 'venta_generada'
+        )
+
+    def validate_detalles(self, value):
+        if not value:
+            raise serializers.ValidationError("La proforma debe tener al menos un item.")
+        for item in value:
+            tipo = item.get('tipo') or ProformaDetalle.Tipo.REPUESTO
+            repuesto = item.get('repuesto')
+            descripcion = (item.get('descripcion') or '').strip()
+            cantidad = Decimal(str(item.get('cantidad') or 0))
+            precio = Decimal(str(item.get('precio_unitario') or 0))
+            descuento = Decimal(str(item.get('descuento') or 0))
+
+            if cantidad <= 0:
+                raise serializers.ValidationError("La cantidad de cada item debe ser mayor a cero.")
+            if precio < 0:
+                raise serializers.ValidationError("El precio unitario no puede ser negativo.")
+            if descuento < 0:
+                raise serializers.ValidationError("El descuento no puede ser negativo.")
+            if descuento > cantidad * precio:
+                raise serializers.ValidationError("El descuento no puede superar el total del item.")
+            if tipo == ProformaDetalle.Tipo.REPUESTO and not repuesto:
+                raise serializers.ValidationError("Los items de repuesto deben indicar un producto.")
+            if tipo == ProformaDetalle.Tipo.SERVICIO and not descripcion:
+                raise serializers.ValidationError("Los servicios deben tener una descripción.")
+        return value
+
+    def _generar_numero(self, sucursal):
+        from django.db.models import Max
+
+        serie = SerieDocumentoInterno.objects.filter(
+            sucursal=sucursal,
+            tipo_documento=SerieDocumentoInterno.TipoDocumento.PROFORMA_VENTAS,
+            estado=True
+        ).select_for_update().first()
+        if serie:
+            numero = serie.generar_siguiente_correlativo()
+            serie.correlativo_actual += 1
+            serie.save(update_fields=['correlativo_actual'])
+            return numero
+
+        max_id = Proforma.objects.aggregate(max_id=Max('id'))['max_id'] or 0
+        return f"PROF-{str(max_id + 1).zfill(6)}"
+
+    def _recalcular_totales(self, proforma):
+        bruto = Decimal('0.00')
+        descuento_items = Decimal('0.00')
+        for detalle in proforma.detalles.all():
+            bruto += (detalle.cantidad * detalle.precio_unitario)
+            descuento_items += detalle.descuento
+
+        descuento_global = Decimal(str(proforma.descuento_global or 0))
+        if descuento_global < 0:
+            descuento_global = Decimal('0.00')
+        descuento_total = min(descuento_items + descuento_global, bruto)
+        total = (bruto - descuento_total).quantize(Decimal('0.01'))
+
+        if proforma.incluye_igv:
+            # Los precios ingresados YA incluyen IGV → descomponemos
+            subtotal, igv = VentasService.descomponer_total_con_impuesto(total)
+        else:
+            # Los precios ingresados NO incluyen IGV → IGV = 0, total sin cambio
+            subtotal = total
+            igv = Decimal('0.00')
+
+        proforma.subtotal = subtotal
+        proforma.igv = igv
+        proforma.descuento_total = descuento_total.quantize(Decimal('0.01'))
+        proforma.total = total
+        proforma.save(update_fields=['subtotal', 'igv', 'descuento_total', 'total', 'actualizado_en'])
+
+    def _guardar_detalles(self, proforma, detalles_data):
+        proforma.detalles.all().delete()
+        for item in detalles_data:
+            tipo = item.get('tipo') or ProformaDetalle.Tipo.REPUESTO
+            repuesto = item.get('repuesto')
+            descripcion = (item.get('descripcion') or '').strip()
+            if tipo == ProformaDetalle.Tipo.REPUESTO and repuesto:
+                descripcion = descripcion or repuesto.nombre
+
+            cantidad = Decimal(str(item.get('cantidad') or 0))
+            precio = Decimal(str(item.get('precio_unitario') or 0))
+            descuento = Decimal(str(item.get('descuento') or 0))
+            subtotal_linea = ((cantidad * precio) - descuento).quantize(Decimal('0.01'))
+
+            ProformaDetalle.objects.create(
+                proforma=proforma,
+                tipo=tipo,
+                repuesto=repuesto if tipo == ProformaDetalle.Tipo.REPUESTO else None,
+                descripcion=descripcion,
+                cantidad=cantidad,
+                precio_unitario=precio,
+                descuento=descuento,
+                subtotal_linea=subtotal_linea,
+            )
+        self._recalcular_totales(proforma)
+
+    def create(self, validated_data):
+        detalles_data = validated_data.pop('detalles')
+        request = self.context.get('request')
+        usuario = request.user if request else validated_data.pop('creado_por')
+        sucursal = validated_data['sucursal']
+        validated_data['creado_por'] = usuario
+        validated_data['numero'] = self._generar_numero(sucursal)
+        proforma = Proforma.objects.create(**validated_data)
+        self._guardar_detalles(proforma, detalles_data)
+        return proforma
+
+    def update(self, instance, validated_data):
+        detalles_data = validated_data.pop('detalles', None)
+        if instance.estado == Proforma.Estado.CONVERTIDA:
+            raise serializers.ValidationError("No se puede editar una proforma convertida a POS.")
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if detalles_data is not None:
+            self._guardar_detalles(instance, detalles_data)
+        else:
+            self._recalcular_totales(instance)
+        return instance
+
+
 class TicketKioskoCreateSerializer(serializers.Serializer):
     cliente_id = serializers.IntegerField()
     vehiculo_id = serializers.IntegerField(required=False, allow_null=True)
@@ -223,4 +374,3 @@ class SerieDocumentoInternoSerializer(serializers.ModelSerializer):
     class Meta:
         model = SerieDocumentoInterno
         fields = '__all__'
-

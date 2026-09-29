@@ -228,19 +228,24 @@ class Command(BaseCommand):
                 "orden": 1, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "POS.VER_MENU",
             },
             {
+                "codigo": "PROFORMAS", "nombre": "Proformas",
+                "icono": "filetext", "ruta": "/ventas/proformas",
+                "orden": 2, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "PROFORMAS.VER_MENU",
+            },
+            {
                 "codigo": "REGISTRO_MANUAL_VENTAS", "nombre": "Registro Manual",
                 "icono": "filetext", "ruta": "/ventas/registro-manual",
-                "orden": 2, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "REGISTRO_MANUAL_VENTAS.VER_MENU",
+                "orden": 3, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "REGISTRO_MANUAL_VENTAS.VER_MENU",
             },
             {
                 "codigo": "CAJA_CONFIG", "nombre": "Configuración de Ventas",
                 "icono": "settings", "ruta": "/ventas/configuracion",
-                "orden": 3, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "CAJA_CONFIG.VER_MENU",
+                "orden": 4, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "CAJA_CONFIG.VER_MENU",
             },
             {
                 "codigo": "COMPROBANTES_ELECTRONICOS", "nombre": "Comprobantes Electrónicos",
                 "icono": "send", "ruta": "/facturacion/comprobantes",
-                "orden": 4, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "COMPROBANTES_ELECTRONICOS.VER_MENU",
+                "orden": 5, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "COMPROBANTES_ELECTRONICOS.VER_MENU",
             },
             # ── Cuentas ───────────────────────────────────────────────────────
             {
@@ -546,6 +551,11 @@ class Command(BaseCommand):
             # ── VENTAS ────────────────────────────────────────────────────────
             {"modulo": "VENTAS", "codigo": "VENTAS.POS.VER",              "nombre": "Acceder al POS",            "accion": "VER",    "grupo_padre": GP_VENTAS, "grupo_submodulo": "Punto de Venta (POS)"},
             {"modulo": "VENTAS", "codigo": "VENTAS.POS.CREAR",            "nombre": "Registrar venta en el POS", "accion": "CREAR",  "grupo_padre": GP_VENTAS, "grupo_submodulo": "Punto de Venta (POS)"},
+            {"modulo": "VENTAS", "codigo": "VENTAS.PROFORMAS.VER",         "nombre": "Ver proformas",            "accion": "VER",       "grupo_padre": GP_VENTAS, "grupo_submodulo": "Proformas"},
+            {"modulo": "VENTAS", "codigo": "VENTAS.PROFORMAS.CREAR",       "nombre": "Crear proformas",          "accion": "CREAR",     "grupo_padre": GP_VENTAS, "grupo_submodulo": "Proformas"},
+            {"modulo": "VENTAS", "codigo": "VENTAS.PROFORMAS.EDITAR",      "nombre": "Editar proformas",         "accion": "EDITAR",    "grupo_padre": GP_VENTAS, "grupo_submodulo": "Proformas"},
+            {"modulo": "VENTAS", "codigo": "VENTAS.PROFORMAS.ELIMINAR",    "nombre": "Eliminar proformas",       "accion": "ELIMINAR",  "grupo_padre": GP_VENTAS, "grupo_submodulo": "Proformas"},
+            {"modulo": "VENTAS", "codigo": "VENTAS.PROFORMAS.CONVERTIR",   "nombre": "Convertir proforma a POS",  "accion": "CONVERTIR", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Proformas"},
             {"modulo": "VENTAS", "codigo": "VENTAS.REGISTRO_MANUAL.VER",  "nombre": "Ver registro manual",       "accion": "VER",    "grupo_padre": GP_VENTAS, "grupo_submodulo": "Registro Manual"},
             {"modulo": "VENTAS", "codigo": "VENTAS.REGISTRO_MANUAL.CREAR","nombre": "Crear venta manual",        "accion": "CREAR",  "grupo_padre": GP_VENTAS, "grupo_submodulo": "Registro Manual"},
             {"modulo": "VENTAS", "codigo": "VENTAS.CONFIGURACION.VER",     "nombre": "Ver config. de ventas",     "accion": "VER",     "grupo_padre": GP_VENTAS, "grupo_submodulo": "Configuración de Ventas"},
@@ -649,6 +659,7 @@ class Command(BaseCommand):
             {"modulo": "TALLER", "codigo": "PLANTILLAS_TALLER.VER_MENU", "nombre": "Mostrar \"Plantillas de Servicio\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_TALLER, "grupo_submodulo": "Plantillas de Servicio"},
             {"modulo": "TALLER", "codigo": "TIPOS_SERVICIO.VER_MENU", "nombre": "Mostrar \"Tipos de Servicio\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_TALLER, "grupo_submodulo": "Tipos de Servicio"},
             {"modulo": "VENTAS", "codigo": "POS.VER_MENU", "nombre": "Mostrar \"Punto de Venta (POS)\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Punto de Venta (POS)"},
+            {"modulo": "VENTAS", "codigo": "PROFORMAS.VER_MENU", "nombre": "Mostrar \"Proformas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Proformas"},
             {"modulo": "VENTAS", "codigo": "REGISTRO_MANUAL_VENTAS.VER_MENU", "nombre": "Mostrar \"Registro Manual\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Registro Manual"},
             {"modulo": "VENTAS", "codigo": "CAJA_CONFIG.VER_MENU", "nombre": "Mostrar \"Configuración de Ventas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Configuración de Ventas"},
             {"modulo": "VENTAS", "codigo": "COMPROBANTES_ELECTRONICOS.VER_MENU", "nombre": "Mostrar \"Comprobantes Electrónicos\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Comprobantes Electrónicos"},

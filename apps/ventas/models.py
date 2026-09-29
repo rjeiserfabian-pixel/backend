@@ -149,6 +149,7 @@ class SerieDocumentoInterno(models.Model):
         CREDITO = 'CREDITO', 'Código de Crédito'
         GUIA_REMISION = 'GUIA_REMISION', 'Guía de Remisión'
         PROFORMA = 'PROFORMA', 'Proforma / Cotización'
+        PROFORMA_VENTAS = 'PROFORMA_VENTAS', 'Proformas'
         TRASLADO = 'TRASLADO', 'Nota de Traslado'
 
         
@@ -257,6 +258,79 @@ class Venta(models.Model):
 
     def __str__(self):
         return self.serie_correlativo or self.ticket_kiosko or f"Pre-Venta #{self.id}"
+
+
+class Proforma(models.Model):
+    class Estado(models.TextChoices):
+        BORRADOR = 'BORRADOR', 'Borrador'
+        EMITIDA = 'EMITIDA', 'Emitida'
+        ACEPTADA = 'ACEPTADA', 'Aceptada'
+        VENCIDA = 'VENCIDA', 'Vencida'
+        ANULADA = 'ANULADA', 'Anulada'
+        CONVERTIDA = 'CONVERTIDA', 'Convertida a POS'
+
+    class FormaPago(models.TextChoices):
+        CONTADO = 'CONTADO', 'Contado'
+        CREDITO = 'CREDITO', 'Crédito'
+
+    cliente = models.ForeignKey(Cliente, on_delete=models.RESTRICT, related_name='proformas')
+    sucursal = models.ForeignKey(Sucursal, on_delete=models.RESTRICT, related_name='proformas')
+    creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, related_name='proformas_creadas')
+    venta_generada = models.OneToOneField(Venta, on_delete=models.SET_NULL, related_name='proforma_origen', null=True, blank=True)
+
+    numero = models.CharField(max_length=50, unique=True, db_index=True)
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.EMITIDA, db_index=True)
+    forma_pago = models.CharField(max_length=10, choices=FormaPago.choices, default=FormaPago.CONTADO)
+    observaciones = models.TextField(blank=True)
+    incluye_igv = models.BooleanField(default=True)
+    descuento_global = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    moneda = models.CharField(max_length=3, choices=Venta.Moneda.choices, default=Venta.Moneda.PEN, db_index=True)
+    tipo_cambio = models.DecimalField(max_digits=10, decimal_places=4, default=1.0000)
+    valido_hasta = models.DateField(null=True, blank=True)
+
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    igv = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    descuento_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    creado_en = models.DateTimeField(default=timezone.now, db_index=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+    convertido_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'ventas_proforma'
+        verbose_name = 'Proforma'
+        verbose_name_plural = 'Proformas'
+        ordering = ['-creado_en']
+
+    def __str__(self):
+        return self.numero
+
+
+class ProformaDetalle(models.Model):
+    class Tipo(models.TextChoices):
+        REPUESTO = 'REPUESTO', 'Repuesto / Producto'
+        SERVICIO = 'SERVICIO', 'Servicio'
+
+    proforma = models.ForeignKey(Proforma, on_delete=models.CASCADE, related_name='detalles')
+    tipo = models.CharField(max_length=10, choices=Tipo.choices, default=Tipo.REPUESTO)
+    repuesto = models.ForeignKey(Repuesto, on_delete=models.RESTRICT, related_name='detalles_proforma', null=True, blank=True)
+    descripcion = models.CharField(max_length=255)
+    cantidad = models.DecimalField(max_digits=12, decimal_places=2)
+    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2)
+    descuento = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    subtotal_linea = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        db_table = 'ventas_proforma_detalle'
+        verbose_name = 'Detalle de Proforma'
+        verbose_name_plural = 'Detalles de Proforma'
+        constraints = [
+            models.CheckConstraint(condition=models.Q(cantidad__gt=0), name='proforma_detalle_cantidad_positiva'),
+        ]
+
+    def __str__(self):
+        return f"{self.cantidad} x {self.descripcion} ({self.proforma.numero})"
 
 
 class DetalleVenta(models.Model):
