@@ -575,6 +575,12 @@ class VentaViewSet(viewsets.ModelViewSet):
                     num_cuotas=data['credito']['cuotas'],
                     dia_pago=data['credito'].get('dia_pago')
                 )
+
+            try:
+                from apps.facturacion.services import FacturacionService
+                FacturacionService.preparar_para_venta(venta, request.user)
+            except Exception as exc:
+                logger.warning("No se pudo preparar comprobante electronico para venta %s: %s", venta.id, exc)
                 
             return Response(VentaSerializer(venta).data)
         except Exception as e:
@@ -804,6 +810,12 @@ class VentaViewSet(viewsets.ModelViewSet):
                     num_cuotas=1,
                     fecha_limite=fecha_limite
                 )
+
+            try:
+                from apps.facturacion.services import FacturacionService
+                FacturacionService.preparar_para_venta(venta, request.user)
+            except Exception as exc:
+                logger.warning("No se pudo preparar comprobante electronico para venta %s: %s", venta.id, exc)
                         
             return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
         except Exception as e:

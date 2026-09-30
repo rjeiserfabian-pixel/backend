@@ -244,10 +244,15 @@ class Command(BaseCommand):
             },
             {
                 "codigo": "COMPROBANTES_ELECTRONICOS", "nombre": "Comprobantes Electrónicos",
-                "icono": "send", "ruta": "/facturacion/comprobantes",
+                "icono": "receipt-text", "ruta": "/facturacion/comprobantes",
                 "orden": 5, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "COMPROBANTES_ELECTRONICOS.VER_MENU",
             },
             # ── Cuentas ───────────────────────────────────────────────────────
+            {
+                "codigo": "NOTAS_CREDITO", "nombre": "Nota de Crédito",
+                "icono": "filetext", "ruta": "/ventas/notas-credito",
+                "orden": 6, "visible_menu": True, "padre": "VENTAS", "permiso_ver": "NOTAS_CREDITO.VER_MENU",
+            },
             {
                 "codigo": "CUENTAS", "nombre": "Cuentas",
                 "icono": "banknote", "ruta": None,
@@ -663,6 +668,7 @@ class Command(BaseCommand):
             {"modulo": "VENTAS", "codigo": "REGISTRO_MANUAL_VENTAS.VER_MENU", "nombre": "Mostrar \"Registro Manual\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Registro Manual"},
             {"modulo": "VENTAS", "codigo": "CAJA_CONFIG.VER_MENU", "nombre": "Mostrar \"Configuración de Ventas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Configuración de Ventas"},
             {"modulo": "VENTAS", "codigo": "COMPROBANTES_ELECTRONICOS.VER_MENU", "nombre": "Mostrar \"Comprobantes Electrónicos\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Comprobantes Electrónicos"},
+            {"modulo": "NOTAS_CREDITO", "codigo": "NOTAS_CREDITO.VER_MENU", "nombre": "Mostrar \"Nota de Crédito\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Nota de Crédito"},
             {"modulo": "CUENTAS", "codigo": "POR_COBRAR.VER_MENU", "nombre": "Mostrar \"Por Cobrar\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Cobrar"},
             {"modulo": "CUENTAS", "codigo": "COMPRAS_CXP.VER_MENU", "nombre": "Mostrar \"Por Pagar\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Pagar"},
             {"modulo": "COMPRAS", "codigo": "COMPRAS_HISTORIAL.VER_MENU", "nombre": "Mostrar \"Registro de Compras\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_COMPRAS, "grupo_submodulo": None},
@@ -719,6 +725,8 @@ class Command(BaseCommand):
                 permiso.save()
             permisos[data["codigo"]] = permiso
             self._log("Permiso", data["codigo"], creado)
+
+        Permiso.objects.filter(grupo_padre="VENTAS").update(grupo_padre=GP_VENTAS)
 
         # ── 4. ASIGNAR TODOS LOS PERMISOS AL ROL ADMINISTRADOR (GLOBAL) ───────
         admin_rol = roles["ADMINISTRADOR"]
