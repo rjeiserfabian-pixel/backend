@@ -667,6 +667,7 @@ class ConsultaVehiculoPublicaView(APIView):
             OrdenTrabajo.objects
             .filter(vehiculo=vehiculo)
             .exclude(estado__in=['FACTURADO', 'CANCELADO'])
+            .prefetch_related('hallazgos')
         )
         if sucursal_id:
             ordenes_qs = ordenes_qs.filter(
@@ -732,6 +733,16 @@ class ConsultaVehiculoPublicaView(APIView):
             }
             for r in repuestos_qs
         ]
+
+        hallazgos = [
+            {
+                'id': h.id,
+                'descripcion': h.descripcion,
+                'severidad': h.severidad,
+                'fecha_registro': h.fecha_registro,
+            }
+            for h in orden.hallazgos.all().order_by('-fecha_registro')
+        ]
         
         total_estimado = sum([float(s['precio']) for s in servicios]) + sum([float(r['precio']) * float(r['cantidad']) for r in repuestos])
         cotizacion_vencida = bool(orden.fecha_vencimiento_cotizacion and timezone.now() > orden.fecha_vencimiento_cotizacion)
@@ -747,6 +758,7 @@ class ConsultaVehiculoPublicaView(APIView):
                 'fecha_vencimiento_cotizacion': orden.fecha_vencimiento_cotizacion,
                 'cotizacion_pendiente': cotizacion_pendiente,
                 'cotizacion_vencida': cotizacion_vencida,
+                'hallazgos': hallazgos,
                 'servicios': servicios,
                 'repuestos': repuestos,
                 'total_estimado': total_estimado

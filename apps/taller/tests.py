@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 from apps.seguridad.models import Usuario, UsuarioSucursal
 from apps.clientes.models import Cliente
 from apps.vehiculos.models import Vehiculo
-from apps.taller.models import OrdenHistorialEstado, OrdenServicio, OrdenTrabajo, OrdenRepuesto
+from apps.taller.models import Hallazgo, OrdenHistorialEstado, OrdenServicio, OrdenTrabajo, OrdenRepuesto
 from apps.inventario.models import (
     Categoria, MarcaRepuesto, Repuesto, Sucursal, Almacen, UbicacionFisica, InventarioStock
 )
@@ -364,6 +364,24 @@ class ConsultaVehiculoPublicaTests(TestCase):
         self.assertTrue(resp.data['orden']['cotizacion_pendiente'])
         self.assertEqual(resp.data['orden']['servicios'][0]['id'], servicio.id)
         self.assertFalse(resp.data['orden']['servicios'][0]['aprobado_cliente'])
+
+    def test_consulta_publica_muestra_hallazgos_de_inspeccion(self):
+        Hallazgo.objects.create(
+            orden=self.orden_b,
+            descripcion='Fuga leve de aceite',
+            severidad='MEDIA',
+            registrado_por=self.recepcionista_b,
+        )
+
+        resp = self.client_api.post('/api/taller/public/consulta-vehiculo/', {
+            'placa': 'PUB-001',
+            'dni': '70000001',
+        }, format='json')
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['orden']['numero'], 'PUB-B')
+        self.assertEqual(resp.data['orden']['hallazgos'][0]['descripcion'], 'Fuga leve de aceite')
+        self.assertEqual(resp.data['orden']['hallazgos'][0]['severidad'], 'MEDIA')
 
     def test_cliente_aprueba_cotizacion_desde_estado_vehiculo(self):
         orden = OrdenTrabajo.objects.create(
