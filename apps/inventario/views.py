@@ -46,6 +46,104 @@ class UnidadMedidaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         instance.estado = False
         instance.save()
 
+    def _obtener_repuestos_compatibles(self, request, solo_kiosko=True):
+        marca = request.query_params.get('marca', '').strip()
+        modelo = request.query_params.get('modelo', '').strip()
+        tipo_combustible = request.query_params.get('tipo_combustible', '').strip()
+        anio = request.query_params.get('anio', None)
+
+        if not marca:
+            return None, None, Response({'error': 'La marca del vehiculo es requerida'}, status=400)
+
+        query = Q(aplicaciones__marca_vehiculo__icontains=marca)
+        if modelo:
+            query &= (
+                Q(aplicaciones__modelo_vehiculo__isnull=True) |
+                Q(aplicaciones__modelo_vehiculo__icontains=modelo) |
+                Q(aplicaciones__modelo_vehiculo='')
+            )
+        if tipo_combustible:
+            query &= (
+                Q(aplicaciones__tipo_combustible__isnull=True) |
+                Q(aplicaciones__tipo_combustible='') |
+                Q(aplicaciones__tipo_combustible=tipo_combustible)
+            )
+        if anio:
+            try:
+                anio_int = int(anio)
+                query &= (Q(aplicaciones__anio_desde__isnull=True) | Q(aplicaciones__anio_desde__lte=anio_int))
+                query &= (Q(aplicaciones__anio_hasta__isnull=True) | Q(aplicaciones__anio_hasta__gte=anio_int))
+            except (ValueError, TypeError):
+                logger.warning(f"Valor de aÃ±o invÃ¡lido recibido en compatibles: {anio}")
+
+        ids_compatibles = list(
+            self.get_queryset().filter(query).values_list('id', flat=True).distinct()
+        )
+        repuestos = self.get_queryset().filter(id__in=ids_compatibles)
+        if solo_kiosko:
+            repuestos = repuestos.filter(visible_en_kiosko=True)
+
+        search = request.query_params.get('search', '').strip()
+        if search:
+            repuestos = repuestos.filter(
+                Q(nombre__icontains=search) |
+                Q(codigo__icontains=search) |
+                Q(codigo_barra__icontains=search)
+            )
+
+        categorias_disponibles = [
+            {'id': c['categoria_id'], 'nombre': c['categoria__nombre'], 'total': c['total']}
+            for c in repuestos.values('categoria_id', 'categoria__nombre')
+                .annotate(total=Count('id')).order_by('categoria__nombre')
+        ]
+
+        categoria_id = request.query_params.get('categoria')
+        if categoria_id:
+            repuestos = repuestos.filter(categoria_id=categoria_id)
+
+        return repuestos, categorias_disponibles, None
+
+    def _stock_por_sucursal(self, repuesto):
+        sucursales = {}
+        for stock in repuesto.inventario_stock.all():
+            sucursal = stock.ubicacion.almacen.sucursal
+            item = sucursales.setdefault(
+                sucursal.id,
+                {'id': sucursal.id, 'nombre': sucursal.nombre, 'stock_disponible': 0}
+            )
+            item['stock_disponible'] += float(stock.stock_disponible)
+        return list(sucursales.values())
+
+    def _serializar_comparador_interno(self, repuesto):
+        return {
+            'id': repuesto.id,
+            'codigo': repuesto.codigo,
+            'codigo_barra': repuesto.codigo_barra,
+            'nombre': repuesto.nombre,
+            'categoria_nombre': repuesto.categoria.nombre if repuesto.categoria else '',
+            'marca_nombre': repuesto.marca.nombre if repuesto.marca else '',
+            'unidad_medida_nombre': repuesto.unidad_medida.nombre if repuesto.unidad_medida else '',
+            'unidad_medida_abreviatura': repuesto.unidad_medida.abreviatura if repuesto.unidad_medida else '',
+            'visible_en_kiosko': repuesto.visible_en_kiosko,
+            'stock_total_disponible': float(repuesto.stock_total_disponible),
+            'stock_por_sucursal': self._stock_por_sucursal(repuesto),
+            'precio_cash': repuesto.precio_cash,
+            'precio_por_mayor': repuesto.precio_por_mayor,
+            'precio_lista': repuesto.precio_lista,
+        }
+
+    def _serializar_compatible_publico(self, repuesto):
+        return {
+            'id': repuesto.id,
+            'codigo': repuesto.codigo,
+            'nombre': repuesto.nombre,
+            'categoria_nombre': repuesto.categoria.nombre if repuesto.categoria else '',
+            'marca_nombre': repuesto.marca.nombre if repuesto.marca else '',
+            'unidad_medida_abreviatura': repuesto.unidad_medida.abreviatura if repuesto.unidad_medida else '',
+            'precio_lista': repuesto.precio_lista,
+            'disponible': repuesto.stock_total_disponible > 0,
+        }
+
 
 class CategoriaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_ver = "INVENTARIO.CATEGORIAS.VER"
@@ -129,6 +227,9 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
             if action_perms is not None:
                 return [permission() for permission in action_perms]
 
+        if self.action == 'comparador_placa':
+            return [TienePermiso("INVENTARIO.COMPARADOR_PLACA.VER")]
+
         # La pantalla "Ubicaciones de Stock" no tiene endpoint propio: lista
         # repuestos con su stock anidado igual que el catálogo de Repuestos.
         # Sin este OR, un rol con solo INVENTARIO.STOCK_UBICACIONES.VER (sin
@@ -180,6 +281,104 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         instance.estado = False
         instance.save()
+
+    def _obtener_repuestos_compatibles(self, request, solo_kiosko=True):
+        marca = request.query_params.get('marca', '').strip()
+        modelo = request.query_params.get('modelo', '').strip()
+        tipo_combustible = request.query_params.get('tipo_combustible', '').strip()
+        anio = request.query_params.get('anio', None)
+
+        if not marca:
+            return None, None, Response({'error': 'La marca del vehiculo es requerida'}, status=400)
+
+        query = Q(aplicaciones__marca_vehiculo__icontains=marca)
+        if modelo:
+            query &= (
+                Q(aplicaciones__modelo_vehiculo__isnull=True) |
+                Q(aplicaciones__modelo_vehiculo__icontains=modelo) |
+                Q(aplicaciones__modelo_vehiculo='')
+            )
+        if tipo_combustible:
+            query &= (
+                Q(aplicaciones__tipo_combustible__isnull=True) |
+                Q(aplicaciones__tipo_combustible='') |
+                Q(aplicaciones__tipo_combustible=tipo_combustible)
+            )
+        if anio:
+            try:
+                anio_int = int(anio)
+                query &= (Q(aplicaciones__anio_desde__isnull=True) | Q(aplicaciones__anio_desde__lte=anio_int))
+                query &= (Q(aplicaciones__anio_hasta__isnull=True) | Q(aplicaciones__anio_hasta__gte=anio_int))
+            except (ValueError, TypeError):
+                logger.warning(f"Valor de anio invalido recibido en compatibles: {anio}")
+
+        ids_compatibles = list(
+            self.get_queryset().filter(query).values_list('id', flat=True).distinct()
+        )
+        repuestos = self.get_queryset().filter(id__in=ids_compatibles)
+        if solo_kiosko:
+            repuestos = repuestos.filter(visible_en_kiosko=True)
+
+        search = request.query_params.get('search', '').strip()
+        if search:
+            repuestos = repuestos.filter(
+                Q(nombre__icontains=search) |
+                Q(codigo__icontains=search) |
+                Q(codigo_barra__icontains=search)
+            )
+
+        categorias_disponibles = [
+            {'id': c['categoria_id'], 'nombre': c['categoria__nombre'], 'total': c['total']}
+            for c in repuestos.values('categoria_id', 'categoria__nombre')
+                .annotate(total=Count('id')).order_by('categoria__nombre')
+        ]
+
+        categoria_id = request.query_params.get('categoria')
+        if categoria_id:
+            repuestos = repuestos.filter(categoria_id=categoria_id)
+
+        return repuestos, categorias_disponibles, None
+
+    def _stock_por_sucursal(self, repuesto):
+        sucursales = {}
+        for stock in repuesto.inventario_stock.all():
+            sucursal = stock.ubicacion.almacen.sucursal
+            item = sucursales.setdefault(
+                sucursal.id,
+                {'id': sucursal.id, 'nombre': sucursal.nombre, 'stock_disponible': 0}
+            )
+            item['stock_disponible'] += float(stock.stock_disponible)
+        return list(sucursales.values())
+
+    def _serializar_comparador_interno(self, repuesto):
+        return {
+            'id': repuesto.id,
+            'codigo': repuesto.codigo,
+            'codigo_barra': repuesto.codigo_barra,
+            'nombre': repuesto.nombre,
+            'categoria_nombre': repuesto.categoria.nombre if repuesto.categoria else '',
+            'marca_nombre': repuesto.marca.nombre if repuesto.marca else '',
+            'unidad_medida_nombre': repuesto.unidad_medida.nombre if repuesto.unidad_medida else '',
+            'unidad_medida_abreviatura': repuesto.unidad_medida.abreviatura if repuesto.unidad_medida else '',
+            'visible_en_kiosko': repuesto.visible_en_kiosko,
+            'stock_total_disponible': float(repuesto.stock_total_disponible),
+            'stock_por_sucursal': self._stock_por_sucursal(repuesto),
+            'precio_cash': repuesto.precio_cash,
+            'precio_por_mayor': repuesto.precio_por_mayor,
+            'precio_lista': repuesto.precio_lista,
+        }
+
+    def _serializar_compatible_publico(self, repuesto):
+        return {
+            'id': repuesto.id,
+            'codigo': repuesto.codigo,
+            'nombre': repuesto.nombre,
+            'categoria_nombre': repuesto.categoria.nombre if repuesto.categoria else '',
+            'marca_nombre': repuesto.marca.nombre if repuesto.marca else '',
+            'unidad_medida_abreviatura': repuesto.unidad_medida.abreviatura if repuesto.unidad_medida else '',
+            'precio_lista': repuesto.precio_lista,
+            'disponible': repuesto.stock_total_disponible > 0,
+        }
 
     @action(
         detail=False, methods=['get'],
@@ -288,6 +487,42 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
 
         serializer = self.get_serializer(repuestos_compatibles, many=True)
         data = _anexar_stock_sucursal(serializer.data, repuestos_compatibles)
+        return Response({'results': data, 'categorias_disponibles': categorias_disponibles})
+
+    @action(detail=False, methods=['get'], url_path='comparador-placa')
+    def comparador_placa(self, request):
+        repuestos, categorias_disponibles, error_response = self._obtener_repuestos_compatibles(request, solo_kiosko=False)
+        if error_response:
+            return error_response
+
+        page = self.paginate_queryset(repuestos)
+        if page is not None:
+            data = [self._serializar_comparador_interno(repuesto) for repuesto in page]
+            response = self.get_paginated_response(data)
+            response.data['categorias_disponibles'] = categorias_disponibles
+            return response
+
+        data = [self._serializar_comparador_interno(repuesto) for repuesto in repuestos]
+        return Response({'results': data, 'categorias_disponibles': categorias_disponibles})
+
+    @action(
+        detail=False, methods=['get'],
+        url_path='public/compatibles',
+        permission_classes=[AllowAny]
+    )
+    def public_compatibles(self, request):
+        repuestos, categorias_disponibles, error_response = self._obtener_repuestos_compatibles(request, solo_kiosko=True)
+        if error_response:
+            return error_response
+
+        page = self.paginate_queryset(repuestos)
+        if page is not None:
+            data = [self._serializar_compatible_publico(repuesto) for repuesto in page]
+            response = self.get_paginated_response(data)
+            response.data['categorias_disponibles'] = categorias_disponibles
+            return response
+
+        data = [self._serializar_compatible_publico(repuesto) for repuesto in repuestos]
         return Response({'results': data, 'categorias_disponibles': categorias_disponibles})
 
     @action(detail=False, methods=['get'])

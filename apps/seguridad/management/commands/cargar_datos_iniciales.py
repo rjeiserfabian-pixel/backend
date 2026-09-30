@@ -132,6 +132,11 @@ class Command(BaseCommand):
                 "orden": 1, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "REPUESTOS.VER_MENU",
             },
             {
+                "codigo": "COMPARADOR_PLACA", "nombre": "Comparador por Placa",
+                "icono": "search", "ruta": "/inventario/comparador-placa",
+                "orden": 2, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "COMPARADOR_PLACA.VER_MENU",
+            },
+            {
                 "codigo": "CATEGORIAS", "nombre": "Categorías",
                 "icono": "tags", "ruta": "/inventario/categorias",
                 "orden": 2, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "CATEGORIAS.VER_MENU",
@@ -505,6 +510,7 @@ class Command(BaseCommand):
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.REPUESTOS.CREAR",      "nombre": "Crear repuestos",        "accion": "CREAR",   "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Repuestos"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.REPUESTOS.EDITAR",     "nombre": "Editar repuestos",       "accion": "EDITAR",  "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Repuestos"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.REPUESTOS.ELIMINAR",   "nombre": "Eliminar repuestos",     "accion": "ELIMINAR","grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Repuestos"},
+            {"modulo": "INVENTARIO", "codigo": "INVENTARIO.COMPARADOR_PLACA.VER",  "nombre": "Ver comparador por placa","accion": "VER",     "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Comparador por Placa"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.CATEGORIAS.VER",       "nombre": "Ver categorías",         "accion": "VER",     "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Categorías"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.CATEGORIAS.CREAR",     "nombre": "Crear categorías",       "accion": "CREAR",   "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Categorías"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.CATEGORIAS.EDITAR",    "nombre": "Editar categorías",      "accion": "EDITAR",  "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Categorías"},
@@ -648,6 +654,7 @@ class Command(BaseCommand):
             {"modulo": "SEGURIDAD", "codigo": "USUARIOS.VER_MENU", "nombre": "Mostrar \"Usuarios\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Usuarios"},
             {"modulo": "SEGURIDAD", "codigo": "ROLES.VER_MENU", "nombre": "Mostrar \"Roles y Permisos\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Roles y Permisos"},
             {"modulo": "INVENTARIO", "codigo": "REPUESTOS.VER_MENU", "nombre": "Mostrar \"Repuestos\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Repuestos"},
+            {"modulo": "INVENTARIO", "codigo": "COMPARADOR_PLACA.VER_MENU", "nombre": "Mostrar \"Comparador por Placa\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Comparador por Placa"},
             {"modulo": "INVENTARIO", "codigo": "CATEGORIAS.VER_MENU", "nombre": "Mostrar \"Categorías\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Categorías"},
             {"modulo": "INVENTARIO", "codigo": "MARCAS.VER_MENU", "nombre": "Mostrar \"Marcas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Marcas"},
             {"modulo": "INVENTARIO", "codigo": "KARDEX.VER_MENU", "nombre": "Mostrar \"Kardex\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Kardex"},
