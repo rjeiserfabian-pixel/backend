@@ -30,6 +30,8 @@ class MarcaRepuestoSerializer(serializers.ModelSerializer):
 
 
 class AplicacionRepuestoSerializer(serializers.ModelSerializer):
+    marca_vehiculo = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
     class Meta:
         model = AplicacionRepuesto
         exclude = ('repuesto',)  # Se excluye porque se asociará al crear el repuesto

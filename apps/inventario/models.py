@@ -136,7 +136,7 @@ class Repuesto(models.Model):
 
 class AplicacionRepuesto(models.Model):
     repuesto = models.ForeignKey(Repuesto, on_delete=models.CASCADE, related_name='aplicaciones')
-    marca_vehiculo = models.CharField(max_length=100, db_index=True)
+    marca_vehiculo = models.CharField(max_length=100, null=True, blank=True, db_index=True)
     modelo_vehiculo = models.CharField(max_length=100, null=True, blank=True, db_index=True)
     tipo_combustible = models.CharField(
         max_length=10,

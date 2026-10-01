@@ -29,6 +29,11 @@ from reportlab.lib.styles import getSampleStyleSheet
 
 logger = logging.getLogger(__name__)
 
+class CatalogoSimplePagination(pagination.PageNumberPagination):
+    page_size = 25
+    page_size_query_param = 'page_size'
+    max_page_size = 500
+
 
 # ──────────────────────────────────────────────
 # VIEWSETS EXISTENTES (sin cambios en lógica)
@@ -41,108 +46,11 @@ class UnidadMedidaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_editar = "INVENTARIO.REPUESTOS.EDITAR"
     queryset = UnidadMedida.objects.filter(estado=True).order_by('nombre')
     serializer_class = UnidadMedidaSerializer
+    pagination_class = CatalogoSimplePagination
 
     def perform_destroy(self, instance):
         instance.estado = False
         instance.save()
-
-    def _obtener_repuestos_compatibles(self, request, solo_kiosko=True):
-        marca = request.query_params.get('marca', '').strip()
-        modelo = request.query_params.get('modelo', '').strip()
-        tipo_combustible = request.query_params.get('tipo_combustible', '').strip()
-        anio = request.query_params.get('anio', None)
-
-        if not marca:
-            return None, None, Response({'error': 'La marca del vehiculo es requerida'}, status=400)
-
-        query = Q(aplicaciones__marca_vehiculo__icontains=marca)
-        if modelo:
-            query &= (
-                Q(aplicaciones__modelo_vehiculo__isnull=True) |
-                Q(aplicaciones__modelo_vehiculo__icontains=modelo) |
-                Q(aplicaciones__modelo_vehiculo='')
-            )
-        if tipo_combustible:
-            query &= (
-                Q(aplicaciones__tipo_combustible__isnull=True) |
-                Q(aplicaciones__tipo_combustible='') |
-                Q(aplicaciones__tipo_combustible=tipo_combustible)
-            )
-        if anio:
-            try:
-                anio_int = int(anio)
-                query &= (Q(aplicaciones__anio_desde__isnull=True) | Q(aplicaciones__anio_desde__lte=anio_int))
-                query &= (Q(aplicaciones__anio_hasta__isnull=True) | Q(aplicaciones__anio_hasta__gte=anio_int))
-            except (ValueError, TypeError):
-                logger.warning(f"Valor de aÃ±o invÃ¡lido recibido en compatibles: {anio}")
-
-        ids_compatibles = list(
-            self.get_queryset().filter(query).values_list('id', flat=True).distinct()
-        )
-        repuestos = self.get_queryset().filter(id__in=ids_compatibles)
-        if solo_kiosko:
-            repuestos = repuestos.filter(visible_en_kiosko=True)
-
-        search = request.query_params.get('search', '').strip()
-        if search:
-            repuestos = repuestos.filter(
-                Q(nombre__icontains=search) |
-                Q(codigo__icontains=search) |
-                Q(codigo_barra__icontains=search)
-            )
-
-        categorias_disponibles = [
-            {'id': c['categoria_id'], 'nombre': c['categoria__nombre'], 'total': c['total']}
-            for c in repuestos.values('categoria_id', 'categoria__nombre')
-                .annotate(total=Count('id')).order_by('categoria__nombre')
-        ]
-
-        categoria_id = request.query_params.get('categoria')
-        if categoria_id:
-            repuestos = repuestos.filter(categoria_id=categoria_id)
-
-        return repuestos, categorias_disponibles, None
-
-    def _stock_por_sucursal(self, repuesto):
-        sucursales = {}
-        for stock in repuesto.inventario_stock.all():
-            sucursal = stock.ubicacion.almacen.sucursal
-            item = sucursales.setdefault(
-                sucursal.id,
-                {'id': sucursal.id, 'nombre': sucursal.nombre, 'stock_disponible': 0}
-            )
-            item['stock_disponible'] += float(stock.stock_disponible)
-        return list(sucursales.values())
-
-    def _serializar_comparador_interno(self, repuesto):
-        return {
-            'id': repuesto.id,
-            'codigo': repuesto.codigo,
-            'codigo_barra': repuesto.codigo_barra,
-            'nombre': repuesto.nombre,
-            'categoria_nombre': repuesto.categoria.nombre if repuesto.categoria else '',
-            'marca_nombre': repuesto.marca.nombre if repuesto.marca else '',
-            'unidad_medida_nombre': repuesto.unidad_medida.nombre if repuesto.unidad_medida else '',
-            'unidad_medida_abreviatura': repuesto.unidad_medida.abreviatura if repuesto.unidad_medida else '',
-            'visible_en_kiosko': repuesto.visible_en_kiosko,
-            'stock_total_disponible': float(repuesto.stock_total_disponible),
-            'stock_por_sucursal': self._stock_por_sucursal(repuesto),
-            'precio_cash': repuesto.precio_cash,
-            'precio_por_mayor': repuesto.precio_por_mayor,
-            'precio_lista': repuesto.precio_lista,
-        }
-
-    def _serializar_compatible_publico(self, repuesto):
-        return {
-            'id': repuesto.id,
-            'codigo': repuesto.codigo,
-            'nombre': repuesto.nombre,
-            'categoria_nombre': repuesto.categoria.nombre if repuesto.categoria else '',
-            'marca_nombre': repuesto.marca.nombre if repuesto.marca else '',
-            'unidad_medida_abreviatura': repuesto.unidad_medida.abreviatura if repuesto.unidad_medida else '',
-            'precio_lista': repuesto.precio_lista,
-            'disponible': repuesto.stock_total_disponible > 0,
-        }
 
 
 class CategoriaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
@@ -152,6 +60,7 @@ class CategoriaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_eliminar = "INVENTARIO.CATEGORIAS.ELIMINAR"
     queryset = Categoria.objects.filter(estado=True).order_by('-id')
     serializer_class = CategoriaSerializer
+    pagination_class = CatalogoSimplePagination
 
     def get_permissions(self):
         # "Ubicaciones de Stock" usa este catálogo solo para el filtro por
@@ -173,6 +82,7 @@ class MarcaRepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_eliminar = "INVENTARIO.MARCAS.ELIMINAR"
     queryset = MarcaRepuesto.objects.filter(estado=True).order_by('-id')
     serializer_class = MarcaRepuestoSerializer
+    pagination_class = CatalogoSimplePagination
 
     def get_permissions(self):
         if self.request.method == 'GET':
@@ -288,29 +198,45 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         tipo_combustible = request.query_params.get('tipo_combustible', '').strip()
         anio = request.query_params.get('anio', None)
 
-        if not marca:
-            return None, None, Response({'error': 'La marca del vehiculo es requerida'}, status=400)
+        query = Q(aplicaciones__isnull=True)
+        regla_query = Q()
 
-        query = Q(aplicaciones__marca_vehiculo__icontains=marca)
-        if modelo:
-            query &= (
-                Q(aplicaciones__modelo_vehiculo__isnull=True) |
-                Q(aplicaciones__modelo_vehiculo__icontains=modelo) |
-                Q(aplicaciones__modelo_vehiculo='')
+        if marca:
+            regla_query &= (
+                Q(aplicaciones__marca_vehiculo__isnull=True) |
+                Q(aplicaciones__marca_vehiculo='') |
+                Q(aplicaciones__marca_vehiculo__icontains=marca)
             )
+        else:
+            regla_query &= (Q(aplicaciones__marca_vehiculo__isnull=True) | Q(aplicaciones__marca_vehiculo=''))
+
+        if modelo:
+            regla_query &= (
+                Q(aplicaciones__modelo_vehiculo__isnull=True) |
+                Q(aplicaciones__modelo_vehiculo='') |
+                Q(aplicaciones__modelo_vehiculo__icontains=modelo)
+            )
+        else:
+            regla_query &= (Q(aplicaciones__modelo_vehiculo__isnull=True) | Q(aplicaciones__modelo_vehiculo=''))
+
         if tipo_combustible:
-            query &= (
+            regla_query &= (
                 Q(aplicaciones__tipo_combustible__isnull=True) |
                 Q(aplicaciones__tipo_combustible='') |
                 Q(aplicaciones__tipo_combustible=tipo_combustible)
             )
+        else:
+            regla_query &= (Q(aplicaciones__tipo_combustible__isnull=True) | Q(aplicaciones__tipo_combustible=''))
+
         if anio:
             try:
                 anio_int = int(anio)
-                query &= (Q(aplicaciones__anio_desde__isnull=True) | Q(aplicaciones__anio_desde__lte=anio_int))
-                query &= (Q(aplicaciones__anio_hasta__isnull=True) | Q(aplicaciones__anio_hasta__gte=anio_int))
+                regla_query &= (Q(aplicaciones__anio_desde__isnull=True) | Q(aplicaciones__anio_desde__lte=anio_int))
+                regla_query &= (Q(aplicaciones__anio_hasta__isnull=True) | Q(aplicaciones__anio_hasta__gte=anio_int))
             except (ValueError, TypeError):
                 logger.warning(f"Valor de anio invalido recibido en compatibles: {anio}")
+
+        query |= regla_query
 
         ids_compatibles = list(
             self.get_queryset().filter(query).values_list('id', flat=True).distinct()
@@ -394,66 +320,12 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         cliente jamás debe ver un repuesto que no aplique a su vehículo.
         Lógica: NULL en anio_desde/anio_hasta = sin restricción de año (aplica a todos).
         """
-        marca = request.query_params.get('marca', '').strip()
-        modelo = request.query_params.get('modelo', '').strip()
-        tipo_combustible = request.query_params.get('tipo_combustible', '').strip()
-        anio = request.query_params.get('anio', None)
-
-        if not marca:
-            return Response({'error': 'La marca del vehiculo es requerida'}, status=400)
-
-        query = Q(aplicaciones__marca_vehiculo__icontains=marca)
-
-        if modelo:
-            query &= (Q(aplicaciones__modelo_vehiculo__isnull=True) | Q(aplicaciones__modelo_vehiculo__icontains=modelo) | Q(aplicaciones__modelo_vehiculo=''))
-
-        if tipo_combustible:
-            query &= (Q(aplicaciones__tipo_combustible__isnull=True) | Q(aplicaciones__tipo_combustible='') | Q(aplicaciones__tipo_combustible=tipo_combustible))
-
-        # Filtro por año: si el año viene, se respetan los rangos.
-        # NULL en anio_desde o anio_hasta significa "sin límite en ese extremo".
-        if anio:
-            try:
-                anio_int = int(anio)
-                query &= (Q(aplicaciones__anio_desde__isnull=True) | Q(aplicaciones__anio_desde__lte=anio_int))
-                query &= (Q(aplicaciones__anio_hasta__isnull=True) | Q(aplicaciones__anio_hasta__gte=anio_int))
-            except (ValueError, TypeError):
-                logger.warning(f"Valor de año inválido recibido en /compatibles/: {anio}")
-
-        # El join contra 'aplicaciones' puede duplicar filas del mismo repuesto
-        # (varias aplicaciones que matchean). Se resuelve a una lista de IDs
-        # distintos primero, y de ahí en adelante se trabaja con un queryset
-        # limpio (sin joins) — así el conteo por categoría y la paginación no
-        # arrastran duplicados ni requieren un .distinct() por cada operación.
-        ids_compatibles = list(
-            self.get_queryset().filter(query).values_list('id', flat=True).distinct()
+        repuestos_compatibles, categorias_disponibles, error_response = self._obtener_repuestos_compatibles(
+            request,
+            solo_kiosko=True
         )
-        repuestos_compatibles = self.get_queryset().filter(id__in=ids_compatibles, visible_en_kiosko=True)
-
-        # "search" y "categoria" SIEMPRE se aplican sobre repuestos_compatibles,
-        # nunca sobre el catálogo completo: es la garantía de que el cliente
-        # solo puede buscar/filtrar dentro de lo que ya es compatible con su
-        # vehículo, para no confundirlo con un repuesto que no le sirve.
-        search = request.query_params.get('search', '').strip()
-        if search:
-            repuestos_compatibles = repuestos_compatibles.filter(
-                Q(nombre__icontains=search) |
-                Q(codigo__icontains=search) |
-                Q(codigo_barra__icontains=search)
-            )
-
-        # Categorías presentes en el resultado (antes de aplicar el filtro de
-        # categoría en sí), para que el frontend pinte solo los chips que
-        # realmente tienen repuestos para este vehículo + búsqueda actual.
-        categorias_disponibles = [
-            {'id': c['categoria_id'], 'nombre': c['categoria__nombre'], 'total': c['total']}
-            for c in repuestos_compatibles.values('categoria_id', 'categoria__nombre')
-                .annotate(total=Count('id')).order_by('categoria__nombre')
-        ]
-
-        categoria_id = request.query_params.get('categoria')
-        if categoria_id:
-            repuestos_compatibles = repuestos_compatibles.filter(categoria_id=categoria_id)
+        if error_response:
+            return error_response
 
         # Si la request viene de un kiosko registrado, además del stock global
         # (stock_total_disponible, para el catálogo interno) se agrega el stock
