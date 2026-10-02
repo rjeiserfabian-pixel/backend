@@ -1,12 +1,14 @@
 from rest_framework import serializers
 from django.utils import timezone
 from .models import (
-    BloqueoAgendaSucursal, Cita, ConfiguracionAgendaSucursal, HorarioAgendaSucursal,
+    BloqueoAgendaSucursal, Cita, CitaHistorial, ConfiguracionAgendaSucursal, HorarioAgendaSucursal,
+    ListaEsperaCita,
     OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva,
     TipoServicio, OrdenHistorialEstado, PlantillaCorrectiva
 )
 from apps.vehiculos.serializers import VehiculoSerializer
 from apps.inventario.models import InventarioStock
+from apps.inventario.models import Sucursal
 from apps.inventario.serializers import SucursalSerializer
 from apps.inventario.serializers import RepuestoSerializer
 from apps.clientes.serializers import ClienteSerializer
@@ -75,6 +77,81 @@ class BloqueoAgendaSucursalSerializer(serializers.ModelSerializer):
         fecha_fin = attrs.get('fecha_fin') or getattr(self.instance, 'fecha_fin', None)
         if fecha_inicio and fecha_fin and fecha_fin <= fecha_inicio:
             raise serializers.ValidationError("La fecha de fin del bloqueo debe ser posterior al inicio.")
+        return attrs
+
+
+class CitaHistorialSerializer(serializers.ModelSerializer):
+    usuario_nombre = serializers.CharField(source='usuario.nombre_completo', read_only=True)
+    accion_display = serializers.CharField(source='get_accion_display', read_only=True)
+    estado_anterior_display = serializers.CharField(source='get_estado_anterior_display', read_only=True)
+    estado_nuevo_display = serializers.CharField(source='get_estado_nuevo_display', read_only=True)
+
+    class Meta:
+        model = CitaHistorial
+        fields = [
+            'id', 'cita', 'accion', 'accion_display', 'estado_anterior',
+            'estado_anterior_display', 'estado_nuevo', 'estado_nuevo_display',
+            'fecha_inicio_anterior', 'fecha_inicio_nueva', 'observacion',
+            'usuario', 'usuario_nombre', 'fecha'
+        ]
+        read_only_fields = fields
+
+
+class ListaEsperaCitaSerializer(serializers.ModelSerializer):
+    sucursal_detalle = SucursalSerializer(source='sucursal', read_only=True)
+    tipo_servicio_detalle = TipoServicioSerializer(source='tipo_servicio', read_only=True)
+    cliente_detalle = ClienteSerializer(source='cliente', read_only=True)
+    vehiculo_detalle = VehiculoSerializer(source='vehiculo', read_only=True)
+    estado_display = serializers.CharField(source='get_estado_display', read_only=True)
+
+    class Meta:
+        model = ListaEsperaCita
+        fields = [
+            'id', 'sucursal', 'sucursal_detalle', 'tipo_servicio', 'tipo_servicio_detalle',
+            'cliente', 'cliente_detalle', 'vehiculo', 'vehiculo_detalle', 'documento',
+            'nombres', 'apellidos', 'telefono', 'email', 'placa', 'marca', 'modelo',
+            'fecha_preferida', 'hora_preferida', 'duracion_minutos', 'motivo',
+            'estado', 'estado_display', 'cita_convertida', 'observaciones_internas',
+            'creado_desde_portal', 'creado_por', 'fecha_creacion', 'fecha_actualizacion'
+        ]
+        read_only_fields = ['cliente', 'vehiculo', 'cita_convertida', 'creado_por', 'fecha_creacion', 'fecha_actualizacion']
+
+    def validate(self, attrs):
+        if attrs.get('duracion_minutos', getattr(self.instance, 'duracion_minutos', 60)) <= 0:
+            raise serializers.ValidationError("La duracion debe ser mayor a cero.")
+        if attrs.get('fecha_preferida') and attrs['fecha_preferida'] < timezone.localdate():
+            raise serializers.ValidationError("La fecha preferida no puede estar en el pasado.")
+        return attrs
+
+
+class ReservaPublicaCitaSerializer(serializers.Serializer):
+    sucursal = serializers.PrimaryKeyRelatedField(queryset=Sucursal.objects.filter(estado=True))
+    tipo_servicio = serializers.PrimaryKeyRelatedField(queryset=TipoServicio.objects.filter(estado=True), required=False, allow_null=True)
+    fecha_inicio = serializers.DateTimeField()
+    duracion_minutos = serializers.IntegerField(min_value=1, default=60)
+    documento = serializers.CharField(max_length=15)
+    nombres = serializers.CharField(max_length=150)
+    apellidos = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    telefono = serializers.CharField(max_length=20)
+    email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+    placa = serializers.CharField(max_length=15)
+    marca = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    modelo = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    motivo = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    lista_espera = serializers.BooleanField(default=False)
+
+    def validate_placa(self, value):
+        return value.strip().replace('-', '').replace(' ', '').upper()
+
+    def validate_documento(self, value):
+        return value.strip()
+
+    def validate(self, attrs):
+        fecha_local = timezone.localtime(attrs['fecha_inicio']).date()
+        if fecha_local < timezone.localdate():
+            raise serializers.ValidationError("La fecha preferida no puede estar en el pasado.")
+        if not attrs.get('lista_espera') and attrs['fecha_inicio'] <= timezone.now():
+            raise serializers.ValidationError("La fecha de la cita debe ser futura.")
         return attrs
 
 

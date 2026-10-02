@@ -99,6 +99,86 @@ class Cita(models.Model):
         return f"Cita-{self.numero} | {self.vehiculo.placa}"
 
 
+class CitaHistorial(models.Model):
+    class Accion(models.TextChoices):
+        CREACION = 'CREACION', 'Creacion'
+        EDICION = 'EDICION', 'Edicion'
+        REPROGRAMACION = 'REPROGRAMACION', 'Reprogramacion'
+        CAMBIO_ESTADO = 'CAMBIO_ESTADO', 'Cambio de estado'
+        RECEPCION = 'RECEPCION', 'Recepcion'
+        CANCELACION = 'CANCELACION', 'Cancelacion'
+        NO_ASISTIO = 'NO_ASISTIO', 'No asistio'
+
+    cita = models.ForeignKey(Cita, on_delete=models.CASCADE, related_name='historial')
+    accion = models.CharField(max_length=30, choices=Accion.choices, db_index=True)
+    estado_anterior = models.CharField(max_length=20, choices=Cita.Estado.choices, null=True, blank=True)
+    estado_nuevo = models.CharField(max_length=20, choices=Cita.Estado.choices, null=True, blank=True)
+    fecha_inicio_anterior = models.DateTimeField(null=True, blank=True)
+    fecha_inicio_nueva = models.DateTimeField(null=True, blank=True)
+    observacion = models.TextField(null=True, blank=True)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, null=True, blank=True)
+    fecha = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = 'taller_cita_historial'
+        verbose_name = 'Historial de Cita'
+        verbose_name_plural = 'Historial de Citas'
+        ordering = ['-fecha']
+        indexes = [
+            models.Index(fields=['cita', '-fecha'], name='idx_cita_historial_fecha'),
+        ]
+
+    def __str__(self):
+        return f"{self.cita.numero} | {self.accion}"
+
+
+class ListaEsperaCita(models.Model):
+    class Estado(models.TextChoices):
+        PENDIENTE = 'PENDIENTE', 'Pendiente'
+        CONTACTADO = 'CONTACTADO', 'Contactado'
+        CONVERTIDO = 'CONVERTIDO', 'Convertido a cita'
+        DESCARTADO = 'DESCARTADO', 'Descartado'
+
+    sucursal = models.ForeignKey('inventario.Sucursal', on_delete=models.RESTRICT, related_name='lista_espera_citas')
+    tipo_servicio = models.ForeignKey(TipoServicio, on_delete=models.RESTRICT, related_name='lista_espera_citas', null=True, blank=True)
+    cliente = models.ForeignKey('clientes.Cliente', on_delete=models.RESTRICT, related_name='lista_espera_citas', null=True, blank=True)
+    vehiculo = models.ForeignKey(Vehiculo, on_delete=models.RESTRICT, related_name='lista_espera_citas', null=True, blank=True)
+    documento = models.CharField(max_length=15, db_index=True)
+    nombres = models.CharField(max_length=150)
+    apellidos = models.CharField(max_length=150, blank=True, default='')
+    telefono = models.CharField(max_length=20)
+    email = models.EmailField(null=True, blank=True)
+    placa = models.CharField(max_length=15, db_index=True)
+    marca = models.CharField(max_length=100, blank=True, default='')
+    modelo = models.CharField(max_length=100, blank=True, default='')
+    fecha_preferida = models.DateField(db_index=True)
+    hora_preferida = models.TimeField(null=True, blank=True)
+    duracion_minutos = models.PositiveIntegerField(default=60)
+    motivo = models.TextField(null=True, blank=True)
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.PENDIENTE, db_index=True)
+    cita_convertida = models.OneToOneField(Cita, on_delete=models.SET_NULL, null=True, blank=True, related_name='origen_lista_espera')
+    observaciones_internas = models.TextField(null=True, blank=True)
+    creado_desde_portal = models.BooleanField(default=True)
+    creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, null=True, blank=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'taller_lista_espera_cita'
+        verbose_name = 'Lista de Espera de Cita'
+        verbose_name_plural = 'Lista de Espera de Citas'
+        ordering = ['-fecha_creacion']
+        indexes = [
+            models.Index(fields=['sucursal', 'estado', 'fecha_preferida'], name='idx_lista_espera_sucursal'),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(duracion_minutos__gt=0), name='lista_espera_duracion_positiva'),
+        ]
+
+    def __str__(self):
+        return f"{self.placa} | {self.fecha_preferida} | {self.estado}"
+
+
 class ConfiguracionAgendaSucursal(models.Model):
     sucursal = models.OneToOneField('inventario.Sucursal', on_delete=models.CASCADE, related_name='configuracion_agenda')
     intervalo_minutos = models.PositiveIntegerField(default=30)
