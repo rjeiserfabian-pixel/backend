@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
+    BloqueoAgendaSucursalViewSet, CitaViewSet, ConfiguracionAgendaSucursalViewSet,
     OrdenTrabajoViewSet, HallazgoViewSet, 
     OrdenServicioViewSet, OrdenRepuestoViewSet,
     PlantillaPreventivaViewSet, PlantillaCorrectivaViewSet,
@@ -8,6 +9,9 @@ from .views import (
 )
 
 router = DefaultRouter()
+router.register(r'citas', CitaViewSet, basename='cita')
+router.register(r'configuracion-agenda', ConfiguracionAgendaSucursalViewSet, basename='configuracion_agenda')
+router.register(r'bloqueos-agenda', BloqueoAgendaSucursalViewSet, basename='bloqueo_agenda')
 router.register(r'ordenes', OrdenTrabajoViewSet, basename='orden_trabajo')
 router.register(r'hallazgos', HallazgoViewSet, basename='hallazgo')
 router.register(r'servicios', OrdenServicioViewSet, basename='servicio')

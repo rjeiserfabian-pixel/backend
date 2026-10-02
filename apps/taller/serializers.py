@@ -1,7 +1,13 @@
 from rest_framework import serializers
-from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva, TipoServicio, OrdenHistorialEstado, PlantillaCorrectiva
+from django.utils import timezone
+from .models import (
+    BloqueoAgendaSucursal, Cita, ConfiguracionAgendaSucursal, HorarioAgendaSucursal,
+    OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva,
+    TipoServicio, OrdenHistorialEstado, PlantillaCorrectiva
+)
 from apps.vehiculos.serializers import VehiculoSerializer
 from apps.inventario.models import InventarioStock
+from apps.inventario.serializers import SucursalSerializer
 from apps.inventario.serializers import RepuestoSerializer
 from apps.clientes.serializers import ClienteSerializer
 
@@ -9,6 +15,155 @@ class TipoServicioSerializer(serializers.ModelSerializer):
     class Meta:
         model = TipoServicio
         fields = '__all__'
+
+
+class HorarioAgendaSucursalSerializer(serializers.ModelSerializer):
+    dia_semana_display = serializers.CharField(source='get_dia_semana_display', read_only=True)
+
+    class Meta:
+        model = HorarioAgendaSucursal
+        fields = ['id', 'dia_semana', 'dia_semana_display', 'hora_inicio', 'hora_fin', 'cerrado']
+
+
+class ConfiguracionAgendaSucursalSerializer(serializers.ModelSerializer):
+    sucursal_detalle = SucursalSerializer(source='sucursal', read_only=True)
+    horarios = HorarioAgendaSucursalSerializer(many=True)
+
+    class Meta:
+        model = ConfiguracionAgendaSucursal
+        fields = ['id', 'sucursal', 'sucursal_detalle', 'intervalo_minutos', 'capacidad_simultanea', 'activo', 'actualizado_en', 'horarios']
+
+    def validate(self, attrs):
+        intervalo = attrs.get('intervalo_minutos', getattr(self.instance, 'intervalo_minutos', 30))
+        capacidad = attrs.get('capacidad_simultanea', getattr(self.instance, 'capacidad_simultanea', 3))
+        if intervalo <= 0:
+            raise serializers.ValidationError("El intervalo de agenda debe ser mayor a cero.")
+        if capacidad <= 0:
+            raise serializers.ValidationError("La capacidad simultanea debe ser mayor a cero.")
+        return attrs
+
+    def update(self, instance, validated_data):
+        horarios_data = validated_data.pop('horarios', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if horarios_data is not None:
+            for horario_data in horarios_data:
+                dia_semana = horario_data.get('dia_semana')
+                if dia_semana is None:
+                    continue
+                HorarioAgendaSucursal.objects.update_or_create(
+                    configuracion=instance,
+                    dia_semana=dia_semana,
+                    defaults=horario_data,
+                )
+        return instance
+
+
+class BloqueoAgendaSucursalSerializer(serializers.ModelSerializer):
+    sucursal_detalle = SucursalSerializer(source='sucursal', read_only=True)
+    creado_por_nombre = serializers.CharField(source='creado_por.nombre_completo', read_only=True)
+
+    class Meta:
+        model = BloqueoAgendaSucursal
+        fields = ['id', 'sucursal', 'sucursal_detalle', 'fecha_inicio', 'fecha_fin', 'motivo', 'activo', 'creado_por', 'creado_por_nombre', 'fecha_creacion']
+        read_only_fields = ['creado_por', 'fecha_creacion']
+
+    def validate(self, attrs):
+        fecha_inicio = attrs.get('fecha_inicio') or getattr(self.instance, 'fecha_inicio', None)
+        fecha_fin = attrs.get('fecha_fin') or getattr(self.instance, 'fecha_fin', None)
+        if fecha_inicio and fecha_fin and fecha_fin <= fecha_inicio:
+            raise serializers.ValidationError("La fecha de fin del bloqueo debe ser posterior al inicio.")
+        return attrs
+
+
+class CitaSerializer(serializers.ModelSerializer):
+    cliente_detalle = ClienteSerializer(source='cliente', read_only=True)
+    vehiculo_detalle = VehiculoSerializer(source='vehiculo', read_only=True)
+    sucursal_detalle = SucursalSerializer(source='sucursal', read_only=True)
+    tipo_servicio_detalle = TipoServicioSerializer(source='tipo_servicio', read_only=True)
+    mecanico_nombre = serializers.CharField(source='mecanico_preferido.nombre_completo', read_only=True)
+    asesor_nombre = serializers.CharField(source='asesor.nombre_completo', read_only=True)
+    estado_display = serializers.CharField(source='get_estado_display', read_only=True)
+    origen_display = serializers.CharField(source='get_origen_display', read_only=True)
+    orden_numero = serializers.CharField(source='orden_trabajo.numero', read_only=True)
+
+    class Meta:
+        model = Cita
+        fields = [
+            'id', 'numero', 'cliente', 'cliente_detalle', 'vehiculo', 'vehiculo_detalle',
+            'sucursal', 'sucursal_detalle', 'tipo_servicio', 'tipo_servicio_detalle',
+            'fecha_inicio', 'fecha_fin', 'duracion_minutos', 'origen', 'origen_display',
+            'estado', 'estado_display', 'mecanico_preferido', 'mecanico_nombre',
+            'asesor', 'asesor_nombre', 'motivo', 'observaciones_cliente',
+            'observaciones_internas', 'kilometraje_estimado', 'orden_trabajo',
+            'orden_numero', 'creado_por', 'fecha_creacion', 'fecha_actualizacion'
+        ]
+        read_only_fields = ['numero', 'asesor', 'creado_por', 'orden_trabajo']
+
+    def validate(self, attrs):
+        fecha_inicio = attrs.get('fecha_inicio') or getattr(self.instance, 'fecha_inicio', None)
+        fecha_fin = attrs.get('fecha_fin') or getattr(self.instance, 'fecha_fin', None)
+        duracion = attrs.get('duracion_minutos') or getattr(self.instance, 'duracion_minutos', 60)
+        vehiculo = attrs.get('vehiculo') or getattr(self.instance, 'vehiculo', None)
+        sucursal = attrs.get('sucursal') or getattr(self.instance, 'sucursal', None)
+
+        if fecha_inicio and not fecha_fin:
+            fecha_fin = fecha_inicio + timezone.timedelta(minutes=duracion or 60)
+            attrs['fecha_fin'] = fecha_fin
+
+        if fecha_inicio and fecha_fin and fecha_fin <= fecha_inicio:
+            raise serializers.ValidationError("La fecha de fin debe ser posterior a la fecha de inicio.")
+
+        if fecha_inicio and fecha_fin and vehiculo:
+            qs = Cita.objects.filter(
+                vehiculo=vehiculo,
+                fecha_inicio__lt=fecha_fin,
+                fecha_fin__gt=fecha_inicio,
+            ).exclude(estado__in=[Cita.Estado.CANCELADA, Cita.Estado.NO_ASISTIO])
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError("El vehiculo ya tiene una cita activa en ese horario.")
+
+        if fecha_inicio and fecha_fin and sucursal:
+            config = ConfiguracionAgendaSucursal.objects.filter(sucursal=sucursal).first()
+            capacidad = config.capacidad_simultanea if config else 3
+            if config:
+                if not config.activo:
+                    raise serializers.ValidationError("La agenda de la sucursal esta inactiva.")
+
+                inicio_local = timezone.localtime(fecha_inicio)
+                fin_local = timezone.localtime(fecha_fin)
+                horario = config.horarios.filter(dia_semana=inicio_local.weekday()).first()
+                if not horario or horario.cerrado:
+                    raise serializers.ValidationError("La sucursal no atiende citas en el dia seleccionado.")
+                if inicio_local.date() != fin_local.date():
+                    raise serializers.ValidationError("La cita debe iniciar y terminar dentro del mismo dia de atencion.")
+                if inicio_local.time() < horario.hora_inicio or fin_local.time() > horario.hora_fin:
+                    raise serializers.ValidationError("La cita esta fuera del horario configurado para la sucursal.")
+
+                bloqueo = BloqueoAgendaSucursal.objects.filter(
+                    sucursal=sucursal,
+                    activo=True,
+                    fecha_inicio__lt=fecha_fin,
+                    fecha_fin__gt=fecha_inicio,
+                ).first()
+                if bloqueo:
+                    raise serializers.ValidationError(f"El horario esta bloqueado: {bloqueo.motivo}")
+
+            qs = Cita.objects.filter(
+                sucursal=sucursal,
+                fecha_inicio__lt=fecha_fin,
+                fecha_fin__gt=fecha_inicio,
+            ).exclude(estado__in=[Cita.Estado.CANCELADA, Cita.Estado.NO_ASISTIO, Cita.Estado.RECEPCIONADA])
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.count() >= capacidad:
+                raise serializers.ValidationError("La sucursal ya alcanzo la capacidad sugerida de citas en ese horario.")
+
+        return attrs
 
 class OrdenHistorialEstadoSerializer(serializers.ModelSerializer):
     usuario_nombre = serializers.SerializerMethodField()

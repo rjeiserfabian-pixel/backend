@@ -1,5 +1,6 @@
 import logging
-from rest_framework import viewsets, status
+from datetime import date, datetime, time, timedelta
+from rest_framework import viewsets, status, pagination
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -8,21 +9,52 @@ from rest_framework.exceptions import ValidationError, PermissionDenied
 from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
-from .models import OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva, PlantillaCorrectiva, TipoServicio, OrdenHistorialEstado
+from .models import (
+    BloqueoAgendaSucursal, Cita, ConfiguracionAgendaSucursal, HorarioAgendaSucursal,
+    OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva,
+    PlantillaCorrectiva, TipoServicio, OrdenHistorialEstado
+)
 from apps.vehiculos.models import Vehiculo
 from .serializers import (
+    BloqueoAgendaSucursalSerializer, CitaSerializer, ConfiguracionAgendaSucursalSerializer,
     OrdenTrabajoListSerializer, OrdenTrabajoDetailSerializer,
     HallazgoSerializer, OrdenServicioSerializer, OrdenRepuestoSerializer,
     PlantillaPreventivaSerializer, PlantillaCorrectivaSerializer, TipoServicioSerializer
 )
 from .services import aprobar_cotizacion_orden
-from apps.inventario.models import MovimientoInventario, InventarioStock
+from apps.inventario.models import MovimientoInventario, InventarioStock, Sucursal
 from apps.ventas.models import Venta, DetalleVenta
 from apps.ventas.services import VentasService
 from apps.seguridad.permissions import TienePermiso, permisos_efectivos
 import uuid
 
 logger = logging.getLogger(__name__)
+
+
+def asegurar_configuracion_agenda(sucursal):
+    config, _ = ConfiguracionAgendaSucursal.objects.get_or_create(
+        sucursal=sucursal,
+        defaults={'intervalo_minutos': 30, 'capacidad_simultanea': 3, 'activo': True},
+    )
+    existentes = set(config.horarios.values_list('dia_semana', flat=True))
+    faltantes = []
+    for dia in range(7):
+        if dia in existentes:
+            continue
+        faltantes.append(HorarioAgendaSucursal(
+            configuracion=config,
+            dia_semana=dia,
+            cerrado=(dia == 6),
+        ))
+    if faltantes:
+        HorarioAgendaSucursal.objects.bulk_create(faltantes)
+    return config
+
+
+class CitaPagination(pagination.PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 
 class TipoServicioViewSet(viewsets.ModelViewSet):
@@ -37,6 +69,366 @@ class TipoServicioViewSet(viewsets.ModelViewSet):
         if self.request.method == 'DELETE':
             return [TienePermiso("TIPOS_SERVICIO.ELIMINAR")]
         return [TienePermiso("TIPOS_SERVICIO.EDITAR")]
+
+
+class ConfiguracionAgendaSucursalViewSet(viewsets.ModelViewSet):
+    serializer_class = ConfiguracionAgendaSucursalSerializer
+    pagination_class = None
+
+    def get_permissions(self):
+        return [TienePermiso("CITAS.CONFIGURAR_AGENDA")]
+
+    def get_queryset(self):
+        for sucursal in Sucursal.objects.filter(estado=True):
+            asegurar_configuracion_agenda(sucursal)
+        return (
+            ConfiguracionAgendaSucursal.objects
+            .select_related('sucursal')
+            .prefetch_related('horarios')
+            .order_by('sucursal__nombre')
+        )
+
+    @action(detail=False, methods=['get'], url_path='por-sucursal/(?P<sucursal_id>[^/.]+)')
+    def por_sucursal(self, request, sucursal_id=None):
+        sucursal = Sucursal.objects.get(pk=sucursal_id)
+        config = asegurar_configuracion_agenda(sucursal)
+        serializer = self.get_serializer(config)
+        return Response(serializer.data)
+
+
+class BloqueoAgendaSucursalViewSet(viewsets.ModelViewSet):
+    serializer_class = BloqueoAgendaSucursalSerializer
+
+    def get_permissions(self):
+        return [TienePermiso("CITAS.CONFIGURAR_AGENDA")]
+
+    def get_queryset(self):
+        qs = BloqueoAgendaSucursal.objects.select_related('sucursal', 'creado_por').order_by('fecha_inicio')
+        sucursal = self.request.query_params.get('sucursal')
+        fecha_desde = self.request.query_params.get('fecha_desde')
+        fecha_hasta = self.request.query_params.get('fecha_hasta')
+        activo = self.request.query_params.get('activo')
+        if sucursal:
+            qs = qs.filter(sucursal_id=sucursal)
+        if fecha_desde:
+            qs = qs.filter(fecha_fin__date__gte=fecha_desde)
+        if fecha_hasta:
+            qs = qs.filter(fecha_inicio__date__lte=fecha_hasta)
+        if activo in ('true', 'false', '1', '0'):
+            qs = qs.filter(activo=activo in ('true', '1'))
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(creado_por=self.request.user)
+
+
+class CitaViewSet(viewsets.ModelViewSet):
+    serializer_class = CitaSerializer
+    pagination_class = CitaPagination
+
+    def get_permissions(self):
+        if self.action in ('recepcionar',):
+            return [TienePermiso("CITAS.RECEPCIONAR")]
+        if self.action in ('confirmar', 'cancelar', 'no_asistio'):
+            return [TienePermiso("CITAS.CAMBIAR_ESTADO")]
+        if self.request.method == 'GET':
+            return [TienePermiso("CITAS.VER")]
+        if self.request.method == 'POST':
+            return [TienePermiso("CITAS.CREAR")]
+        if self.request.method == 'DELETE':
+            return [TienePermiso("CITAS.ELIMINAR")]
+        return [TienePermiso("CITAS.EDITAR")]
+
+    def get_queryset(self):
+        queryset = Cita.objects.select_related(
+            'cliente', 'vehiculo', 'sucursal', 'tipo_servicio',
+            'mecanico_preferido', 'asesor', 'orden_trabajo'
+        ).order_by('fecha_inicio')
+
+        params = self.request.query_params
+        estado = params.get('estado')
+        sucursal = params.get('sucursal')
+        mecanico = params.get('mecanico_preferido')
+        cliente = params.get('cliente')
+        placa = params.get('placa')
+        fecha_desde = params.get('fecha_desde')
+        fecha_hasta = params.get('fecha_hasta')
+
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        if sucursal:
+            queryset = queryset.filter(sucursal_id=sucursal)
+        if mecanico:
+            queryset = queryset.filter(mecanico_preferido_id=mecanico)
+        if cliente:
+            queryset = queryset.filter(cliente_id=cliente)
+        if placa:
+            queryset = queryset.filter(vehiculo__placa__icontains=placa)
+        if fecha_desde:
+            queryset = queryset.filter(fecha_inicio__date__gte=fecha_desde)
+        if fecha_hasta:
+            queryset = queryset.filter(fecha_inicio__date__lte=fecha_hasta)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        last_cita = Cita.objects.order_by('-id').first()
+        next_num = 1 if not last_cita else last_cita.id + 1
+        numero_cita = f"{next_num:06d}"
+        cita = serializer.save(
+            numero=numero_cita,
+            asesor=self.request.user,
+            creado_por=self.request.user,
+        )
+        cita.vehiculo.clientes.add(cita.cliente)
+
+    @action(detail=False, methods=['get'])
+    def disponibilidad(self, request):
+        params = request.query_params
+        sucursal_id = params.get('sucursal')
+        if not sucursal_id:
+            return Response({'error': 'Debe indicar la sucursal.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            fecha_desde = date.fromisoformat(params.get('fecha_desde'))
+            fecha_hasta = date.fromisoformat(params.get('fecha_hasta'))
+        except (TypeError, ValueError):
+            return Response({'error': 'Debe indicar fecha_desde y fecha_hasta en formato YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if fecha_hasta < fecha_desde:
+            return Response({'error': 'fecha_hasta debe ser mayor o igual que fecha_desde.'}, status=status.HTTP_400_BAD_REQUEST)
+        if (fecha_hasta - fecha_desde).days > 31:
+            return Response({'error': 'El rango maximo de consulta es de 31 dias.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            duracion_minutos = int(params.get('duracion_minutos', 60))
+            intervalo_minutos = int(params.get('intervalo_minutos', 30))
+            capacidad = int(params.get('capacidad', 3))
+        except ValueError:
+            return Response({'error': 'duracion_minutos, intervalo_minutos y capacidad deben ser numericos.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if duracion_minutos <= 0 or intervalo_minutos <= 0 or capacidad <= 0:
+            return Response({'error': 'Duracion, intervalo y capacidad deben ser mayores a cero.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            sucursal = Sucursal.objects.get(pk=sucursal_id)
+        except Sucursal.DoesNotExist:
+            return Response({'error': 'Sucursal no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+        config = asegurar_configuracion_agenda(sucursal)
+        horarios = {h.dia_semana: h for h in config.horarios.all()}
+        tz = timezone.get_current_timezone()
+        rango_inicio = timezone.make_aware(datetime.combine(fecha_desde, time.min), tz)
+        rango_fin = timezone.make_aware(datetime.combine(fecha_hasta, time.max), tz)
+        capacidad = config.capacidad_simultanea
+        intervalo_minutos = config.intervalo_minutos
+
+        if not config.activo:
+            dias = []
+            dia_actual = fecha_desde
+            while dia_actual <= fecha_hasta:
+                dias.append({
+                    'fecha': dia_actual.isoformat(),
+                    'label': dia_actual.strftime('%d/%m'),
+                    'cerrado': True,
+                    'hora_inicio': None,
+                    'hora_fin': None,
+                    'motivo': 'Agenda inactiva',
+                    'slots': [],
+                })
+                dia_actual += timedelta(days=1)
+            return Response({
+                'sucursal': int(sucursal_id),
+                'fecha_desde': fecha_desde.isoformat(),
+                'fecha_hasta': fecha_hasta.isoformat(),
+                'duracion_minutos': duracion_minutos,
+                'intervalo_minutos': intervalo_minutos,
+                'capacidad': capacidad,
+                'dias': dias,
+            })
+
+        citas = list(
+            Cita.objects
+            .select_related('cliente', 'vehiculo', 'tipo_servicio')
+            .filter(
+                sucursal_id=sucursal_id,
+                fecha_inicio__lt=rango_fin,
+                fecha_fin__gt=rango_inicio,
+            )
+            .exclude(estado__in=[Cita.Estado.CANCELADA, Cita.Estado.NO_ASISTIO])
+            .order_by('fecha_inicio')
+        )
+        bloqueos = list(
+            BloqueoAgendaSucursal.objects
+            .filter(
+                sucursal_id=sucursal_id,
+                activo=True,
+                fecha_inicio__lt=rango_fin,
+                fecha_fin__gt=rango_inicio,
+            )
+            .order_by('fecha_inicio')
+        )
+
+        ahora = timezone.now()
+        dias = []
+        dia_actual = fecha_desde
+        while dia_actual <= fecha_hasta:
+            slots = []
+            horario = horarios.get(dia_actual.weekday())
+            if not horario or horario.cerrado:
+                dias.append({
+                    'fecha': dia_actual.isoformat(),
+                    'label': dia_actual.strftime('%d/%m'),
+                    'cerrado': True,
+                    'hora_inicio': None,
+                    'hora_fin': None,
+                    'slots': [],
+                })
+                dia_actual += timedelta(days=1)
+                continue
+
+            cursor = timezone.make_aware(datetime.combine(dia_actual, horario.hora_inicio), tz)
+            cierre = timezone.make_aware(datetime.combine(dia_actual, horario.hora_fin), tz)
+
+            while cursor + timedelta(minutes=duracion_minutos) <= cierre:
+                slot_fin = cursor + timedelta(minutes=duracion_minutos)
+                citas_cruzadas = [
+                    cita for cita in citas
+                    if cita.fecha_inicio < slot_fin and cita.fecha_fin > cursor
+                ]
+                bloqueos_cruzados = [
+                    bloqueo for bloqueo in bloqueos
+                    if bloqueo.fecha_inicio < slot_fin and bloqueo.fecha_fin > cursor
+                ]
+                horario_pasado = slot_fin <= ahora
+                disponible = len(citas_cruzadas) < capacidad and not horario_pasado and not bloqueos_cruzados
+                if horario_pasado:
+                    motivo = 'Horario pasado'
+                elif bloqueos_cruzados:
+                    motivo = bloqueos_cruzados[0].motivo
+                elif len(citas_cruzadas) >= capacidad:
+                    motivo = 'Reservado'
+                else:
+                    motivo = ''
+                slots.append({
+                    'inicio': cursor.isoformat(),
+                    'fin': slot_fin.isoformat(),
+                    'hora': timezone.localtime(cursor).strftime('%H:%M'),
+                    'disponible': disponible,
+                    'ocupadas': len(citas_cruzadas),
+                    'capacidad': capacidad,
+                    'bloqueado': bool(bloqueos_cruzados),
+                    'motivo': motivo,
+                    'bloqueos': [
+                        {'id': bloqueo.id, 'motivo': bloqueo.motivo}
+                        for bloqueo in bloqueos_cruzados
+                    ],
+                    'citas': [
+                        {
+                            'id': cita.id,
+                            'numero': cita.numero,
+                            'estado': cita.estado,
+                            'cliente': f"{cita.cliente.nombres} {cita.cliente.apellidos}".strip(),
+                            'placa': cita.vehiculo.placa,
+                            'tipo_servicio': cita.tipo_servicio.nombre if cita.tipo_servicio else '',
+                        }
+                        for cita in citas_cruzadas
+                    ],
+                })
+                cursor += timedelta(minutes=intervalo_minutos)
+
+            dias.append({
+                'fecha': dia_actual.isoformat(),
+                'label': dia_actual.strftime('%d/%m'),
+                'cerrado': False,
+                'hora_inicio': horario.hora_inicio.strftime('%H:%M'),
+                'hora_fin': horario.hora_fin.strftime('%H:%M'),
+                'slots': slots,
+            })
+            dia_actual += timedelta(days=1)
+
+        return Response({
+            'sucursal': int(sucursal_id),
+            'fecha_desde': fecha_desde.isoformat(),
+            'fecha_hasta': fecha_hasta.isoformat(),
+            'duracion_minutos': duracion_minutos,
+            'intervalo_minutos': config.intervalo_minutos,
+            'capacidad': capacidad,
+            'dias': dias,
+        })
+
+    @action(detail=True, methods=['post'])
+    def confirmar(self, request, pk=None):
+        cita = self.get_object()
+        if cita.estado in (Cita.Estado.CANCELADA, Cita.Estado.RECEPCIONADA):
+            return Response({'error': 'No se puede confirmar una cita cancelada o recepcionada.'}, status=status.HTTP_400_BAD_REQUEST)
+        cita.estado = Cita.Estado.CONFIRMADA
+        cita.save(update_fields=['estado', 'fecha_actualizacion'])
+        return Response(self.get_serializer(cita).data)
+
+    @action(detail=True, methods=['post'])
+    def cancelar(self, request, pk=None):
+        cita = self.get_object()
+        if cita.estado == Cita.Estado.RECEPCIONADA:
+            return Response({'error': 'No se puede cancelar una cita ya recepcionada.'}, status=status.HTTP_400_BAD_REQUEST)
+        motivo = (request.data.get('motivo') or '').strip()
+        if motivo:
+            cita.observaciones_internas = f"{cita.observaciones_internas or ''}\nCancelacion: {motivo}".strip()
+        cita.estado = Cita.Estado.CANCELADA
+        cita.save(update_fields=['estado', 'observaciones_internas', 'fecha_actualizacion'])
+        return Response(self.get_serializer(cita).data)
+
+    @action(detail=True, methods=['post'], url_path='no-asistio')
+    def no_asistio(self, request, pk=None):
+        cita = self.get_object()
+        if cita.estado == Cita.Estado.RECEPCIONADA:
+            return Response({'error': 'No se puede marcar como no asistio una cita recepcionada.'}, status=status.HTTP_400_BAD_REQUEST)
+        cita.estado = Cita.Estado.NO_ASISTIO
+        cita.save(update_fields=['estado', 'fecha_actualizacion'])
+        return Response(self.get_serializer(cita).data)
+
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def recepcionar(self, request, pk=None):
+        cita = self.get_object()
+        if cita.estado == Cita.Estado.RECEPCIONADA and cita.orden_trabajo_id:
+            return Response(self.get_serializer(cita).data)
+        if cita.estado in (Cita.Estado.CANCELADA, Cita.Estado.NO_ASISTIO):
+            return Response({'error': 'No se puede recepcionar una cita cancelada o marcada como no asistio.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        last_ot = OrdenTrabajo.objects.order_by('-id').first()
+        next_num = 1 if not last_ot else last_ot.id + 1
+        numero_ot = f"{next_num:06d}"
+
+        kilometraje = request.data.get('kilometraje_ingreso', cita.kilometraje_estimado)
+        motivo_ingreso = request.data.get('motivo_ingreso') or cita.motivo or cita.observaciones_cliente
+
+        orden = OrdenTrabajo.objects.create(
+            numero=numero_ot,
+            cliente=cita.cliente,
+            vehiculo=cita.vehiculo,
+            recepcionista=request.user,
+            mecanico_asignado=cita.mecanico_preferido,
+            tipo_servicio=cita.tipo_servicio,
+            kilometraje_ingreso=kilometraje or None,
+            motivo_ingreso=motivo_ingreso or None,
+        )
+        cita.vehiculo.clientes.add(cita.cliente)
+        if orden.kilometraje_ingreso is not None:
+            cita.vehiculo.kilometraje_actual = orden.kilometraje_ingreso
+            cita.vehiculo.save(update_fields=['kilometraje_actual'])
+
+        OrdenHistorialEstado.objects.create(
+            orden=orden,
+            estado=orden.estado,
+            usuario=request.user,
+            observaciones=f"Orden creada desde cita {cita.numero}",
+        )
+
+        cita.estado = Cita.Estado.RECEPCIONADA
+        cita.orden_trabajo = orden
+        cita.save(update_fields=['estado', 'orden_trabajo', 'fecha_actualizacion'])
+        return Response(self.get_serializer(cita).data, status=status.HTTP_201_CREATED)
 
 class OrdenTrabajoViewSet(viewsets.ModelViewSet):
     def get_permissions(self):

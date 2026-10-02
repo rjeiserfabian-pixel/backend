@@ -20,6 +20,160 @@ class TipoServicio(models.Model):
         return self.nombre
 
 
+class Cita(models.Model):
+    class Estado(models.TextChoices):
+        SOLICITADA = 'SOLICITADA', 'Solicitada'
+        CONFIRMADA = 'CONFIRMADA', 'Confirmada'
+        REPROGRAMADA = 'REPROGRAMADA', 'Reprogramada'
+        RECEPCIONADA = 'RECEPCIONADA', 'Recepcionada'
+        CANCELADA = 'CANCELADA', 'Cancelada'
+        NO_ASISTIO = 'NO_ASISTIO', 'No asistio'
+
+    class Origen(models.TextChoices):
+        LLAMADA = 'LLAMADA', 'Llamada'
+        WHATSAPP = 'WHATSAPP', 'WhatsApp'
+        PORTAL = 'PORTAL', 'Portal'
+        PRESENCIAL = 'PRESENCIAL', 'Presencial'
+        OTRO = 'OTRO', 'Otro'
+
+    numero = models.CharField(max_length=20, unique=True, db_index=True)
+    cliente = models.ForeignKey('clientes.Cliente', on_delete=models.RESTRICT, related_name='citas')
+    vehiculo = models.ForeignKey(Vehiculo, on_delete=models.RESTRICT, related_name='citas')
+    sucursal = models.ForeignKey('inventario.Sucursal', on_delete=models.RESTRICT, related_name='citas')
+    tipo_servicio = models.ForeignKey(TipoServicio, on_delete=models.RESTRICT, related_name='citas', null=True, blank=True)
+    fecha_inicio = models.DateTimeField(db_index=True)
+    fecha_fin = models.DateTimeField(db_index=True)
+    duracion_minutos = models.PositiveIntegerField(default=60)
+    origen = models.CharField(max_length=20, choices=Origen.choices, default=Origen.LLAMADA, db_index=True)
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.CONFIRMADA, db_index=True)
+    mecanico_preferido = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.RESTRICT,
+        related_name='citas_preferidas',
+        null=True,
+        blank=True,
+    )
+    asesor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.RESTRICT,
+        related_name='citas_registradas',
+        null=True,
+        blank=True,
+    )
+    motivo = models.TextField(null=True, blank=True)
+    observaciones_cliente = models.TextField(null=True, blank=True)
+    observaciones_internas = models.TextField(null=True, blank=True)
+    kilometraje_estimado = models.IntegerField(null=True, blank=True)
+    orden_trabajo = models.OneToOneField(
+        'taller.OrdenTrabajo',
+        on_delete=models.SET_NULL,
+        related_name='cita_origen',
+        null=True,
+        blank=True,
+    )
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.RESTRICT,
+        related_name='citas_creadas',
+        null=True,
+        blank=True,
+    )
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'taller_cita'
+        verbose_name = 'Cita'
+        verbose_name_plural = 'Citas'
+        ordering = ['fecha_inicio']
+        indexes = [
+            models.Index(fields=['sucursal', 'fecha_inicio'], name='idx_cita_sucursal_inicio'),
+            models.Index(fields=['estado', 'fecha_inicio'], name='idx_cita_estado_inicio'),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(duracion_minutos__gt=0), name='cita_duracion_positiva'),
+            models.CheckConstraint(condition=models.Q(fecha_fin__gt=models.F('fecha_inicio')), name='cita_fecha_fin_mayor_inicio'),
+        ]
+
+    def __str__(self):
+        return f"Cita-{self.numero} | {self.vehiculo.placa}"
+
+
+class ConfiguracionAgendaSucursal(models.Model):
+    sucursal = models.OneToOneField('inventario.Sucursal', on_delete=models.CASCADE, related_name='configuracion_agenda')
+    intervalo_minutos = models.PositiveIntegerField(default=30)
+    capacidad_simultanea = models.PositiveIntegerField(default=3)
+    activo = models.BooleanField(default=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'taller_configuracion_agenda_sucursal'
+        verbose_name = 'Configuracion de Agenda por Sucursal'
+        verbose_name_plural = 'Configuraciones de Agenda por Sucursal'
+        constraints = [
+            models.CheckConstraint(condition=models.Q(intervalo_minutos__gt=0), name='agenda_intervalo_positivo'),
+            models.CheckConstraint(condition=models.Q(capacidad_simultanea__gt=0), name='agenda_capacidad_positiva'),
+        ]
+
+    def __str__(self):
+        return f"Agenda {self.sucursal.nombre}"
+
+
+class HorarioAgendaSucursal(models.Model):
+    class DiaSemana(models.IntegerChoices):
+        LUNES = 0, 'Lunes'
+        MARTES = 1, 'Martes'
+        MIERCOLES = 2, 'Miercoles'
+        JUEVES = 3, 'Jueves'
+        VIERNES = 4, 'Viernes'
+        SABADO = 5, 'Sabado'
+        DOMINGO = 6, 'Domingo'
+
+    configuracion = models.ForeignKey(ConfiguracionAgendaSucursal, on_delete=models.CASCADE, related_name='horarios')
+    dia_semana = models.PositiveSmallIntegerField(choices=DiaSemana.choices)
+    hora_inicio = models.TimeField(default='08:00')
+    hora_fin = models.TimeField(default='18:00')
+    cerrado = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'taller_horario_agenda_sucursal'
+        verbose_name = 'Horario de Agenda'
+        verbose_name_plural = 'Horarios de Agenda'
+        ordering = ['dia_semana']
+        unique_together = [('configuracion', 'dia_semana')]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(cerrado=True) | models.Q(hora_fin__gt=models.F('hora_inicio')),
+                name='agenda_horario_fin_mayor_inicio_o_cerrado',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.configuracion.sucursal.nombre} - {self.get_dia_semana_display()}"
+
+
+class BloqueoAgendaSucursal(models.Model):
+    sucursal = models.ForeignKey('inventario.Sucursal', on_delete=models.CASCADE, related_name='bloqueos_agenda')
+    fecha_inicio = models.DateTimeField(db_index=True)
+    fecha_fin = models.DateTimeField(db_index=True)
+    motivo = models.CharField(max_length=180)
+    activo = models.BooleanField(default=True, db_index=True)
+    creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, null=True, blank=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'taller_bloqueo_agenda_sucursal'
+        verbose_name = 'Bloqueo de Agenda'
+        verbose_name_plural = 'Bloqueos de Agenda'
+        ordering = ['fecha_inicio']
+        constraints = [
+            models.CheckConstraint(condition=models.Q(fecha_fin__gt=models.F('fecha_inicio')), name='bloqueo_agenda_fin_mayor_inicio'),
+        ]
+
+    def __str__(self):
+        return f"{self.sucursal.nombre} | {self.motivo}"
+
+
 class OrdenTrabajo(models.Model):
     class Estado(models.TextChoices):
         RECEPCIONADO = 'RECEPCIONADO', 'Recepcionado'
@@ -203,4 +357,3 @@ class PlantillaCorrectiva(models.Model):
 
     def __str__(self):
         return self.nombre
-
