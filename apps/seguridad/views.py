@@ -388,13 +388,16 @@ class ModuloListView(APIView):
     def get(self, request):
         permisos_usuario = permisos_efectivos(request.user)
 
-        padres = Modulo.objects.filter(
-            estado=True, visible_menu=True, id_modulo_padre__isnull=True
-        ).prefetch_related("submodulos").order_by("orden")
+        # Una sola consulta con todo el menú; el árbol se arma en memoria.
+        todos = list(Modulo.objects.filter(estado=True, visible_menu=True).order_by("orden", "nombre", "id_modulo"))
+        hijos_por_padre = {}
+        for modulo in todos:
+            hijos_por_padre.setdefault(modulo.id_modulo_padre_id, []).append(modulo)
+        padres = hijos_por_padre.get(None, [])
 
         resultado = []
         for padre in padres:
-            hijos = list(padre.submodulos.filter(estado=True, visible_menu=True).order_by("orden"))
+            hijos = hijos_por_padre.get(padre.id_modulo, [])
             hijos_visibles = [
                 h for h in hijos
                 if not h.permiso_ver or h.permiso_ver in permisos_usuario
@@ -408,8 +411,9 @@ class ModuloListView(APIView):
                 # Módulo hoja de primer nivel (ej. Dashboard) con permiso propio no concedido.
                 continue
 
-            data = ModuloSerializer(padre).data
-            data["submodulos"] = ModuloSerializer(hijos_visibles, many=True).data
+            contexto = {"hijos_por_padre": hijos_por_padre}
+            data = ModuloSerializer(padre, context=contexto).data
+            data["submodulos"] = ModuloSerializer(hijos_visibles, many=True, context=contexto).data
             resultado.append(data)
 
         return Response({"success": True, "data": resultado})

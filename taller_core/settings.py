@@ -116,6 +116,10 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 25,  # Paginación por defecto: 25 registros — nunca .all() sin límite
     "EXCEPTION_HANDLER": "apps.seguridad.exceptions.custom_exception_handler",
+    "DEFAULT_THROTTLE_RATES": {
+        "qr_publico": "60/minute",
+        "placa_publica": "30/minute",
+    },
 }
 
 SIMPLE_JWT = {
@@ -198,7 +202,9 @@ LOGGING = {
     "loggers": {
         "apps.seguridad": {
             "handlers": ["console"],
-            "level": "DEBUG",
+            # INFO: en DEBUG cada verificación de permiso escribía a la consola
+            # en cada petición, lo que ralentiza el servidor en Windows.
+            "level": "INFO",
             "propagate": False,
         },
     },

@@ -246,6 +246,10 @@ class Venta(models.Model):
     creado_en = models.DateTimeField(default=timezone.now, db_index=True)
     fecha_emision = models.DateTimeField(null=True, blank=True, db_index=True)
     anulado_en = models.DateTimeField(null=True, blank=True)
+    anulado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='ventas_anuladas'
+    )
+    motivo_anulacion = models.TextField(blank=True, default='')
 
     monto_recibido = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     vuelto = models.DecimalField(max_digits=12, decimal_places=2, default=0)

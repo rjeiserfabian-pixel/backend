@@ -189,7 +189,14 @@ class ModuloSerializer(serializers.ModelSerializer):
         fields = ["id_modulo", "codigo", "nombre", "icono", "ruta", "orden", "visible_menu", "estado", "submodulos"]
 
     def get_submodulos(self, obj):
-        qs = obj.submodulos.filter(estado=True, visible_menu=True).order_by("orden")
+        # Si la vista ya cargó todos los módulos en una sola consulta, se arma
+        # el árbol en memoria (evita una consulta por cada módulo del menú).
+        hijos_por_padre = self.context.get("hijos_por_padre")
+        if hijos_por_padre is not None:
+            return ModuloSerializer(
+                hijos_por_padre.get(obj.id_modulo, []), many=True, context=self.context
+            ).data
+        qs = obj.submodulos.filter(estado=True, visible_menu=True).order_by("orden", "nombre", "id_modulo")
         return ModuloSerializer(qs, many=True).data
 
 

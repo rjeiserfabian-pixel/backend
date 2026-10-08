@@ -9,7 +9,7 @@ from apps.inventario.models import Repuesto, InventarioStock, MovimientoInventar
 from .models import (
     Venta, DetalleVenta, SerieComprobante, SesionCaja,
     MovimientoCaja, PagoVenta, CuentaPorCobrar, CuotaCredito, Impuesto,
-    MetodoPago
+    MetodoPago, PagoCuota
 )
 
 logger = logging.getLogger(__name__)
@@ -263,6 +263,139 @@ class VentasService:
                     pass
 
         return venta
+
+    @staticmethod
+    @transaction.atomic
+    def anular_venta_cobrada(venta_id: int, usuario, motivo: str) -> dict:
+        """
+        Anula una venta ya cobrada (PAGADA / AL_CREDITO) del POS revirtiendo su
+        impacto: devuelve el stock a las mismas ubicaciones de donde salió,
+        registra el egreso de caja por lo cobrado (en la sesión abierta del
+        usuario que anula) y elimina la cuenta por cobrar si era a crédito.
+
+        No se anula (ValueError con el motivo) cuando:
+          - el comprobante electrónico ya fue enviado a SUNAT y no tiene baja
+            aceptada (eso va por Baja / Nota de Crédito en Facturación);
+          - la venta viene de una Orden de Trabajo o de una Guía de Remisión
+            (su stock/estado se maneja en su propio módulo);
+          - el crédito ya tiene cuotas cobradas.
+        """
+        from apps.facturacion.models import ComprobanteElectronico
+
+        motivo = (motivo or '').strip()
+        if not motivo:
+            raise ValueError("Debe indicar el motivo de la anulación.")
+
+        venta = Venta.objects.select_for_update().get(pk=venta_id)
+        if venta.estado not in (Venta.Estado.PAGADA, Venta.Estado.AL_CREDITO):
+            raise ValueError("Solo se pueden anular ventas cobradas (pagadas o al crédito).")
+
+        if (venta.ticket_kiosko or '').startswith('OT-'):
+            raise ValueError(
+                "Esta venta proviene de una Orden de Trabajo. Corrige el cobro desde el módulo de Taller."
+            )
+        if getattr(venta, 'guia_remision_origen', None):
+            raise ValueError("Esta venta proviene de una Guía de Remisión y no se puede anular desde el POS.")
+
+        # 1. Comprobante electrónico: solo se puede anular si SUNAT nunca lo recibió
+        #    (pendiente sin intentos) o si su baja ya fue aceptada.
+        comprobantes_a_eliminar = []
+        for comp in ComprobanteElectronico.objects.select_for_update().filter(venta=venta):
+            nunca_enviado = (
+                comp.estado == ComprobanteElectronico.Estado.PENDIENTE_ENVIO
+                and comp.intentos == 0
+                and not comp.logs.exists()
+            )
+            if nunca_enviado:
+                comprobantes_a_eliminar.append(comp)
+            elif comp.estado != ComprobanteElectronico.Estado.BAJA_ACEPTADA:
+                raise ValueError(
+                    f"El comprobante electrónico {comp.serie}-{comp.numero} está en estado "
+                    f"'{comp.get_estado_display()}'. Primero debe darse de baja (dentro de 7 días) o "
+                    "corregirse con una Nota de Crédito desde Facturación."
+                )
+
+        # 2. Crédito: no se anula si ya hay cuotas cobradas.
+        cuenta = getattr(venta, 'cuenta_por_cobrar', None)
+        if cuenta and PagoCuota.objects.filter(cuota__cuenta_cobrar=cuenta).exists():
+            raise ValueError(
+                "Esta venta al crédito ya tiene cobros de cuotas registrados. Reviértelos antes de anularla."
+            )
+
+        # 3. Caja: egreso por cada pago cobrado, en la sesión abierta de quien anula.
+        pagos = list(venta.pagos.select_related('movimiento_caja__metodo_pago'))
+        devuelto_caja = Decimal('0.00')
+        if pagos:
+            sesion = SesionCaja.objects.select_related('caja').filter(
+                usuario=usuario, estado=SesionCaja.Estado.ABIERTA
+            ).first()
+            if not sesion:
+                raise ValueError("Necesitas una sesión de caja abierta para registrar la devolución del dinero.")
+            if sesion.caja.sucursal_id != venta.sucursal_id:
+                raise ValueError("Tu caja abierta pertenece a otra sucursal distinta a la de la venta.")
+            for pago in pagos:
+                original = pago.movimiento_caja
+                MovimientoCaja.objects.create(
+                    sesion=sesion,
+                    tipo=MovimientoCaja.Tipo.EGRESO,
+                    concepto=MovimientoCaja.Concepto.DEVOLUCION,
+                    metodo_pago=original.metodo_pago,
+                    monto=original.monto,
+                    referencia=f"Anulación {venta.serie_correlativo}",
+                    origen_movimiento=MovimientoCaja.OrigenMovimiento.AJUSTE_MANUAL,
+                    referencia_origen=f"ANUL-V{venta.id}",
+                    estado_movimiento=MovimientoCaja.EstadoMovimiento.APROBADO,
+                    observacion=f"Anulación de la venta {venta.serie_correlativo}: {motivo}",
+                    venta_origen=venta,
+                    creado_por=usuario,
+                )
+                devuelto_caja += original.monto
+
+        # 4. Stock: entrada compensatoria a la misma ubicación de cada salida.
+        stock_reingresado = 0
+        salidas = MovimientoInventario.objects.select_related('repuesto', 'ubicacion').filter(
+            referencia_tipo='VENTA', referencia_id=venta.id,
+            tipo_movimiento=MovimientoInventario.TipoMovimiento.SALIDA,
+        )
+        for salida in salidas:
+            cantidad = -salida.cantidad
+            stock, _ = InventarioStock.objects.select_for_update().get_or_create(
+                repuesto=salida.repuesto, ubicacion=salida.ubicacion,
+                defaults={'stock_disponible': Decimal('0.00')},
+            )
+            stock.stock_disponible += cantidad
+            stock.save(update_fields=['stock_disponible'])
+            MovimientoInventario.objects.create(
+                repuesto=salida.repuesto,
+                ubicacion=salida.ubicacion,
+                tipo_movimiento=MovimientoInventario.TipoMovimiento.ENTRADA,
+                cantidad=cantidad,
+                stock_resultante=stock.stock_disponible,
+                motivo=f"Anulación de venta {venta.serie_correlativo}",
+                usuario=usuario,
+                referencia_id=venta.id,
+                referencia_tipo='ANULACION_VENTA',
+            )
+            stock_reingresado += 1
+
+        # 5. Crédito pendiente y comprobante interno nunca enviado.
+        if cuenta:
+            cuenta.delete()
+        for comp in comprobantes_a_eliminar:
+            comp.delete()
+
+        venta.estado = Venta.Estado.ANULADA
+        venta.anulado_en = timezone.now()
+        venta.anulado_por = usuario
+        venta.motivo_anulacion = motivo
+        venta.save(update_fields=['estado', 'anulado_en', 'anulado_por', 'motivo_anulacion'])
+
+        logger.info("Venta %s (%s) anulada por %s. Motivo: %s", venta.id, venta.serie_correlativo, usuario, motivo)
+        return {
+            'stock_reingresado': stock_reingresado,
+            'devuelto_caja': str(devuelto_caja),
+            'credito_eliminado': bool(cuenta),
+        }
 
     @staticmethod
     def _descontar_stock(repuesto, almacen, cantidad, motivo, usuario=None, referencia_id=None):

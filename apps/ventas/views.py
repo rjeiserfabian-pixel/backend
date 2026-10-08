@@ -440,6 +440,10 @@ class VentaViewSet(viewsets.ModelViewSet):
     queryset = Venta.objects.all().order_by('-creado_en')
     serializer_class = VentaSerializer
     pagination_class = VentaPagination
+    # Las ventas no se editan ni se borran por la API genérica: borrar una venta
+    # dejaría huecos de correlativo y descuadres de caja/stock. Se cancelan
+    # con la acción `cancelar` (solo pre-ventas) y se anulan por el flujo propio.
+    http_method_names = ['get', 'post', 'head', 'options']
 
     def get_permissions(self):
         # Si la acción tiene permission_classes propios (ej. @action(permission_classes=[AllowAny])),
@@ -450,6 +454,10 @@ class VentaViewSet(viewsets.ModelViewSet):
             if action_perms is not None:
                 return [permission() for permission in action_perms]
 
+        if self.action == 'cancelar':
+            return [TienePermiso("VENTAS.POS.ANULAR")]
+        if self.action == 'anular':
+            return [TienePermiso("VENTAS.POS.ANULAR_VENTA")]
         if self.request.method == 'GET':
             return [TienePermiso("VENTAS.POS.VER")]
         return [TienePermiso("VENTAS.POS.CREAR")]
@@ -586,6 +594,55 @@ class VentaViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error procesando venta {pk}: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def cancelar(self, request, pk=None):
+        """
+        Cancela un pedido pendiente (Kiosko, Taller, Proforma, POS sin cobrar).
+        Solo aplica a PRE_VENTA: aún no tiene pago, caja, stock ni correlativo,
+        por lo que basta marcarla ANULADA. Las ventas ya cobradas requieren un
+        flujo de anulación con reversión y no se pueden cancelar desde aquí.
+        """
+        motivo = (request.data.get('motivo') or '').strip()
+        if not motivo:
+            return Response({"error": "Debe indicar el motivo de la cancelación."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Se bloquea la fila para no cancelar un ticket que otro cajero está cobrando.
+        self.get_object()  # 404 si no existe
+        venta = Venta.objects.select_for_update().get(pk=pk)
+
+        if venta.estado != Venta.Estado.PRE_VENTA:
+            return Response(
+                {"error": "Solo se pueden cancelar pedidos pendientes. Esta venta ya fue procesada o anulada."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        venta.estado = Venta.Estado.ANULADA
+        venta.anulado_en = timezone.now()
+        venta.anulado_por = request.user
+        venta.motivo_anulacion = motivo
+        venta.save(update_fields=['estado', 'anulado_en', 'anulado_por', 'motivo_anulacion'])
+        logger.info(
+            "Pedido %s (venta %s) cancelado por %s. Motivo: %s",
+            venta.ticket_kiosko, venta.id, request.user, motivo
+        )
+        return Response(VentaSerializer(venta).data)
+
+    @action(detail=True, methods=['post'])
+    def anular(self, request, pk=None):
+        """
+        Anula una venta ya cobrada (PAGADA / AL_CREDITO) revirtiendo stock, caja
+        y crédito. Ver VentasService.anular_venta_cobrada para las reglas.
+        """
+        venta = self.get_object()
+        try:
+            resumen = VentasService.anular_venta_cobrada(venta.id, request.user, request.data.get('motivo'))
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        venta.refresh_from_db()
+        return Response({**VentaSerializer(venta).data, 'resumen_anulacion': resumen})
 
     @action(detail=False, methods=['post'], url_path='directa')
     @transaction.atomic

@@ -7,6 +7,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from . import views
+from .acceso_publico import ConfiguracionAccesoPublicoView
 
 router = DefaultRouter()
 router.register(r'departamentos', views.DepartamentoViewSet, basename='departamentos')
@@ -40,4 +41,5 @@ urlpatterns = [
 
     # Empresa (Configuración Global)
     path("empresa/", views.EmpresaView.as_view(), name="seguridad-empresa"),
+    path("acceso-publico/", ConfiguracionAccesoPublicoView.as_view(), name="seguridad-acceso-publico"),
 ]

@@ -410,6 +410,14 @@ class UsuarioSucursal(models.Model):
         return f"{self.id_usuario.username} → {self.sucursal}"
 
 
+class ConfiguracionAccesoPublico(models.Model):
+    url_base = models.URLField(max_length=255, blank=True, default='')
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'configuracion_acceso_publico'
+
+
 class Empresa(models.Model):
     """
     Configuración global de la empresa.

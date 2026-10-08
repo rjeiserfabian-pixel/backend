@@ -170,13 +170,13 @@
                 </tr>
                 {% endfor %}
                 <tr class="subtotal-row">
-                    <td colspan="3" style="padding: 5px 7px; text-align: right; font-weight: bold; color: #0f172a; font-size: 9.5px;">Subtotal de la orden</td>
+                    <td colspan="3" style="padding: 5px 7px; text-align: right; font-weight: bold; color: #0f172a; font-size: 9.5px;">Total autorizado</td>
                     <td style="padding: 5px 7px; text-align: right; font-weight: bold; color: #0f172a; font-size: 9.5px;">S/ {{ o.total_general|floatformat:2 }}</td>
                 </tr>
             </tbody>
         </table>
         {% else %}
-        <div style="padding: 6px 10px; font-size: 9px; color: #64748b;">Sin servicios ni repuestos registrados en esta orden.</div>
+        <div style="padding: 6px 10px; font-size: 9px; color: #64748b;">Sin servicios ni repuestos aprobados en esta orden.</div>
         {% endif %}
     </div>
     {% empty %}

@@ -890,7 +890,7 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         # Filtrado por rol (Mecánico solo ve las suyas)
         user = self.request.user
         if hasattr(user, 'usuario_roles'):
-            is_mecanico = user.usuario_roles.filter(id_rol__codigo='MECANICO', estado=True).exists()
+            is_mecanico = user.usuario_roles.filter(id_rol__codigo='TÉCNICO_AUTOMOTRIZ', estado=True).exists()
             is_admin = user.usuario_roles.filter(id_rol__codigo='ADMINISTRADOR', estado=True).exists()
             
             if is_mecanico and not is_admin:

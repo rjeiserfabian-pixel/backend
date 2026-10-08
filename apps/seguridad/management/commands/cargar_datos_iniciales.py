@@ -4,7 +4,7 @@ management/commands/cargar_datos_iniciales.py
 Comando personalizado para poblar la base de datos con:
   - Todos los módulos del sistema (padre + submodulos para el menú)
   - Todos los permisos atomicos de cada módulo
-  - 4 Roles iniciales: ADMINISTRADOR, RECEPCIONISTA, MECANICO, CLIENTE
+  - Rol inicial: ADMINISTRADOR (los demás roles se crean desde el panel)
   - Asignación de todos los permisos al rol ADMINISTRADOR (alcance GLOBAL)
 
 Uso:
@@ -36,24 +36,6 @@ class Command(BaseCommand):
                 "nombre": "Administrador",
                 "descripcion": "Acceso total al sistema. Puede configurar roles, usuarios y permisos.",
                 "es_sistema": True,
-            },
-            {
-                "codigo": "RECEPCIONISTA",
-                "nombre": "Recepcionista",
-                "descripcion": "Gestión de citas, clientes y vehículos. Sin acceso a reportes financieros.",
-                "es_sistema": False,
-            },
-            {
-                "codigo": "MECANICO",
-                "nombre": "Mecánico",
-                "descripcion": "Acceso solo a las órdenes de trabajo asignadas.",
-                "es_sistema": False,
-            },
-            {
-                "codigo": "CLIENTE",
-                "nombre": "Cliente",
-                "descripcion": "Portal de cliente: visualiza sus propias órdenes y vehículos.",
-                "es_sistema": False,
             },
         ]
 
@@ -562,7 +544,9 @@ class Command(BaseCommand):
             # ── VENTAS ────────────────────────────────────────────────────────
             {"modulo": "VENTAS", "codigo": "VENTAS.POS.VER",              "nombre": "Acceder al POS",            "accion": "VER",    "grupo_padre": GP_VENTAS, "grupo_submodulo": "Punto de Venta (POS)"},
             {"modulo": "VENTAS", "codigo": "VENTAS.POS.CREAR",            "nombre": "Registrar venta en el POS", "accion": "CREAR",  "grupo_padre": GP_VENTAS, "grupo_submodulo": "Punto de Venta (POS)"},
-            {"modulo": "VENTAS", "codigo": "VENTAS.PROFORMAS.VER",         "nombre": "Ver proformas",            "accion": "VER",       "grupo_padre": GP_VENTAS, "grupo_submodulo": "Proformas"},
+            {"modulo": "VENTAS", "codigo": "VENTAS.POS.ANULAR",            "nombre": "Cancelar pedidos pendientes del POS", "accion": "ANULAR", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Punto de Venta (POS)"},
+            {"modulo": "VENTAS", "codigo": "VENTAS.POS.ANULAR_VENTA",      "nombre": "Anular ventas cobradas del POS", "accion": "ANULAR_VENTA", "grupo_padre": GP_VENTAS, "grupo_submodulo": "Punto de Venta (POS)"},
+            {"modulo": "VENTAS", "codigo": "VENTAS.PROFORMAS.VER",       "nombre": "Ver proformas",            "accion": "VER",       "grupo_padre": GP_VENTAS, "grupo_submodulo": "Proformas"},
             {"modulo": "VENTAS", "codigo": "VENTAS.PROFORMAS.CREAR",       "nombre": "Crear proformas",          "accion": "CREAR",     "grupo_padre": GP_VENTAS, "grupo_submodulo": "Proformas"},
             {"modulo": "VENTAS", "codigo": "VENTAS.PROFORMAS.EDITAR",      "nombre": "Editar proformas",         "accion": "EDITAR",    "grupo_padre": GP_VENTAS, "grupo_submodulo": "Proformas"},
             {"modulo": "VENTAS", "codigo": "VENTAS.PROFORMAS.ELIMINAR",    "nombre": "Eliminar proformas",       "accion": "ELIMINAR",  "grupo_padre": GP_VENTAS, "grupo_submodulo": "Proformas"},

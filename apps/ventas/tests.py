@@ -1,4 +1,4 @@
-from decimal import Decimal
+﻿from decimal import Decimal
 
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -117,3 +117,224 @@ class SesionCajaCierreIgnoraMovimientosPendientesTests(TestCase):
             'saldo_inicial': '999.00'
         }, format='json')
         self.assertEqual(resp.status_code, 405)
+
+
+class CancelarPedidoPendienteTests(TestCase):
+    """
+    Cancelar un pedido (Kiosko/Taller/POS) pendiente: solo PRE_VENTA, con motivo,
+    y sin posibilidad de borrar ventas por la API genérica.
+    """
+
+    def setUp(self):
+        from apps.clientes.models import Cliente
+        self.admin = Usuario.objects.create_superuser(
+            username='admin_cancelar_test', email='admin_cancelar_test@example.com',
+            nombres='Admin', apellidos='CancelarTest', password='x',
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+        self.sucursal = Sucursal.objects.create(nombre='Sucursal Cancelar Test')
+        self.cliente = Cliente.objects.create(dni='80000001', nombres='Cliente', apellidos='Cancelar')
+
+    def _venta(self, estado):
+        from apps.ventas.models import Venta
+        return Venta.objects.create(
+            cliente=self.cliente, sucursal=self.sucursal, estado=estado, ticket_kiosko='TK-CANC01'
+        )
+
+    def test_cancela_pre_venta_con_motivo(self):
+        from apps.ventas.models import Venta
+        venta = self._venta(Venta.Estado.PRE_VENTA)
+
+        resp = self.client.post(f'/api/ventas/transacciones/{venta.id}/cancelar/', {'motivo': 'Cliente desistió'}, format='json')
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        venta.refresh_from_db()
+        self.assertEqual(venta.estado, Venta.Estado.ANULADA)
+        self.assertIsNotNone(venta.anulado_en)
+
+    def test_exige_motivo(self):
+        from apps.ventas.models import Venta
+        venta = self._venta(Venta.Estado.PRE_VENTA)
+
+        resp = self.client.post(f'/api/ventas/transacciones/{venta.id}/cancelar/', {}, format='json')
+
+        self.assertEqual(resp.status_code, 400)
+        venta.refresh_from_db()
+        self.assertEqual(venta.estado, Venta.Estado.PRE_VENTA)
+
+    def test_no_cancela_venta_ya_pagada(self):
+        from apps.ventas.models import Venta
+        venta = self._venta(Venta.Estado.PAGADA)
+
+        resp = self.client.post(f'/api/ventas/transacciones/{venta.id}/cancelar/', {'motivo': 'x'}, format='json')
+
+        self.assertEqual(resp.status_code, 400)
+        venta.refresh_from_db()
+        self.assertEqual(venta.estado, Venta.Estado.PAGADA)
+
+    def test_no_se_puede_borrar_una_venta_por_la_api(self):
+        from apps.ventas.models import Venta
+        venta = self._venta(Venta.Estado.PAGADA)
+
+        resp = self.client.delete(f'/api/ventas/transacciones/{venta.id}/')
+
+        self.assertEqual(resp.status_code, 405)
+        self.assertTrue(Venta.objects.filter(id=venta.id).exists())
+
+
+class AnularVentaCobradaTests(TestCase):
+    """
+    Anulación de ventas ya cobradas: revierte stock (misma ubicación) y caja,
+    y se rechaza cuando el comprobante ya fue enviado a SUNAT, viene de una OT
+    o el crédito ya tiene cobros.
+    """
+
+    def setUp(self):
+        from apps.clientes.models import Cliente
+        from apps.inventario.models import (
+            Categoria, MarcaRepuesto, Repuesto, Almacen, UbicacionFisica, InventarioStock,
+        )
+        self.admin = Usuario.objects.create_superuser(
+            username='admin_anular_test', email='admin_anular_test@example.com',
+            nombres='Admin', apellidos='AnularTest', password='x',
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+        self.sucursal = Sucursal.objects.create(nombre='Sucursal Anular Test')
+        self.cliente = Cliente.objects.create(dni='80000002', nombres='Cliente', apellidos='Anular')
+        self.caja = Caja.objects.create(sucursal=self.sucursal, nombre='Caja Anular Test')
+        self.sesion = SesionCaja.objects.create(caja=self.caja, usuario=self.admin, saldo_inicial=Decimal('0.00'))
+        self.metodo = MetodoPago.objects.create(nombre='Efectivo Anular Test')
+
+        categoria = Categoria.objects.create(nombre='Cat Anular Test')
+        marca = MarcaRepuesto.objects.create(nombre='Marca Anular Test')
+        self.repuesto = Repuesto.objects.create(
+            codigo='REP-ANUL-TEST', nombre='Filtro Anular Test', categoria=categoria, marca=marca,
+            precio_compra=Decimal('5.00'), precio_por_mayor=Decimal('8.00'),
+            precio_cash=Decimal('9.00'), precio_lista=Decimal('10.00'),
+        )
+        almacen = Almacen.objects.create(sucursal=self.sucursal, nombre='Almacen Anular Test')
+        self.ubicacion = UbicacionFisica.objects.create(almacen=almacen, codigo='GENERAL')
+        self.stock = InventarioStock.objects.create(
+            repuesto=self.repuesto, ubicacion=self.ubicacion, stock_disponible=Decimal('10.00')
+        )
+
+    def _venta_cobrada(self, ticket='POS-ANUL01', estado=None):
+        """Crea una venta pagada con su detalle, pago en caja y salida de stock de 2 unidades."""
+        from apps.ventas.models import Venta, DetalleVenta, PagoVenta
+        from apps.inventario.models import MovimientoInventario
+        venta = Venta.objects.create(
+            cliente=self.cliente, sucursal=self.sucursal, sesion_caja=self.sesion,
+            estado=estado or Venta.Estado.PAGADA, ticket_kiosko=ticket,
+            serie_correlativo='B001-00000001', total=Decimal('20.00'),
+        )
+        DetalleVenta.objects.create(
+            venta=venta, repuesto=self.repuesto, cantidad=Decimal('2'),
+            precio_unitario=Decimal('10.00'), subtotal_linea=Decimal('20.00'),
+        )
+        mov = MovimientoCaja.objects.create(
+            sesion=self.sesion, tipo=MovimientoCaja.Tipo.INGRESO, concepto=MovimientoCaja.Concepto.VENTA,
+            metodo_pago=self.metodo, monto=Decimal('20.00'), venta_origen=venta, creado_por=self.admin,
+        )
+        PagoVenta.objects.create(venta=venta, movimiento_caja=mov, monto=Decimal('20.00'))
+        self.stock.stock_disponible -= Decimal('2.00')
+        self.stock.save()
+        MovimientoInventario.objects.create(
+            repuesto=self.repuesto, ubicacion=self.ubicacion,
+            tipo_movimiento=MovimientoInventario.TipoMovimiento.SALIDA, cantidad=Decimal('-2.00'),
+            stock_resultante=self.stock.stock_disponible, motivo='Venta test',
+            usuario=self.admin, referencia_id=venta.id, referencia_tipo='VENTA',
+        )
+        return venta
+
+    def _anular(self, venta, motivo='Registrada por error'):
+        return self.client.post(f'/api/ventas/transacciones/{venta.id}/anular/', {'motivo': motivo}, format='json')
+
+    def test_anula_revierte_stock_y_registra_egreso_en_caja(self):
+        from apps.ventas.models import Venta
+        venta = self._venta_cobrada()
+
+        resp = self._anular(venta)
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        venta.refresh_from_db()
+        self.stock.refresh_from_db()
+        self.assertEqual(venta.estado, Venta.Estado.ANULADA)
+        self.assertEqual(venta.motivo_anulacion, 'Registrada por error')
+        self.assertEqual(venta.anulado_por, self.admin)
+        self.assertEqual(self.stock.stock_disponible, Decimal('10.00'))
+        egreso = MovimientoCaja.objects.get(tipo=MovimientoCaja.Tipo.EGRESO, venta_origen=venta)
+        self.assertEqual(egreso.monto, Decimal('20.00'))
+        self.assertEqual(egreso.concepto, MovimientoCaja.Concepto.DEVOLUCION)
+
+    def test_exige_motivo(self):
+        venta = self._venta_cobrada()
+        resp = self.client.post(f'/api/ventas/transacciones/{venta.id}/anular/', {}, format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_no_se_anula_dos_veces(self):
+        venta = self._venta_cobrada()
+        self.assertEqual(self._anular(venta).status_code, 200)
+        self.assertEqual(self._anular(venta).status_code, 400)
+        self.stock.refresh_from_db()
+        self.assertEqual(self.stock.stock_disponible, Decimal('10.00'))
+
+    def test_requiere_caja_abierta(self):
+        venta = self._venta_cobrada()
+        self.sesion.estado = SesionCaja.Estado.CERRADA
+        self.sesion.save()
+
+        resp = self._anular(venta)
+
+        self.assertEqual(resp.status_code, 400)
+        self.stock.refresh_from_db()
+        self.assertEqual(self.stock.stock_disponible, Decimal('8.00'))
+
+    def test_rechaza_venta_de_orden_de_trabajo(self):
+        venta = self._venta_cobrada(ticket='OT-1-ABC123')
+        self.assertEqual(self._anular(venta).status_code, 400)
+
+    def test_rechaza_si_comprobante_ya_fue_enviado_a_sunat(self):
+        from apps.facturacion.models import ComprobanteElectronico
+        venta = self._venta_cobrada()
+        ComprobanteElectronico.objects.create(
+            tipo_documento='03', serie='B001', numero='00000001', sucursal=self.sucursal,
+            venta=venta, total=venta.total, estado=ComprobanteElectronico.Estado.ACEPTADO,
+            creado_por=self.admin,
+        )
+
+        resp = self._anular(venta)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('Nota de Crédito', resp.data['error'])
+        self.stock.refresh_from_db()
+        self.assertEqual(self.stock.stock_disponible, Decimal('8.00'))
+
+    def test_elimina_comprobante_pendiente_nunca_enviado(self):
+        from apps.facturacion.models import ComprobanteElectronico
+        venta = self._venta_cobrada()
+        ComprobanteElectronico.objects.create(
+            tipo_documento='03', serie='B001', numero='00000001', sucursal=self.sucursal,
+            venta=venta, total=venta.total, creado_por=self.admin,
+        )
+
+        resp = self._anular(venta)
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertFalse(ComprobanteElectronico.objects.filter(venta=venta).exists())
+
+    def test_venta_al_credito_elimina_cuenta_por_cobrar(self):
+        from apps.ventas.models import Venta, CuentaPorCobrar
+        venta = self._venta_cobrada(estado=Venta.Estado.AL_CREDITO)
+        venta.pagos.all().delete()
+        CuentaPorCobrar.objects.create(
+            venta=venta, codigo_credito='CR-ANUL-1', frecuencia_pago='MENSUAL',
+            monto_financiado=Decimal('20.00'), saldo_pendiente=Decimal('20.00'),
+        )
+
+        resp = self._anular(venta)
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertFalse(CuentaPorCobrar.objects.filter(venta=venta).exists())
+        self.assertFalse(MovimientoCaja.objects.filter(tipo=MovimientoCaja.Tipo.EGRESO).exists())

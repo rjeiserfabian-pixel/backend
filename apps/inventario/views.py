@@ -108,7 +108,7 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     queryset = (
         Repuesto.objects
         .filter(estado=True)
-        .select_related('categoria', 'marca')
+        .select_related('categoria', 'marca', 'unidad_medida')
         .prefetch_related(
             'aplicaciones',
             # Prefetch del inventario con sus relaciones anidadas para el detalle
@@ -580,7 +580,7 @@ class InventarioStockViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_editar = "INVENTARIO.STOCK_UBICACIONES.EDITAR"
     queryset = (
         InventarioStock.objects
-        .select_related('repuesto', 'ubicacion__almacen__sucursal')
+        .select_related('repuesto__unidad_medida', 'ubicacion__almacen__sucursal')
         .order_by('repuesto__codigo')
     )
     serializer_class = InventarioStockSerializer

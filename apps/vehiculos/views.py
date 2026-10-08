@@ -1,25 +1,131 @@
 from decimal import Decimal
+from django.db import transaction
+from django.utils import timezone
+from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import filters
 from rest_framework.permissions import AllowAny
-from .models import Vehiculo
-from .serializers import VehiculoSerializer
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
+from rest_framework.pagination import PageNumberPagination
+from .models import Vehiculo, VehiculoQR
+from .serializers import VehiculoSerializer, VehiculoQRSerializer, MantenimientoVehiculoSerializer
+from .mantenimientos import proximos_mantenimientos
 from .services import ConsultaVehicularService
-from apps.seguridad.permissions import PermisoPorMetodoMixin
+from apps.seguridad.permissions import PermisoPorMetodoMixin, TienePermiso
 from apps.clientes.models import Cliente
 import logging
 
 logger = logging.getLogger(__name__)
 
 
+def _serializar_orden_qr(orden):
+    servicios = [item for item in orden.servicios.all() if item.aprobado_cliente]
+    repuestos = [item for item in orden.repuestos.all() if item.aprobado_cliente]
+    total = len(servicios) + len(repuestos)
+    terminados = sum(item.completado for item in servicios) + sum(item.instalado for item in repuestos)
+    return {
+        'numero': orden.numero,
+        'estado': orden.estado,
+        'estado_display': orden.get_estado_display(),
+        'atencion_activa': orden.estado not in ('FINALIZADO', 'FACTURADO', 'CANCELADO'),
+        'trabajos_totales': total,
+        'trabajos_terminados': terminados,
+        'progreso': round(terminados * 100 / total) if total else None,
+        'fecha_ingreso': orden.fecha_ingreso,
+        'fecha_estimada_entrega': orden.fecha_estimada_entrega,
+        'fecha_finalizacion': orden.fecha_finalizacion,
+        'kilometraje_ingreso': orden.kilometraje_ingreso,
+        'servicios': [
+            {'descripcion': item.descripcion, 'completado': item.completado}
+            for item in servicios
+        ],
+        'repuestos': [
+            {'descripcion': item.repuesto.nombre, 'cantidad': item.cantidad, 'instalado': item.instalado}
+            for item in repuestos
+        ],
+        'historial': [
+            {'estado': item.estado, 'estado_display': item.get_estado_display(), 'fecha': item.fecha_registro}
+            for item in orden.historial_estados.all()
+        ],
+    }
+
+
+class HistorialQRPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 25
+
+
+class ConsultaVehiculoQRPublicaView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'qr_publico'
+
+    def get(self, request, token):
+        codigo_qr = (
+            VehiculoQR.objects
+            .select_related('vehiculo')
+            .filter(token_publico=token, activo=True, vehiculo__estado=True)
+            .first()
+        )
+        if not codigo_qr:
+            return Response(
+                {'error': 'El codigo QR no es valido o ya fue desactivado.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        vehiculo = codigo_qr.vehiculo
+        ordenes = (
+            vehiculo.ordenes_trabajo
+            .prefetch_related(
+                'servicios',
+                'repuestos__repuesto',
+                'historial_estados',
+            )
+            .order_by('-fecha_ingreso', '-id')
+        )
+        orden = ordenes.exclude(estado__in=['FINALIZADO', 'FACTURADO', 'CANCELADO']).first()
+        if not orden:
+            orden = ordenes.exclude(estado='CANCELADO').first()
+        paginator = HistorialQRPagination()
+        pagina = paginator.paginate_queryset(ordenes, request, view=self)
+
+        respuesta = {
+            'vehiculo': {
+                'placa': vehiculo.placa,
+                'marca': vehiculo.marca,
+                'modelo': vehiculo.modelo,
+                'anio_fabricacion': vehiculo.anio_fabricacion,
+                'color': vehiculo.color,
+                'kilometraje_actual': vehiculo.kilometraje_actual,
+            },
+            'codigo_corto': codigo_qr.codigo_corto,
+            'has_order': bool(orden),
+            'orden': None,
+            'mantenimientos': proximos_mantenimientos(vehiculo),
+            'historial_ingresos': {
+                'count': paginator.page.paginator.count,
+                'page': paginator.page.number,
+                'total_pages': paginator.page.paginator.num_pages,
+                'results': [_serializar_orden_qr(item) for item in pagina],
+            },
+        }
+        if not orden:
+            return Response(respuesta)
+
+        respuesta['orden'] = _serializar_orden_qr(orden)
+        return Response(respuesta)
+
+
 def _serializar_orden_historial(orden):
     """Una orden de trabajo (un ingreso al taller) con sus servicios y
     repuestos, en el formato que usa tanto la pantalla de historial como el
     PDF de la ficha del vehículo."""
-    servicios = list(orden.servicios.all())
-    repuestos = list(orden.repuestos.all())
+    servicios = [item for item in orden.servicios.all() if item.aprobado_cliente]
+    repuestos = [item for item in orden.repuestos.all() if item.aprobado_cliente]
     total_servicios = sum((s.precio_estimado for s in servicios), Decimal('0'))
     total_repuestos = sum((r.total for r in repuestos), Decimal('0'))
     return {
@@ -63,6 +169,64 @@ class VehiculoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter]
     search_fields = ['placa', 'marca', 'modelo']
 
+    def get_permissions(self):
+        if getattr(self, 'action', None) in ('mantenimientos', 'mantenimiento_detalle'):
+            return [TienePermiso(self.permiso_ver if self.request.method == 'GET' else self.permiso_editar)]
+        permisos_qr = {
+            'qr': self.permiso_ver,
+            'qr_generar': self.permiso_editar,
+            'qr_regenerar': self.permiso_editar,
+            'qr_desactivar': self.permiso_editar,
+        }
+        codigo = permisos_qr.get(getattr(self, 'action', None))
+        if codigo:
+            return [TienePermiso(codigo)]
+        return super().get_permissions()
+
+    @action(detail=True, methods=['get', 'post'], url_path='mantenimientos')
+    def mantenimientos(self, request, pk=None):
+        vehiculo = self.get_object()
+        if request.method == 'POST':
+            serializer = MantenimientoVehiculoSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            serializer.save(vehiculo=vehiculo, creado_por=request.user)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        registros = vehiculo.mantenimientos.filter(activo=True)
+        pagina = self.paginate_queryset(registros)
+        historial = self.get_paginated_response(MantenimientoVehiculoSerializer(pagina, many=True).data).data
+        return Response({
+            'vehiculo': {'placa': vehiculo.placa, 'kilometraje_actual': vehiculo.kilometraje_actual},
+            'proximos': proximos_mantenimientos(vehiculo),
+            'historial': historial,
+        })
+
+    @action(detail=True, methods=['patch', 'delete'], url_path=r'mantenimientos/(?P<registro_id>[^/.]+)')
+    def mantenimiento_detalle(self, request, pk=None, registro_id=None):
+        vehiculo = self.get_object()
+        registro = get_object_or_404(vehiculo.mantenimientos, pk=registro_id, activo=True)
+        if request.method == 'DELETE':
+            registro.activo = False
+            registro.save(update_fields=['activo'])
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        serializer = MantenimientoVehiculoSerializer(registro, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @staticmethod
+    def _respuesta_qr(vehiculo, codigo_qr):
+        from apps.seguridad.acceso_publico import obtener_url_publica
+        return {
+            'url_base_publica': obtener_url_publica(),
+            'vehiculo': {
+                'id': vehiculo.id,
+                'placa': vehiculo.placa,
+                'marca': vehiculo.marca,
+                'modelo': vehiculo.modelo,
+            },
+            'qr': VehiculoQRSerializer(codigo_qr).data if codigo_qr else None,
+        }
+
     def get_queryset(self):
         # Reglas de Python Seguro: prefetch_related para relación M:N para evitar N+1
         return Vehiculo.objects.filter(estado=True).prefetch_related('clientes').order_by('-id')
@@ -71,6 +235,71 @@ class VehiculoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
         # Soft delete
         instance.estado = False
         instance.save()
+
+    @action(detail=True, methods=['get'], url_path='qr')
+    def qr(self, request, pk=None):
+        vehiculo = self.get_object()
+        codigo_qr = vehiculo.codigos_qr.filter(activo=True).first()
+        return Response(self._respuesta_qr(vehiculo, codigo_qr))
+
+    @action(detail=True, methods=['post'], url_path='qr/generar')
+    def qr_generar(self, request, pk=None):
+        vehiculo = self.get_object()
+        with transaction.atomic():
+            Vehiculo.objects.select_for_update().get(pk=vehiculo.pk)
+            codigo_qr = VehiculoQR.objects.filter(vehiculo=vehiculo, activo=True).first()
+            creado = codigo_qr is None
+            if creado:
+                codigo_qr = VehiculoQR.objects.create(
+                    vehiculo=vehiculo,
+                    creado_por=request.user,
+                )
+        return Response(
+            self._respuesta_qr(vehiculo, codigo_qr),
+            status=status.HTTP_201_CREATED if creado else status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=['post'], url_path='qr/regenerar')
+    def qr_regenerar(self, request, pk=None):
+        vehiculo = self.get_object()
+        with transaction.atomic():
+            Vehiculo.objects.select_for_update().get(pk=vehiculo.pk)
+            codigos_activos = VehiculoQR.objects.select_for_update().filter(
+                vehiculo=vehiculo,
+                activo=True,
+            )
+            codigos_activos.update(
+                activo=False,
+                fecha_revocacion=timezone.now(),
+                revocado_por=request.user,
+            )
+            codigo_qr = VehiculoQR.objects.create(
+                vehiculo=vehiculo,
+                creado_por=request.user,
+            )
+        return Response(self._respuesta_qr(vehiculo, codigo_qr), status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='qr/desactivar')
+    def qr_desactivar(self, request, pk=None):
+        vehiculo = self.get_object()
+        with transaction.atomic():
+            Vehiculo.objects.select_for_update().get(pk=vehiculo.pk)
+            codigo_qr = VehiculoQR.objects.select_for_update().filter(
+                vehiculo=vehiculo,
+                activo=True,
+            ).first()
+            if not codigo_qr:
+                return Response(
+                    {'error': 'El vehiculo no tiene un codigo QR activo.'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            codigo_qr.activo = False
+            codigo_qr.fecha_revocacion = timezone.now()
+            codigo_qr.revocado_por = request.user
+            codigo_qr.save(update_fields=[
+                'activo', 'fecha_revocacion', 'revocado_por', 'fecha_actualizacion',
+            ])
+        return Response(self._respuesta_qr(vehiculo, codigo_qr))
 
     @action(
         detail=False, methods=['get'],
