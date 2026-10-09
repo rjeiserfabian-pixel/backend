@@ -30,6 +30,7 @@ from .serializers import (
     MetodoPagoSerializer
 )
 from apps.seguridad.permissions import TienePermiso, PermisoPorMetodoMixin
+from apps.seguridad.auditoria import registrar
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +289,10 @@ class SesionCajaViewSet(viewsets.ReadOnlyModelViewSet):
                     f"diferencia={diferencia} por {request.user}"
                 )
 
+            registrar(request, 'CAJAS', 'CIERRE_CAJA', 'sesion_caja', sesion.id,
+                      {'saldo_esperado': saldo_teorico},
+                      {'saldo_contado': saldo_contado, 'diferencia': diferencia,
+                       'motivo_diferencia': motivo_diferencia or None})
             return Response(SesionCajaResumenSerializer(sesion).data)
         except Exception as e:
             logger.error(f"[Cajas] Error al cerrar sesión {pk}: {str(e)}", exc_info=True)

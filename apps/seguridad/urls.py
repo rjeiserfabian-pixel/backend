@@ -8,6 +8,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from . import views
 from .acceso_publico import ConfiguracionAccesoPublicoView
+from .auditoria_views import AuditoriaViewSet
 
 router = DefaultRouter()
 router.register(r'departamentos', views.DepartamentoViewSet, basename='departamentos')
@@ -15,6 +16,7 @@ router.register(r'provincias', views.ProvinciaViewSet, basename='provincias')
 router.register(r'distritos', views.DistritoViewSet, basename='distritos')
 router.register(r'tipos-cuenta-bancaria', views.TipoCuentaBancariaViewSet, basename='tipos_cuenta_bancaria')
 router.register(r'cuentas-bancarias', views.CuentaBancariaViewSet, basename='cuentas_bancarias')
+router.register(r'auditoria', AuditoriaViewSet, basename='auditoria')
 
 urlpatterns = [
     path("", include(router.urls)),

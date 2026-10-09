@@ -17,9 +17,11 @@ Uso en vistas DRF:
     permission_classes = [TienePermiso("ORDENES.APROBAR")]
 """
 import logging
+from django.core.cache import cache
 from django.utils import timezone
 from rest_framework.permissions import BasePermission
 
+from . import cache_utils
 from .models import UsuarioPermiso, UsuarioRol, RolPermiso
 
 logger = logging.getLogger(__name__)
@@ -184,6 +186,22 @@ class TienePermiso(BasePermission):
 
 
 def permisos_efectivos(usuario):
+    """
+    Permisos vigentes del usuario, con caché corto (ver cache_utils.py). Se usa para el menú y la
+    lista de permisos del frontend; la autorización de cada petición (TienePermiso) consulta la base.
+    """
+    if not usuario or not usuario.is_authenticated:
+        return set()
+    clave_cache = cache_utils.clave('permisos', usuario.pk)
+    guardado = cache.get(clave_cache)
+    if guardado is not None:
+        return set(guardado)
+    codigos = _calcular_permisos_efectivos(usuario)
+    cache.set(clave_cache, frozenset(codigos), cache_utils.TTL_SEGUNDOS)
+    return codigos
+
+
+def _calcular_permisos_efectivos(usuario):
     """
     Calcula en bloque el conjunto de códigos de permiso vigentes para un usuario,
     aplicando la misma regla de conflicto que TienePermiso (DENY explícito > ALLOW

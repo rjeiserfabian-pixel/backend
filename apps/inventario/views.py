@@ -16,6 +16,7 @@ from .serializers import (
     GuiaRemisionSerializer
 )
 from apps.seguridad.permissions import TienePermiso, PermisoPorMetodoMixin, TieneAlgunPermiso
+from apps.seguridad.auditoria import registrar, diferencias
 from rest_framework import filters, pagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
@@ -186,7 +187,14 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
 
     @transaction.atomic
     def perform_update(self, serializer):
-        serializer.save()
+        # Los cambios de precio son sensibles: se audita el valor antes y después.
+        campos = ('precio_compra', 'precio_por_mayor', 'precio_cash', 'precio_lista')
+        antes = {c: getattr(serializer.instance, c) for c in campos}
+        instancia = serializer.save()
+        cambios_antes, cambios_despues = diferencias(antes, {c: getattr(instancia, c) for c in campos})
+        if cambios_despues:
+            registrar(self.request, 'INVENTARIO', 'CAMBIO_PRECIO', 'repuesto', instancia.pk,
+                      {'codigo': instancia.codigo, **cambios_antes}, {'codigo': instancia.codigo, **cambios_despues})
 
     def perform_destroy(self, instance):
         instance.estado = False
@@ -650,6 +658,12 @@ class InventarioStockViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
             logger.info(
                 f"Ajuste de stock: {instance.repuesto.codigo} | {diferencia:+} unidades "
                 f"→ {stock_despues} | Ubicación: {instance.ubicacion.codigo} | Usuario: {self.request.user}"
+            )
+            registrar(
+                self.request, 'INVENTARIO', 'AJUSTE_STOCK', 'inventario_stock', instance.pk,
+                {'repuesto': instance.repuesto.codigo, 'ubicacion': instance.ubicacion.codigo, 'stock_disponible': stock_antes},
+                {'repuesto': instance.repuesto.codigo, 'ubicacion': instance.ubicacion.codigo, 'stock_disponible': stock_despues,
+                 'motivo': self.request.data.get('motivo', 'Ajuste manual desde el sistema')},
             )
 
 

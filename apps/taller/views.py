@@ -878,7 +878,7 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         # Evitar N+1 en las consultas, usando select_related para FK y prefetch para M:N
         queryset = OrdenTrabajo.objects.select_related(
-            'vehiculo', 'recepcionista', 'mecanico_asignado'
+            'vehiculo', 'recepcionista', 'mecanico_asignado', 'cliente'
         ).prefetch_related('vehiculo__clientes')
         
         if self.action == 'retrieve':

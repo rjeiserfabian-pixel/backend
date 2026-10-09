@@ -104,6 +104,11 @@ class Command(BaseCommand):
                 "orden": 1, "visible_menu": True, "padre": "SEGURIDAD", "permiso_ver": "USUARIOS.VER_MENU",
             },
             {
+                "codigo": "AUDITORIA", "nombre": "Auditoría",
+                "icono": "history", "ruta": "/seguridad/auditoria",
+                "orden": 20, "visible_menu": True, "padre": "SEGURIDAD", "permiso_ver": "AUDITORIA.VER_MENU",
+            },
+            {
                 "codigo": "ROLES", "nombre": "Roles y Permisos",
                 "icono": "settings", "ruta": "/roles",
                 "orden": 2, "visible_menu": True, "padre": "SEGURIDAD", "permiso_ver": "ROLES.VER_MENU",
@@ -525,7 +530,9 @@ class Command(BaseCommand):
             {"modulo": "SEGURIDAD", "codigo": "SEGURIDAD.USUARIOS.ELIMINAR", "nombre": "Eliminar usuarios",        "accion": "ELIMINAR","grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Usuarios"},
             {"modulo": "SEGURIDAD", "codigo": "SEGURIDAD.ROLES.VER",         "nombre": "Ver roles",                "accion": "VER",     "grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Roles y Permisos"},
             {"modulo": "SEGURIDAD", "codigo": "SEGURIDAD.ROLES.CREAR",       "nombre": "Crear roles",              "accion": "CREAR",   "grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Roles y Permisos"},
-            {"modulo": "SEGURIDAD", "codigo": "SEGURIDAD.ROLES.EDITAR",      "nombre": "Editar roles y permisos",  "accion": "EDITAR",  "grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Roles y Permisos"},
+            {"modulo": "SEGURIDAD", "codigo": "SEGURIDAD.AUDITORIA.VER",     "nombre": "Ver auditoría del sistema",   "accion": "VER",      "grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Auditoría"},
+            {"modulo": "SEGURIDAD", "codigo": "AUDITORIA.VER_MENU",           "nombre": "Mostrar \"Auditoría\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Auditoría"},
+            {"modulo": "SEGURIDAD", "codigo": "SEGURIDAD.ROLES.EDITAR",     "nombre": "Editar roles y permisos",  "accion": "EDITAR",  "grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Roles y Permisos"},
             {"modulo": "SEGURIDAD", "codigo": "SEGURIDAD.ROLES.ELIMINAR",    "nombre": "Eliminar roles",           "accion": "ELIMINAR","grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Roles y Permisos"},
             {"modulo": "SEGURIDAD", "codigo": "SEGURIDAD.PERMISOS.VER",      "nombre": "Ver catálogo de permisos", "accion": "VER",     "grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Catálogo de Permisos"},
             {"modulo": "SEGURIDAD", "codigo": "SEGURIDAD.MODULOS.VER",       "nombre": "Ver módulos del sistema",  "accion": "VER",     "grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Módulos del Sistema"},

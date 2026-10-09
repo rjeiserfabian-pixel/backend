@@ -30,6 +30,7 @@ from apps.inventario.models import Sucursal, Almacen, Repuesto
 from apps.clientes.models import Cliente
 from apps.vehiculos.models import Vehiculo
 from apps.seguridad.permissions import TienePermiso, PermisoPorMetodoMixin
+from apps.seguridad.auditoria import registrar
 from apps.seguridad.models import CuentaBancaria
 from apps.seguridad.pdf_utils import contexto_empresa_pdf
 
@@ -211,6 +212,10 @@ class SesionCajaViewSet(viewsets.ReadOnlyModelViewSet):
         sesion.fecha_cierre = timezone.now()
         sesion.save()
 
+        registrar(request, 'CAJAS', 'CIERRE_CAJA', 'sesion_caja', sesion.id,
+                  {'saldo_esperado': saldo_esperado},
+                  {'saldo_contado': saldo_fisico_declarado, 'diferencia': diferencia,
+                   'motivo_diferencia': motivo_diferencia or None})
         return Response(SesionCajaSerializer(sesion).data)
 
     @action(detail=True, methods=['get'], url_path='reporte-cierre')
@@ -496,6 +501,12 @@ class VentaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().select_related('cliente', 'vehiculo').prefetch_related('pagos__movimiento_caja')
+        if self.action in ('list', 'retrieve'):
+            # Todo lo que VentaSerializer muestra por venta se carga de una vez; antes se hacía
+            # una consulta extra por cada venta (con 100 ventas por página, más de 1000 consultas).
+            qs = qs.select_related(
+                'tipo_comprobante', 'sesion_caja__usuario', 'sesion_caja__caja', 'kiosko', 'guia_remision_origen',
+            ).prefetch_related('detalles__repuesto__unidad_medida', 'pagos__movimiento_caja__metodo_pago')
         estado = self.request.query_params.get('estado')
         if estado == 'PENDIENTE':
             qs = qs.filter(estado=Venta.Estado.PRE_VENTA)
@@ -583,6 +594,9 @@ class VentaViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def procesar(self, request, pk=None):
+        # CAMINO ANTIGUO: ninguna pantalla lo usa. El POS y el Registro Manual cobran con
+        # `directa` (VentasService.cobrar_venta_directa). Se conserva por compatibilidad hasta
+        # decidir su retiro; no agregar reglas de cobro nuevas aquí.
         venta = self.get_object()
         serializer = ProcesarVentaSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -659,6 +673,9 @@ class VentaViewSet(viewsets.ModelViewSet):
             "Pedido %s (venta %s) cancelado por %s. Motivo: %s",
             venta.ticket_kiosko, venta.id, request.user, motivo
         )
+        registrar(request, 'VENTAS', 'PEDIDO_CANCELADO', 'venta', venta.id,
+                  {'estado': 'PRE_VENTA', 'referencia': venta.ticket_kiosko},
+                  {'estado': 'ANULADA', 'motivo': motivo, 'total': venta.total})
         return Response(VentaSerializer(venta).data)
 
     @action(detail=True, methods=['post'])
@@ -674,243 +691,23 @@ class VentaViewSet(viewsets.ModelViewSet):
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         venta.refresh_from_db()
+        registrar(request, 'VENTAS', 'VENTA_ANULADA', 'venta', venta.id,
+                  {'estado': 'PAGADA/AL_CREDITO', 'comprobante': venta.serie_correlativo, 'total': venta.total},
+                  {'estado': 'ANULADA', 'motivo': venta.motivo_anulacion, **resumen})
         return Response({**VentaSerializer(venta).data, 'resumen_anulacion': resumen})
 
     @action(detail=False, methods=['post'], url_path='directa')
     @transaction.atomic
     def procesar_venta_directa(self, request):
+        # Cobro del POS y del Registro Manual. La lógica vive en VentasService.cobrar_venta_directa;
+        # ante cualquier error se revierte TODO y se devuelve el motivo.
         try:
-            # Para POS y Registro Manual
-            data = request.data
-            es_registro_manual = data.get('es_registro_manual', False)
-            fecha_manual = data.get('fecha_manual')
-            
-            cliente = Cliente.objects.get(id=data['cliente_id'])
-            sucursal = Sucursal.objects.get(id=data['sucursal_id'])
-            
-            # 1. Crear Venta
-            from django.utils import timezone
-            import uuid
-            
-            fecha_venta = timezone.now()
-            if es_registro_manual and fecha_manual:
-                from django.utils.dateparse import parse_datetime
-                parsed_date = parse_datetime(fecha_manual)
-                if parsed_date:
-                    fecha_venta = parsed_date
-
-            moneda = data.get('moneda', 'PEN')
-            tipo_cambio = data.get('tipo_cambio')
-            if not tipo_cambio or tipo_cambio == '':
-                tipo_cambio = 1.0000
-            monto_recibido = data.get('monto_recibido', 0.00)
-            vuelto = data.get('vuelto', 0.00)
-            
-            venta_id = data.get('venta_id')
-            if venta_id:
-                venta = Venta.objects.get(id=venta_id)
-                # IMPORTANTE: No borramos ni recreamos los detalles porque
-                # pueden contener descripciones de servicios del Taller o Kiosko
-                # que son de solo lectura en el POS.
-                # La sucursal de una venta ya existente (Kiosko/OT) NO se reasigna
-                # aquí: quedó fijada en su creación. Antes esta línea la
-                # sobreescribía con la sucursal activa del cajero, así que un
-                # ticket generado en la sucursal A podía terminar cobrado y
-                # descontando stock en la sucursal B solo porque el cajero tenía
-                # otra sucursal seleccionada en su pantalla (bug real detectado).
-                if venta.sucursal_id != sucursal.id:
-                    transaction.set_rollback(True)
-                    return Response({
-                        'error': f"Este ticket pertenece a la sucursal '{venta.sucursal.nombre}'. "
-                                 f"Cambia tu sucursal activa a esa para poder cobrarlo."
-                    }, status=status.HTTP_400_BAD_REQUEST)
-                venta.cliente = cliente
-                venta.moneda = moneda
-                venta.tipo_cambio = tipo_cambio
-                venta.monto_recibido = monto_recibido
-                venta.vuelto = vuelto
-                venta.creado_en = fecha_venta
-                venta.save()
-            else:
-                venta = Venta.objects.create(
-                    cliente=cliente,
-                    sucursal=sucursal,
-                    estado=Venta.Estado.PRE_VENTA,
-                    ticket_kiosko=f"POS-{str(uuid.uuid4())[:6].upper()}",
-                    creado_en=fecha_venta,
-                    moneda=moneda,
-                    tipo_cambio=tipo_cambio,
-                    monto_recibido=monto_recibido,
-                    vuelto=vuelto
-                )
-            # Detalles (Solo para Venta Directa nueva)
-            if not venta_id:
-                subtotal_acumulado = Decimal('0.00')
-                for item in data.get('detalles', []):
-                    repuesto = Repuesto.objects.get(id=item['repuesto_id'])
-                    cantidad = Decimal(str(item['cantidad']))
-                    precio = Decimal(str(item['precio_venta']))
-                    sub = cantidad * precio
-                    subtotal_acumulado += sub
-                    DetalleVenta.objects.create(
-                        venta=venta, repuesto=repuesto, cantidad=cantidad,
-                        precio_unitario=precio, costo_unitario=repuesto.precio_compra, subtotal_linea=sub
-                    )
-                    
-                venta.total = subtotal_acumulado
-                venta.subtotal, venta.igv = VentasService.descomponer_total_con_impuesto(venta.total)
-                venta.save()
-
-            # 2. Procesar (Caja, Stock, etc)
-            tipo_comprobante = TipoComprobante.objects.get(id=data['tipo_comprobante_id'])
-            
-            # Correlativo — select_for_update() evita que dos ventas concurrentes
-            # lean el mismo correlativo_actual y generen números duplicados.
-            serie_obj = SerieComprobante.objects.select_for_update().filter(id=data['serie_id']).first()
-            correlativo = serie_obj.generar_siguiente_correlativo()
-            serie_obj.correlativo_actual += 1
-            serie_obj.save()
-            
-            venta.estado = Venta.Estado.AL_CREDITO if data.get('condicion_pago') == 'CREDITO' else Venta.Estado.PAGADA
-            venta.tipo_comprobante = tipo_comprobante
-            venta.serie_correlativo = correlativo
-            venta.fecha_emision = fecha_venta
-            
-            # Movimientos de Caja (saltar si es registro manual)
-            sesion = None
-            if not es_registro_manual:
-                # La sesión se determina por el usuario autenticado (no por un ID
-                # enviado desde el cliente): evita depender de un caché de frontend
-                # desincronizado y evita que un cliente pueda enviar el ID de una
-                # sesión ajena.
-                sesion = SesionCaja.objects.filter(usuario=request.user, estado=SesionCaja.Estado.ABIERTA).first()
-                if not sesion:
-                    transaction.set_rollback(True)
-                    return Response({"error": "Sesión de caja abierta requerida para venta normal."}, status=status.HTTP_400_BAD_REQUEST)
-                venta.sesion_caja = sesion
-
-            pagos_caja = []
-            if not es_registro_manual and sesion and data.get('pagos') and venta.estado != Venta.Estado.AL_CREDITO:
-                try:
-                    pagos_caja, monto_recibido_calculado, vuelto_calculado = VentasService.preparar_pagos_para_caja(
-                        data['pagos'],
-                        venta.total
-                    )
-                except ValueError as exc:
-                    transaction.set_rollback(True)
-                    return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-
-                if vuelto_calculado > 0:
-                    venta.monto_recibido = monto_recibido_calculado
-                    venta.vuelto = vuelto_calculado
-
-            venta.save()
-            
-            # Registrar pagos (ignorar si es venta al crédito, ya que los pagos se harán por cuotas)
-            for p in pagos_caja:
-                movimiento = MovimientoCaja.objects.create(
-                    sesion=sesion,
-                    tipo=MovimientoCaja.Tipo.INGRESO,
-                    concepto=MovimientoCaja.Concepto.VENTA,
-                    metodo_pago=p['metodo_pago'],
-                    monto=p['monto_caja'],
-                    referencia=p['referencia'],
-                    origen_movimiento=MovimientoCaja.OrigenMovimiento.VENTA,
-                    venta_origen=venta,
-                    creado_por=request.user
-                )
-                PagoVenta.objects.create(
-                    venta=venta,
-                    movimiento_caja=movimiento,
-                    monto=p['monto_caja']
-                )
-            
-            # 2. Procesar (Stock, etc)
-            almacen_origen = None
-            almacen_origen_id = data.get('almacen_origen_id')
-            
-            if almacen_origen_id:
-                almacen_origen = Almacen.objects.filter(id=almacen_origen_id, sucursal=sucursal).first()
-            
-            if not almacen_origen:
-                if sesion and sesion.caja.almacen_defecto and sesion.caja.almacen_defecto.sucursal_id == sucursal.id:
-                    almacen_origen = sesion.caja.almacen_defecto
-                else:
-                    almacen_origen = sucursal.almacenes.first()
-                    
-            if not almacen_origen:
-                transaction.set_rollback(True)
-                return Response({"error": "La sucursal no tiene almacenes configurados."}, status=status.HTTP_400_BAD_REQUEST)
-
-            # 3. Descontar stock (solo para repuestos físicos, no servicios)
-            # Si la venta viene de una Orden de Trabajo, sus repuestos ya salieron
-            # del inventario al aprobarlos (RESERVA) e instalarlos (SALIDA) en el
-            # taller — descontar de nuevo aquí duplicaba/triplicaba la salida del
-            # mismo repuesto físico (bug real detectado: Reserva + Instalación +
-            # Venta restaban 3 veces la misma unidad).
-            es_de_orden_trabajo = bool(venta.ticket_kiosko and venta.ticket_kiosko.startswith('OT-'))
-            if not es_de_orden_trabajo:
-                for det in venta.detalles.all():
-                    if not det.repuesto:
-                        continue  # Los servicios no tienen stock físico
-                    VentasService._descontar_stock(
-                        repuesto=det.repuesto,
-                        almacen=almacen_origen,
-                        cantidad=det.cantidad,
-                        motivo=f"Venta {venta.serie_correlativo}",
-                        usuario=request.user,
-                        referencia_id=venta.id
-                    )
-
-            # 4. Si viene de una Orden de Trabajo, cambiar estado a FACTURADO
-            if venta.ticket_kiosko and venta.ticket_kiosko.startswith('OT-'):
-                parts = venta.ticket_kiosko.split('-')
-                if len(parts) >= 2:
-                    ot_id = parts[1]
-                    from apps.taller.models import OrdenTrabajo
-                    try:
-                        ot = OrdenTrabajo.objects.get(id=ot_id)
-                        ot.estado = OrdenTrabajo.Estado.FACTURADO
-                        ot.save(update_fields=['estado'])
-                    except OrdenTrabajo.DoesNotExist:
-                        pass
-            
-            # 5. Si la venta es al crédito, generar CuentaPorCobrar
-            if venta.estado == Venta.Estado.AL_CREDITO:
-                fecha_limite_str = request.data.get('fecha_limite')
-                fecha_limite = None
-                if fecha_limite_str:
-                    from datetime import datetime
-                    try:
-                        fecha_limite = datetime.strptime(fecha_limite_str, '%Y-%m-%d').date()
-                    except ValueError:
-                        pass
-
-                # La fecha de vencimiento debe ser estrictamente posterior a
-                # hoy: una venta al crédito que vence el mismo día que se
-                # crea queda "atrasada" desde el día siguiente sin que el
-                # cliente haya tenido plazo real para pagar.
-                if not fecha_limite or fecha_limite <= timezone.localdate():
-                    raise ValueError("La fecha de vencimiento del crédito debe ser posterior a hoy.")
-
-                CreditoService.generar_credito(
-                    venta=venta,
-                    frecuencia=CuentaPorCobrar.Frecuencia.MENSUAL,
-                    num_cuotas=1,
-                    fecha_limite=fecha_limite
-                )
-
-            try:
-                from apps.facturacion.services import FacturacionService
-                FacturacionService.preparar_para_venta(venta, request.user)
-            except Exception as exc:
-                logger.warning("No se pudo preparar comprobante electronico para venta %s: %s", venta.id, exc)
-                        
-            return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
+            venta = VentasService.cobrar_venta_directa(request.data, request.user)
         except Exception as e:
             transaction.set_rollback(True)
             logger.error(f"Error procesando venta directa: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
 
 
 import requests

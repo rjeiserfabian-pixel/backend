@@ -53,6 +53,9 @@ from .serializers import (
     MiPerfilSerializer,
 )
 from .permissions import TienePermiso, PermisoPorMetodoMixin, permisos_efectivos
+from .auditoria import registrar
+from . import cache_utils
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +333,7 @@ class AsignarPermisosRolView(APIView):
 
         # Operación multi-paso dentro de transaction.atomic() para consistencia
         with transaction.atomic():
+            antes = set(RolPermiso.objects.filter(id_rol=rol).values_list("id_permiso__codigo", "alcance"))
             RolPermiso.objects.filter(id_rol=rol).delete()
             nuevos = [
                 RolPermiso(
@@ -340,6 +344,17 @@ class AsignarPermisosRolView(APIView):
                 for item in permisos_data
             ]
             RolPermiso.objects.bulk_create(nuevos)  # Inserción masiva en una sola query
+            cache_utils.invalidar()  # bulk_create no dispara señales: se avisa al caché a mano
+            despues =set(RolPermiso.objects.filter(id_rol=rol).values_list("id_permiso__codigo", "alcance"))
+
+        # Auditoría: qué permisos se quitaron y cuáles se agregaron (solo si hubo cambios).
+        quitados, agregados = sorted(antes - despues), sorted(despues - antes)
+        if quitados or agregados:
+            registrar(
+                request, "SEGURIDAD", "CAMBIO_PERMISOS_ROL", "rol_permisos", rol.pk,
+                {"rol": rol.codigo, "quitados": [f"{c} ({a})" for c, a in quitados]},
+                {"rol": rol.codigo, "agregados": [f"{c} ({a})" for c, a in agregados]},
+            )
 
         logger.info(
             "Permisos del rol [%s] actualizados por [%s]. Total: %d",
@@ -386,6 +401,13 @@ class ModuloListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        # El menú de un usuario cambia muy rara vez: se guarda unos minutos y se descarta solo
+        # cuando cambian roles, permisos o módulos (ver cache_utils.py).
+        clave_cache = cache_utils.clave('menu', request.user.pk)
+        guardado = cache.get(clave_cache)
+        if guardado is not None:
+            return Response({"success": True, "data": guardado})
+
         permisos_usuario = permisos_efectivos(request.user)
 
         # Una sola consulta con todo el menú; el árbol se arma en memoria.
@@ -416,6 +438,7 @@ class ModuloListView(APIView):
             data["submodulos"] = ModuloSerializer(hijos_visibles, many=True, context=contexto).data
             resultado.append(data)
 
+        cache.set(clave_cache, resultado, cache_utils.TTL_SEGUNDOS)
         return Response({"success": True, "data": resultado})
 
 
@@ -463,14 +486,19 @@ class EmpresaView(APIView):
         return empresa
 
     def get(self, request):
-        empresa = self.get_object()
         # El Kiosko (anónimo) nunca debe recibir credenciales SUNAT; el panel
         # de administración (autenticado) sí ve el estado (configurado o no).
-        if request.user and request.user.is_authenticated:
-            serializer = EmpresaSerializer(empresa)
-        else:
-            serializer = EmpresaPublicSerializer(empresa)
-        return Response({"success": True, "data": serializer.data})
+        # Son dos versiones distintas, y cada una se guarda aparte. Cambiar la empresa
+        # descarta ambas (ver signals.py).
+        autenticado = bool(request.user and request.user.is_authenticated)
+        clave_cache = cache_utils.clave('empresa', 'completa' if autenticado else 'publica')
+        datos = cache.get(clave_cache)
+        if datos is None:
+            empresa = self.get_object()
+            serializer = EmpresaSerializer(empresa) if autenticado else EmpresaPublicSerializer(empresa)
+            datos = serializer.data
+            cache.set(clave_cache, datos, cache_utils.TTL_SEGUNDOS * 3)
+        return Response({"success": True, "data": datos})
 
     def put(self, request):
         empresa = self.get_object()

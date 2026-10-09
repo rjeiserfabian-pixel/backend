@@ -34,6 +34,9 @@ class CompraViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        if self.action in ('list', 'retrieve'):
+            # CompraSerializer muestra detalles (con su repuesto) y el tipo de comprobante de cada compra.
+            qs = qs.select_related('tipo_comprobante_fk').prefetch_related('detalles__repuesto')
         params = self.request.query_params
         proveedor_id = params.get('proveedor_id')
         estado = params.get('estado')

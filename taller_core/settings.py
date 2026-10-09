@@ -70,6 +70,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "apps.seguridad.middleware.AuditoriaMiddleware",  # al final: ve la respuesta ya resuelta
 ]
 
 ROOT_URLCONF = "taller_core.urls"
@@ -102,6 +103,18 @@ DATABASES = {
 }
 
 # ---------------------------------------------------------------------------
+# CACHÉ — en memoria del proceso (alcanza con un solo servidor Waitress con hilos).
+# Se usa para permisos, menú y datos de la empresa (ver apps/seguridad/cache_utils.py).
+# ---------------------------------------------------------------------------
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "taller-cache",
+        "OPTIONS": {"MAX_ENTRIES": 2000},
+    }
+}
+
+# ---------------------------------------------------------------------------
 # USUARIO CUSTOM — Reemplaza al User por defecto de Django
 # ---------------------------------------------------------------------------
 AUTH_USER_MODEL = "seguridad.Usuario"
@@ -111,7 +124,7 @@ AUTH_USER_MODEL = "seguridad.Usuario"
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.seguridad.authentication.JWTAuthenticationAuditable",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",

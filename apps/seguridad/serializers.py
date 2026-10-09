@@ -12,6 +12,8 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from . import cache_utils
+
 from .models import (
     Usuario, Rol, Permiso, Modulo, RolPermiso, UsuarioRol, UsuarioPermiso, UsuarioSucursal, Empresa,
     Departamento, Provincia, Distrito, TipoCuentaBancaria, CuentaBancaria
@@ -348,7 +350,8 @@ class UsuarioDetalleSerializer(serializers.ModelSerializer):
                 UsuarioRol(id_usuario=usuario, id_rol_id=rol_id)
                 for rol_id in roles_ids
             ])
-            
+            cache_utils.invalidar()  # bulk_create no dispara señales
+
         if sucursales_ids:
             UsuarioSucursal.objects.bulk_create([
                 UsuarioSucursal(id_usuario=usuario, sucursal_id=sucursal_id)
@@ -378,7 +381,8 @@ class UsuarioDetalleSerializer(serializers.ModelSerializer):
                 UsuarioRol(id_usuario=instance, id_rol_id=rol_id)
                 for rol_id in roles_ids
             ])
-            
+            cache_utils.invalidar()  # bulk_create no dispara señales
+
         if sucursales_ids is not None:
             instance.sucursales_asignadas.all().delete()
             UsuarioSucursal.objects.bulk_create([
