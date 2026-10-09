@@ -203,6 +203,42 @@ class Command(BaseCommand):
                 "icono": "list-checks", "ruta": "/taller/tipos-servicio",
                 "orden": 4, "visible_menu": True, "padre": "TALLER", "permiso_ver": "TIPOS_SERVICIO.VER_MENU",
             },
+            # ── Herramientas ──────────────────────────────────────────────────
+            {
+                "codigo": "HERRAMIENTAS", "nombre": "Herramientas",
+                "icono": "wrench", "ruta": None,
+                "orden": 13, "visible_menu": True, "padre": None, "permiso_ver": None,
+            },
+            {
+                "codigo": "HERRAMIENTAS_INVENTARIO", "nombre": "Inventario de Herramientas",
+                "icono": "package", "ruta": "/herramientas",
+                "orden": 1, "visible_menu": True, "padre": "HERRAMIENTAS", "permiso_ver": "HERRAMIENTAS.INVENTARIO.VER_MENU",
+            },
+            {
+                "codigo": "HERRAMIENTAS_ASIGNACIONES", "nombre": "Asignaciones",
+                "icono": "arrowrightleft", "ruta": "/herramientas/asignaciones",
+                "orden": 2, "visible_menu": True, "padre": "HERRAMIENTAS", "permiso_ver": "HERRAMIENTAS.ASIGNACIONES.VER_MENU",
+            },
+            {
+                "codigo": "HERRAMIENTAS_MANTENIMIENTOS", "nombre": "Mantenimientos",
+                "icono": "wrench", "ruta": "/herramientas/mantenimientos",
+                "orden": 3, "visible_menu": True, "padre": "HERRAMIENTAS", "permiso_ver": "HERRAMIENTAS.MANTENIMIENTOS.VER_MENU",
+            },
+            {
+                "codigo": "HERRAMIENTAS_INCIDENCIAS", "nombre": "Incidencias",
+                "icono": "clipboard-list", "ruta": "/herramientas/incidencias",
+                "orden": 4, "visible_menu": True, "padre": "HERRAMIENTAS", "permiso_ver": "HERRAMIENTAS.INCIDENCIAS.VER_MENU",
+            },
+            {
+                "codigo": "HERRAMIENTAS_REPORTES", "nombre": "Reportes de Herramientas",
+                "icono": "filetext", "ruta": "/herramientas/reportes",
+                "orden": 6, "visible_menu": True, "padre": "HERRAMIENTAS", "permiso_ver": "HERRAMIENTAS.REPORTES.VER_MENU",
+            },
+            {
+                "codigo": "HERRAMIENTAS_CATEGORIAS", "nombre": "Categorías de Herramientas",
+                "icono": "list-checks", "ruta": "/herramientas/categorias",
+                "orden": 5, "visible_menu": True, "padre": "HERRAMIENTAS", "permiso_ver": "HERRAMIENTAS.CATEGORIAS.VER_MENU",
+            },
             # ── Ventas ────────────────────────────────────────────────────────
             {
                 "codigo": "VENTAS", "nombre": "Ventas",
@@ -456,6 +492,7 @@ class Command(BaseCommand):
         GP_INVENTARIO, GP_TALLER, GP_VENTAS = "Inventario", "Taller", "Ventas"
         GP_CUENTAS, GP_COMPRAS, GP_REPORTES = "Cuentas", "Compras", "Reportes"
         GP_CAJAS, GP_CONFIG = "Cajas", "Configuración"
+        GP_HERRAMIENTAS = "Herramientas"
 
         permisos_data = [
             # ── DASHBOARD ─────────────────────────────────────────────────────
@@ -680,6 +717,36 @@ class Command(BaseCommand):
             {"modulo": "UBIGEO", "codigo": "UBIGEO.VER_MENU", "nombre": "Mostrar \"Ubicaciones\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Ubicaciones (Ubigeo)"},
             {"modulo": "EMPRESA", "codigo": "EMPRESA.VER_MENU", "nombre": "Mostrar \"Empresa\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Datos de la Empresa"},
             {"modulo": "CONFIG", "codigo": "KIOSKOS.VER_MENU", "nombre": "Mostrar \"Kioskos\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_CONFIG, "grupo_submodulo": "Kioskos"},
+            {"modulo": "HERRAMIENTAS_INVENTARIO", "codigo": "HERRAMIENTAS.INVENTARIO.VER", "nombre": "VER Herramientas", "accion": "VER", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Inventario de Herramientas"},
+            {"modulo": "HERRAMIENTAS_INVENTARIO", "codigo": "HERRAMIENTAS.INVENTARIO.CREAR", "nombre": "CREAR Herramientas", "accion": "CREAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Inventario de Herramientas"},
+            {"modulo": "HERRAMIENTAS_INVENTARIO", "codigo": "HERRAMIENTAS.INVENTARIO.EDITAR", "nombre": "EDITAR Herramientas", "accion": "EDITAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Inventario de Herramientas"},
+            {"modulo": "HERRAMIENTAS_INVENTARIO", "codigo": "HERRAMIENTAS.INVENTARIO.ELIMINAR", "nombre": "ELIMINAR Herramientas", "accion": "ELIMINAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Inventario de Herramientas"},
+            {"modulo": "HERRAMIENTAS_INVENTARIO", "codigo": "HERRAMIENTAS.INVENTARIO.VER_MENU", "nombre": "Mostrar \"Inventario de Herramientas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Inventario de Herramientas"},
+            {"modulo": "HERRAMIENTAS_ASIGNACIONES", "codigo": "HERRAMIENTAS.ASIGNACIONES.VER", "nombre": "VER Asignaciones de Herramientas", "accion": "VER", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Asignaciones de Herramientas"},
+            {"modulo": "HERRAMIENTAS_ASIGNACIONES", "codigo": "HERRAMIENTAS.ASIGNACIONES.CREAR", "nombre": "Entregar Herramientas", "accion": "CREAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Asignaciones de Herramientas"},
+            {"modulo": "HERRAMIENTAS_ASIGNACIONES", "codigo": "HERRAMIENTAS.ASIGNACIONES.EDITAR", "nombre": "Registrar Devolución de Herramientas", "accion": "EDITAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Asignaciones de Herramientas"},
+            {"modulo": "HERRAMIENTAS_ASIGNACIONES", "codigo": "HERRAMIENTAS.ASIGNACIONES.ELIMINAR", "nombre": "Anular Asignaciones de Herramientas", "accion": "ELIMINAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Asignaciones de Herramientas"},
+            {"modulo": "HERRAMIENTAS_ASIGNACIONES", "codigo": "HERRAMIENTAS.ASIGNACIONES.VER_MENU", "nombre": "Mostrar \"Asignaciones\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Asignaciones de Herramientas"},
+            {"modulo": "HERRAMIENTAS_MANTENIMIENTOS", "codigo": "HERRAMIENTAS.MANTENIMIENTOS.VER", "nombre": "VER Mantenimientos de Herramientas", "accion": "VER", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Mantenimientos de Herramientas"},
+            {"modulo": "HERRAMIENTAS_MANTENIMIENTOS", "codigo": "HERRAMIENTAS.MANTENIMIENTOS.CREAR", "nombre": "Iniciar Mantenimientos y crear Planes", "accion": "CREAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Mantenimientos de Herramientas"},
+            {"modulo": "HERRAMIENTAS_MANTENIMIENTOS", "codigo": "HERRAMIENTAS.MANTENIMIENTOS.EDITAR", "nombre": "Finalizar y editar Mantenimientos", "accion": "EDITAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Mantenimientos de Herramientas"},
+            {"modulo": "HERRAMIENTAS_MANTENIMIENTOS", "codigo": "HERRAMIENTAS.MANTENIMIENTOS.ELIMINAR", "nombre": "Desactivar Planes de Mantenimiento", "accion": "ELIMINAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Mantenimientos de Herramientas"},
+            {"modulo": "HERRAMIENTAS_MANTENIMIENTOS", "codigo": "HERRAMIENTAS.MANTENIMIENTOS.VER_MENU", "nombre": "Mostrar \"Mantenimientos\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Mantenimientos de Herramientas"},
+            {"modulo": "HERRAMIENTAS_MANTENIMIENTOS", "codigo": "HERRAMIENTAS.COSTOS.VER", "nombre": "Ver costos de mantenimiento de herramientas", "accion": "VER", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Mantenimientos de Herramientas"},
+            {"modulo": "HERRAMIENTAS_INCIDENCIAS", "codigo": "HERRAMIENTAS.INCIDENCIAS.VER", "nombre": "VER Incidencias de Herramientas", "accion": "VER", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Incidencias de Herramientas"},
+            {"modulo": "HERRAMIENTAS_INCIDENCIAS", "codigo": "HERRAMIENTAS.INCIDENCIAS.CREAR", "nombre": "Reportar Incidencias de Herramientas", "accion": "CREAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Incidencias de Herramientas"},
+            {"modulo": "HERRAMIENTAS_INCIDENCIAS", "codigo": "HERRAMIENTAS.INCIDENCIAS.EDITAR", "nombre": "Resolver Incidencias de Herramientas", "accion": "EDITAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Incidencias de Herramientas"},
+            {"modulo": "HERRAMIENTAS_INCIDENCIAS", "codigo": "HERRAMIENTAS.INCIDENCIAS.VER_MENU", "nombre": "Mostrar \"Incidencias\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Incidencias de Herramientas"},
+            {"modulo": "HERRAMIENTAS_ASIGNACIONES", "codigo": "HERRAMIENTAS.ASIGNACIONES.EXCEPCION", "nombre": "Entregar herramienta con mantenimiento vencido", "accion": "APROBAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Asignaciones de Herramientas"},
+            {"modulo": "HERRAMIENTAS_REPORTES", "codigo": "HERRAMIENTAS.REPORTES.VER", "nombre": "VER Reportes de Herramientas", "accion": "VER", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Reportes de Herramientas"},
+            {"modulo": "HERRAMIENTAS_REPORTES", "codigo": "HERRAMIENTAS.REPORTES.EXPORTAR", "nombre": "Exportar Reportes de Herramientas (Excel y PDF)", "accion": "EXPORTAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Reportes de Herramientas"},
+            {"modulo": "HERRAMIENTAS_REPORTES", "codigo": "HERRAMIENTAS.REPORTES.VER_MENU", "nombre": "Mostrar \"Reportes de Herramientas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Reportes de Herramientas"},
+            {"modulo": "HERRAMIENTAS_CATEGORIAS", "codigo": "HERRAMIENTAS.CATEGORIAS.VER", "nombre": "VER Categorías de Herramientas", "accion": "VER", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Categorías de Herramientas"},
+            {"modulo": "HERRAMIENTAS_CATEGORIAS", "codigo": "HERRAMIENTAS.CATEGORIAS.CREAR", "nombre": "CREAR Categorías de Herramientas", "accion": "CREAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Categorías de Herramientas"},
+            {"modulo": "HERRAMIENTAS_CATEGORIAS", "codigo": "HERRAMIENTAS.CATEGORIAS.EDITAR", "nombre": "EDITAR Categorías de Herramientas", "accion": "EDITAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Categorías de Herramientas"},
+            {"modulo": "HERRAMIENTAS_CATEGORIAS", "codigo": "HERRAMIENTAS.CATEGORIAS.ELIMINAR", "nombre": "ELIMINAR Categorías de Herramientas", "accion": "ELIMINAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Categorías de Herramientas"},
+            {"modulo": "HERRAMIENTAS_CATEGORIAS", "codigo": "HERRAMIENTAS.CATEGORIAS.VER_MENU", "nombre": "Mostrar \"Categorías de Herramientas\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Categorías de Herramientas"},
+            {"modulo": "HERRAMIENTAS_INVENTARIO", "codigo": "HERRAMIENTAS.BAJA.APROBAR", "nombre": "Dar de baja o marcar como perdida una herramienta", "accion": "APROBAR", "grupo_padre": GP_HERRAMIENTAS, "grupo_submodulo": "Inventario de Herramientas"},
         ]
 
         permisos = {}

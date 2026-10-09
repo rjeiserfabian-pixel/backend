@@ -64,6 +64,10 @@ class PermisoListViewTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.admin)
 
+        # La base de pruebas ya trae permisos creados por las migraciones de datos;
+        # se cuentan antes para no asumir que arranca vacía.
+        self.permisos_previos = Permiso.objects.filter(estado=True).count()
+
         modulo = Modulo.objects.create(codigo='MOD_CATALOGO', nombre='Modulo Catalogo', orden=1)
         # Más permisos que el tamaño de página global (25), para detectar
         # una regresión si alguien vuelve a activar la paginación por defecto.
@@ -78,4 +82,8 @@ class PermisoListViewTests(TestCase):
 
         data = resp.data['data']
         self.assertIsInstance(data, list)
-        self.assertEqual(len(data), 30)
+        # Llegan todos: los previos más los 30 de la prueba (más que una página de 25).
+        self.assertEqual(len(data), self.permisos_previos + 30)
+        codigos = {p['codigo'] for p in data}
+        for i in range(30):
+            self.assertIn(f'MOD_CATALOGO.PERM_{i}', codigos)
