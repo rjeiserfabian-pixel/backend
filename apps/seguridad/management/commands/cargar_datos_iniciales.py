@@ -4,8 +4,8 @@ management/commands/cargar_datos_iniciales.py
 Comando personalizado para poblar la base de datos con:
   - Todos los módulos del sistema (padre + submodulos para el menú)
   - Todos los permisos atomicos de cada módulo
-  - Rol inicial: ADMINISTRADOR (los demás roles se crean desde el panel)
-  - Asignación de todos los permisos al rol ADMINISTRADOR (alcance GLOBAL)
+  - Rol inicial: SOPORTE, de sistema (los demás roles se crean desde el panel)
+  - Asignación de todos los permisos al rol SOPORTE (alcance GLOBAL)
 
 Uso:
     python manage.py cargar_datos_iniciales
@@ -32,8 +32,10 @@ class Command(BaseCommand):
         # ── 1. ROLES ───────────────────────────────────────────────────────────
         roles_data = [
             {
-                "codigo": "ADMINISTRADOR",
-                "nombre": "Administrador",
+                # Rol de sistema con acceso total (no editable desde el panel). El rol "Administrador"
+                # es un rol normal: se configura a mano desde Roles y Permisos y este script no lo toca.
+                "codigo": "SOPORTE",
+                "nombre": "Soporte",
                 "descripcion": "Acceso total al sistema. Puede configurar roles, usuarios y permisos.",
                 "es_sistema": True,
             },
@@ -818,25 +820,26 @@ class Command(BaseCommand):
 
         Permiso.objects.filter(grupo_padre="VENTAS").update(grupo_padre=GP_VENTAS)
 
-        # ── 4. ASIGNAR TODOS LOS PERMISOS AL ROL ADMINISTRADOR (GLOBAL) ───────
-        admin_rol = roles["ADMINISTRADOR"]
-        nuevos_rp = []
-        for permiso in permisos.values():
-            exists = RolPermiso.objects.filter(
-                id_rol=admin_rol, id_permiso=permiso
-            ).exists()
-            if not exists:
-                nuevos_rp.append(
-                    RolPermiso(id_rol=admin_rol, id_permiso=permiso, alcance="GLOBAL")
-                )
+        # ── 4. ASIGNAR TODOS LOS PERMISOS AL ROL SOPORTE (GLOBAL) ─────────────
+        # Soporte es el rol de sistema con acceso total: cada permiso nuevo del catálogo se le
+        # asigna aquí automáticamente. Los demás roles (incluido Administrador) NO se modifican.
+        admin_rol = roles["SOPORTE"]
+        # Se consideran TODOS los permisos activos de la base (incluidos los creados por migraciones
+        # anteriores que este script no lista), para que Soporte nunca quede con permisos faltantes.
+        ya_asignados = set(RolPermiso.objects.filter(id_rol=admin_rol).values_list("id_permiso_id", flat=True))
+        nuevos_rp = [
+            RolPermiso(id_rol=admin_rol, id_permiso=permiso, alcance="GLOBAL")
+            for permiso in Permiso.objects.filter(estado=True)
+            if permiso.pk not in ya_asignados
+        ]
 
         if nuevos_rp:
             RolPermiso.objects.bulk_create(nuevos_rp)
             self.stdout.write(
-                self.style.SUCCESS(f"  [OK] {len(nuevos_rp)} permisos nuevos asignados a ADMINISTRADOR")
+                self.style.SUCCESS(f"  [OK] {len(nuevos_rp)} permisos nuevos asignados a SOPORTE")
             )
         else:
-            self.stdout.write("  [--] ADMINISTRADOR ya tenía todos los permisos.")
+            self.stdout.write("  [--] SOPORTE ya tenía todos los permisos.")
 
         self.stdout.write(self.style.SUCCESS(
             f"\n[DONE] Datos iniciales cargados/actualizados:"

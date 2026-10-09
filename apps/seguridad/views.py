@@ -327,6 +327,14 @@ class AsignarPermisosRolView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # Un rol de sistema (ej. Soporte, acceso total) no se modifica: la pantalla ya lo impide,
+        # y aquí se garantiza también en el servidor.
+        if rol.es_sistema:
+            return Response(
+                {"success": False, "mensaje": "Este es un rol de sistema: sus permisos no se pueden modificar."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         serializer = AsignarPermisosRolSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         permisos_data = serializer.validated_data["permisos"]
