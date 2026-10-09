@@ -222,7 +222,7 @@ class Command(BaseCommand):
             # ── Herramientas ──────────────────────────────────────────────────
             {
                 "codigo": "HERRAMIENTAS", "nombre": "Herramientas",
-                "icono": "wrench", "ruta": None,
+                "icono": "toolbox", "ruta": None,
                 "orden": 13, "visible_menu": True, "padre": None, "permiso_ver": None,
             },
             {
