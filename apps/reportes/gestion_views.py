@@ -28,7 +28,7 @@ from apps.seguridad.permissions import TienePermiso
 from apps.taller.models import OrdenHistorialEstado, OrdenRepuesto, OrdenServicio, OrdenTrabajo
 from apps.ventas.models import DetalleVenta, Venta
 
-from .views import _exportar_excel, _exportar_pdf, _parse_date_range
+from .helpers import _exportar_excel, _exportar_pdf, _parse_date_range
 
 MAX_FILAS = 500
 VENTAS_VALIDAS = [Venta.Estado.PAGADA, Venta.Estado.AL_CREDITO]
