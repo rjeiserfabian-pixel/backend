@@ -1,0 +1,22 @@
+# === Secretos y entorno local (NUNCA subir) ===
+.env
+.env.*
+!.env.example
+env/
+venv/
+
+# === Python ===
+__pycache__/
+*.py[cod]
+
+# === Datos locales / archivos de usuarios ===
+db.sqlite3
+*.sqlite3
+archivos_privados/
+avatars/
+empresa/
+
+# === Logs y editores ===
+*.log
+.vscode/
+.idea/
