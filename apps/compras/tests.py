@@ -88,6 +88,11 @@ class CompraAnularTests(TestCase):
         self.assertEqual(resp2.status_code, 400)
 
     def test_no_se_puede_anular_con_pago_aplicado(self):
+        # El pago afecta caja por defecto, y el sistema exige una caja abierta para registrarlo.
+        from apps.ventas.models import Caja, SesionCaja
+        caja = Caja.objects.create(sucursal=self.almacen.sucursal, nombre='Caja Compras Test')
+        SesionCaja.objects.create(caja=caja, usuario=self.admin, saldo_inicial=Decimal('100.00'))
+
         resp = self._crear_compra(tipo_pago='Credito', numero='0003')
         compra_id = resp.data['id']
         cuenta = CuentaPorPagar.objects.get(compra_id=compra_id)
