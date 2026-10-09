@@ -65,6 +65,12 @@ class Command(BaseCommand):
                 "icono": "dashboard", "ruta": "/dashboard",
                 "orden": 1, "visible_menu": True, "padre": None, "permiso_ver": None,
             },
+            # ── Avisos a clientes ─────────────────────────────────────────────
+            {
+                "codigo": "AVISOS", "nombre": "Avisos a Clientes",
+                "icono": "bell", "ruta": "/avisos",
+                "orden": 1, "visible_menu": True, "padre": None, "permiso_ver": "AVISOS.VER_MENU",
+            },
             # ── Contactos ─────────────────────────────────────────────────────
             {
                 "codigo": "CONTACTOS", "nombre": "Contactos",
@@ -161,6 +167,11 @@ class Command(BaseCommand):
                 "codigo": "STOCK_UBICACIONES", "nombre": "Ubicaciones de Stock",
                 "icono": "map-pin", "ruta": "/inventario/stock-ubicaciones",
                 "orden": 9, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "STOCK_UBICACIONES.VER_MENU",
+            },
+            {
+                "codigo": "REPOSICION_STOCK", "nombre": "Reposición de Stock",
+                "icono": "package", "ruta": "/inventario/reposicion",
+                "orden": 11, "visible_menu": True, "padre": "INVENTARIO", "permiso_ver": "REPOSICION.VER_MENU",
             },
             {
                 "codigo": "GUIAS_REMISION", "nombre": "Guías de Remisión",
@@ -349,6 +360,11 @@ class Command(BaseCommand):
                 "orden": 7, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES.CAJA.VER",
             },
             {
+                "codigo": "REPORTES_GESTION", "nombre": "Reportes de Gestión",
+                "icono": "list-checks", "ruta": "/reportes/gestion",
+                "orden": 9, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES_GESTION.VER_MENU",
+            },
+            {
                 "codigo": "REPORTES_KIOSKOS", "nombre": "Reporte de Kioskos",
                 "icono": "layoutdashboard", "ruta": "/reportes/kioskos",
                 "orden": 8, "visible_menu": True, "padre": "REPORTES", "permiso_ver": "REPORTES_KIOSKOS.VER_MENU",
@@ -493,10 +509,14 @@ class Command(BaseCommand):
         GP_CUENTAS, GP_COMPRAS, GP_REPORTES = "Cuentas", "Compras", "Reportes"
         GP_CAJAS, GP_CONFIG = "Cajas", "Configuración"
         GP_HERRAMIENTAS = "Herramientas"
+        GP_AVISOS = "Avisos a Clientes"
 
         permisos_data = [
             # ── DASHBOARD ─────────────────────────────────────────────────────
             {"modulo": "DASHBOARD", "codigo": "DASHBOARD.VER",    "nombre": "Ver Dashboard",    "accion": "VER", "grupo_padre": GP_DASHBOARD, "grupo_submodulo": None},
+            {"modulo": "AVISOS", "codigo": "AVISOS.VER",       "nombre": "Ver avisos a clientes",                       "accion": "VER",       "grupo_padre": GP_AVISOS, "grupo_submodulo": None},
+            {"modulo": "AVISOS", "codigo": "AVISOS.GESTIONAR", "nombre": "Marcar avisos como enviados o descartarlos",  "accion": "GESTIONAR", "grupo_padre": GP_AVISOS, "grupo_submodulo": None},
+            {"modulo": "AVISOS", "codigo": "AVISOS.VER_MENU",  "nombre": "Mostrar \"Avisos a Clientes\" en el menú",     "accion": "VER_MENU",  "grupo_padre": GP_AVISOS, "grupo_submodulo": None},
 
             # ── SEGURIDAD ─────────────────────────────────────────────────────
             {"modulo": "SEGURIDAD", "codigo": "SEGURIDAD.USUARIOS.VER",      "nombre": "Ver usuarios",             "accion": "VER",     "grupo_padre": GP_SEGURIDAD, "grupo_submodulo": "Usuarios"},
@@ -548,7 +568,9 @@ class Command(BaseCommand):
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.TRASLADOS.APROBAR",    "nombre": "Aprobar traslados",      "accion": "APROBAR", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Traslados y Guías de Remisión"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.STOCK_UBICACIONES.VER",    "nombre": "Ver ubicaciones de stock",         "accion": "VER",    "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Ubicaciones de Stock"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.STOCK_UBICACIONES.EDITAR", "nombre": "Ajustar stock por ubicación",      "accion": "EDITAR", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Ubicaciones de Stock"},
-            {"modulo": "INVENTARIO", "codigo": "INVENTARIO.IMPUESTOS.VER",      "nombre": "Ver impuestos (IGV)",     "accion": "VER",     "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Impuestos (IGV)"},
+            {"modulo": "INVENTARIO", "codigo": "INVENTARIO.REPOSICION.VER",       "nombre": "Ver reposición de stock",          "accion": "VER",    "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Reposición de Stock"},
+            {"modulo": "INVENTARIO", "codigo": "REPOSICION.VER_MENU", "nombre": "Mostrar \"Reposición de Stock\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Reposición de Stock"},
+            {"modulo": "INVENTARIO", "codigo": "INVENTARIO.IMPUESTOS.VER",      "nombre": "Ver impuestos (IGV)",    "accion": "VER",     "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Impuestos (IGV)"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.IMPUESTOS.CREAR",    "nombre": "Crear impuestos (IGV)",   "accion": "CREAR",   "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Impuestos (IGV)"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.IMPUESTOS.EDITAR",   "nombre": "Editar impuestos (IGV)",  "accion": "EDITAR",  "grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Impuestos (IGV)"},
             {"modulo": "INVENTARIO", "codigo": "INVENTARIO.IMPUESTOS.ELIMINAR", "nombre": "Eliminar impuestos (IGV)","accion": "ELIMINAR","grupo_padre": GP_INVENTARIO, "grupo_submodulo": "Impuestos (IGV)"},
@@ -623,6 +645,9 @@ class Command(BaseCommand):
             {"modulo": "REPORTES", "codigo": "REPORTES.COMPRAS.EXPORTAR",   "nombre": "Exportar reporte de compras",   "accion": "EXPORTAR", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Compras"},
             {"modulo": "REPORTES", "codigo": "REPORTES.AVANZADO.VER",       "nombre": "Ver reporte avanzado",          "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte Avanzado"},
             {"modulo": "REPORTES", "codigo": "REPORTES.AVANZADO.EXPORTAR",  "nombre": "Exportar reporte avanzado",     "accion": "EXPORTAR", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte Avanzado"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.GESTION.VER",        "nombre": "Ver reportes de gestión",       "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reportes de Gestión"},
+            {"modulo": "REPORTES", "codigo": "REPORTES.GESTION.EXPORTAR",   "nombre": "Exportar reportes de gestión",  "accion": "EXPORTAR", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reportes de Gestión"},
+            {"modulo": "REPORTES", "codigo": "REPORTES_GESTION.VER_MENU",   "nombre": "Mostrar \"Reportes de Gestión\" en el menú", "accion": "VER_MENU", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reportes de Gestión"},
             {"modulo": "REPORTES", "codigo": "REPORTES.VEHICULO.VER",       "nombre": "Ver reporte de vehículos",      "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Vehículos"},
             {"modulo": "REPORTES", "codigo": "REPORTES.VEHICULO.EXPORTAR",  "nombre": "Exportar reporte de vehículos", "accion": "EXPORTAR", "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Vehículos"},
             {"modulo": "REPORTES", "codigo": "REPORTES.KIOSKOS.VER",        "nombre": "Ver reporte de kioskos",        "accion": "VER",      "grupo_padre": GP_REPORTES, "grupo_submodulo": "Reporte de Kioskos"},

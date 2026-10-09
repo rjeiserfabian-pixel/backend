@@ -14,6 +14,7 @@ from .views import (
     ReporteKioskosView,
     FiltrosAuxiliaresView,
 )
+from .gestion_views import ReporteGestionView
 
 urlpatterns = [
     path("caja/",       ReporteCajaView.as_view(),       name="reporte-caja"),
@@ -25,4 +26,5 @@ urlpatterns = [
     path("vehiculos/",  ReporteVehiculosView.as_view(),  name="reporte-vehiculos"),
     path("kioskos/",    ReporteKioskosView.as_view(),    name="reporte-kioskos"),
     path("filtros/",    FiltrosAuxiliaresView.as_view(), name="reporte-filtros"),
+    path("gestion/",    ReporteGestionView.as_view(),    name="reporte-gestion"),
 ]

@@ -10,6 +10,7 @@ from rest_framework import viewsets, status, views, pagination
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.parsers import FormParser, MultiPartParser
 from decimal import Decimal
 
 from .models import (
@@ -22,7 +23,7 @@ from .serializers import (
     TipoComprobanteSerializer, SerieComprobanteSerializer, MetodoPagoSerializer, ImpuestoSerializer,
     VentaSerializer, TicketKioskoCreateSerializer, ProcesarVentaSerializer,
     CuentaPorCobrarSerializer, SerieDocumentoInternoSerializer, KioskoTerminalSerializer,
-    ProformaSerializer
+    ProformaSerializer, QRMetodoPagoSerializer
 )
 from .services import VentasService, CreditoService
 from apps.inventario.models import Sucursal, Almacen, Repuesto
@@ -45,6 +46,37 @@ class MetodoPagoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_eliminar = "VENTAS.CONFIGURACION.ELIMINAR"
     queryset = MetodoPago.objects.all()
     serializer_class = MetodoPagoSerializer
+
+    def get_permissions(self):
+        # Subir/quitar el QR es editar el método de pago (no "crear" ni "eliminar" el método).
+        if self.action == 'qr':
+            return [TienePermiso(self.permiso_editar)]
+        return super().get_permissions()
+
+    @action(detail=True, methods=['post', 'delete'], parser_classes=[MultiPartParser, FormParser])
+    def qr(self, request, pk=None):
+        """POST (multipart: imagen, descripcion) sube/reemplaza el QR de cobro; DELETE lo quita."""
+        metodo = self.get_object()
+        if request.method == 'DELETE':
+            if metodo.qr_imagen:
+                metodo.qr_imagen.delete(save=False)
+            metodo.qr_descripcion = ''
+            metodo.qr_imagen = None
+            metodo.save(update_fields=['qr_imagen', 'qr_descripcion'])
+            return Response(self.get_serializer(metodo).data)
+
+        datos = QRMetodoPagoSerializer(data=request.data)
+        datos.is_valid(raise_exception=True)
+        imagen = datos.validated_data.get('imagen')
+        if imagen is None and not metodo.qr_imagen:
+            return Response({'error': 'Suba la imagen del QR.'}, status=status.HTTP_400_BAD_REQUEST)
+        if imagen is not None:
+            if metodo.qr_imagen:
+                metodo.qr_imagen.delete(save=False)  # no dejar QR viejos huérfanos
+            metodo.qr_imagen = imagen
+        metodo.qr_descripcion = datos.validated_data.get('descripcion', metodo.qr_descripcion)
+        metodo.save(update_fields=['qr_imagen', 'qr_descripcion'])
+        return Response(self.get_serializer(metodo).data)
 
 
 class ImpuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):

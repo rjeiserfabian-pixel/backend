@@ -350,3 +350,131 @@ class ReporteVehiculosTests(TestCase):
         with self.assertNumQueries(4):
             resp = self.client_api.get('/api/reportes/vehiculos/')
         self.assertEqual(resp.status_code, 200, resp.content)
+
+
+class ReporteGestionTests(TestCase):
+    """Reportes de gestión: formato uniforme, filtros y permisos."""
+
+    def setUp(self):
+        from datetime import timedelta
+        from apps.inventario.models import MovimientoInventario
+        from apps.taller.models import OrdenHistorialEstado, OrdenServicio
+        self.timedelta = timedelta
+        self.admin = Usuario.objects.create_superuser(
+            username='admin_gestion_test', email='admin_gestion_test@example.com',
+            nombres='Admin', apellidos='GestionTest', password='x',
+        )
+        self.api = APIClient()
+        self.api.force_authenticate(user=self.admin)
+        self.sucursal = Sucursal.objects.create(nombre='Sucursal Gestion')
+        self.cliente = Cliente.objects.create(dni='41000001', nombres='Cliente', apellidos='Gestion', telefono='987654321')
+        # Rango explícito amplio: evita falsos fallos por el cambio de día entre UTC y hora local.
+        self.rango = {
+            'fecha_inicio': (timezone.localdate() - timedelta(days=2)).isoformat(),
+            'fecha_fin': (timezone.localdate() + timedelta(days=2)).isoformat(),
+        }
+
+        for total in ('100.00', '300.00'):
+            Venta.objects.create(
+                cliente=self.cliente, sucursal=self.sucursal, estado=Venta.Estado.PAGADA,
+                fecha_emision=timezone.now(), subtotal=Decimal(total), igv=Decimal('0'), total=Decimal(total),
+            )
+        Venta.objects.create(  # anulada: no cuenta
+            cliente=self.cliente, sucursal=self.sucursal, estado=Venta.Estado.ANULADA,
+            fecha_emision=timezone.now(), total=Decimal('999.00'),
+        )
+
+        # Cliente inactivo: última compra hace 400 días
+        self.cliente_viejo = Cliente.objects.create(dni='41000002', nombres='Cliente', apellidos='Viejo')
+        Venta.objects.create(
+            cliente=self.cliente_viejo, sucursal=self.sucursal, estado=Venta.Estado.PAGADA,
+            fecha_emision=timezone.now() - timedelta(days=400), total=Decimal('250.00'),
+        )
+
+        # Repuestos: uno con salida reciente y otro sin movimiento
+        categoria = Categoria.objects.create(nombre='Cat Gestion')
+        marca = MarcaRepuesto.objects.create(nombre='Marca Gestion')
+        almacen = Almacen.objects.create(sucursal=self.sucursal, nombre='Almacen Gestion')
+        ubicacion = UbicacionFisica.objects.create(almacen=almacen, codigo='G-1')
+
+        def repuesto(codigo):
+            r = Repuesto.objects.create(
+                codigo=codigo, nombre=f'Repuesto {codigo}', categoria=categoria, marca=marca,
+                precio_compra=Decimal('10.00'), precio_por_mayor=Decimal('12.00'),
+                precio_cash=Decimal('14.00'), precio_lista=Decimal('15.00'),
+            )
+            InventarioStock.objects.create(repuesto=r, ubicacion=ubicacion, stock_disponible=Decimal('5'))
+            return r
+
+        con_salida, self.sin_salida = repuesto('G-ROTA'), repuesto('G-QUIETO')
+        MovimientoInventario.objects.create(
+            repuesto=con_salida, ubicacion=ubicacion, tipo_movimiento='SALIDA', cantidad=Decimal('-1'),
+            stock_resultante=Decimal('5'), motivo='venta',
+        )
+
+        # Orden cancelada con motivo y valor estimado
+        vehiculo = Vehiculo.objects.create(placa='GES-001', marca='Toyota', modelo='Yaris')
+        orden = OrdenTrabajo.objects.create(
+            numero='OT-G1', cliente=self.cliente, vehiculo=vehiculo, recepcionista=self.admin,
+            estado=OrdenTrabajo.Estado.CANCELADO,
+        )
+        OrdenServicio.objects.create(orden=orden, descripcion='Afinamiento', precio_estimado=Decimal('150.00'))
+        OrdenHistorialEstado.objects.create(
+            orden=orden, estado=OrdenTrabajo.Estado.CANCELADO, usuario=self.admin,
+            motivo_categoria=OrdenHistorialEstado.MotivoCategoria.RECHAZO_CLIENTE,
+        )
+
+    def _get(self, tipo, **extra):
+        return self.api.get('/api/reportes/gestion/', {'tipo': tipo, **self.rango, **extra})
+
+    def test_ticket_promedio_excluye_anuladas(self):
+        resp = self._get('ticket_promedio')
+        self.assertEqual(resp.status_code, 200, resp.content)
+        resumen = {r['label']: r['valor'] for r in resp.data['resumen']}
+        self.assertEqual(resumen['Ventas'], 2)
+        self.assertEqual(resumen['Total vendido'], 400.0)
+        self.assertEqual(resumen['Ticket promedio'], 200.0)
+
+    def test_clientes_inactivos_lista_solo_a_quien_dejo_de_comprar(self):
+        resp = self._get('clientes_inactivos', dias=180)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        nombres = [f['cliente'] for f in resp.data['filas']]
+        self.assertEqual(nombres, ['Cliente Viejo'])
+        self.assertGreaterEqual(resp.data['filas'][0]['dias_sin_comprar'], 399)
+
+    def test_sin_movimiento_solo_incluye_repuestos_quietos_y_valora_el_stock(self):
+        resp = self._get('sin_movimiento', dias=90)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        codigos = [f['codigo'] for f in resp.data['filas']]
+        self.assertEqual(codigos, ['G-QUIETO'])
+        self.assertEqual(resp.data['filas'][0]['valor'], 50.0)  # 5 u x S/ 10
+
+    def test_ordenes_perdidas_agrupa_por_motivo_con_valor(self):
+        resp = self._get('ordenes_perdidas')
+        self.assertEqual(resp.status_code, 200, resp.content)
+        fila = resp.data['filas'][0]
+        self.assertEqual(fila['motivo'], 'Cliente rechazó la cotización')
+        self.assertEqual((fila['ordenes'], fila['valor']), (1, 150.0))
+
+    def test_todos_los_tipos_responden_con_el_mismo_formato(self):
+        for tipo in ('ticket_promedio', 'servicios_mas_vendidos', 'productividad_mecanicos',
+                     'ordenes_perdidas', 'clientes_inactivos', 'sin_movimiento'):
+            resp = self._get(tipo)
+            self.assertEqual(resp.status_code, 200, f'{tipo}: {resp.content}')
+            self.assertEqual(set(resp.data), {'titulo', 'columnas', 'filas', 'resumen'}, tipo)
+
+    def test_exporta_a_excel_y_rechaza_tipo_invalido_y_dias_invalidos(self):
+        excel = self._get('ticket_promedio', formato='excel')
+        self.assertEqual(excel.status_code, 200)
+        self.assertIn('spreadsheetml', excel['Content-Type'])
+        self.assertEqual(self._get('inventado').status_code, 400)
+        self.assertEqual(self._get('sin_movimiento', dias='abc').status_code, 400)
+
+    def test_usuario_sin_permiso_recibe_403(self):
+        sin_permiso = Usuario.objects.create_user(
+            username='sin_permiso_gestion', email='sin_permiso_gestion@example.com',
+            nombres='Sin', apellidos='Permiso', password='x',
+        )
+        api = APIClient()
+        api.force_authenticate(user=sin_permiso)
+        self.assertEqual(api.get('/api/reportes/gestion/').status_code, 403)

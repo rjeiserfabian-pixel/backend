@@ -6,6 +6,7 @@ from .views import (
     InventarioStockViewSet, MovimientoInventarioViewSet, TrasladoInventarioViewSet
 )
 from .guias_views import GuiaRemisionViewSet
+from .reposicion_views import ReposicionStockView
 
 router = DefaultRouter()
 
@@ -27,5 +28,6 @@ router.register(r'traslados', TrasladoInventarioViewSet, basename='traslado')
 router.register(r'guias-remision', GuiaRemisionViewSet, basename='guia-remision')
 
 urlpatterns = [
+    path('reposicion/', ReposicionStockView.as_view(), name='inventario-reposicion'),
     path('', include(router.urls)),
 ]

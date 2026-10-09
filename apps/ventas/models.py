@@ -179,6 +179,10 @@ class MetodoPago(models.Model):
     nombre = models.CharField(max_length=50, unique=True, db_index=True)
     requiere_referencia = models.BooleanField(default=False)
     estado = models.BooleanField(default=True)
+    # QR del negocio para cobrar con billeteras (Yape, Plin...): el POS lo muestra al cliente
+    # y el cajero confirma el pago a mano con el número de operación.
+    qr_imagen = models.ImageField(upload_to='pagos_qr/', null=True, blank=True)
+    qr_descripcion = models.CharField(max_length=150, blank=True, default='')
 
     class Meta:
         db_table = 'ventas_metodo_pago'

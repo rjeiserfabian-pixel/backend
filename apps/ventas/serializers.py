@@ -16,9 +16,33 @@ from .services import VentasService
 # ──────────────────────────────────────────────
 
 class MetodoPagoSerializer(serializers.ModelSerializer):
+    tiene_qr = serializers.SerializerMethodField()
+    qr_url = serializers.SerializerMethodField()
+
     class Meta:
         model = MetodoPago
-        fields = '__all__'
+        # La imagen del QR se sube/quita por su propio endpoint (POST/DELETE .../qr/).
+        exclude = ['qr_imagen']
+
+    def get_tiene_qr(self, obj):
+        return bool(obj.qr_imagen)
+
+    def get_qr_url(self, obj):
+        # Ruta relativa: una URL absoluta apuntaría a 127.0.0.1 y no abriría desde otras PCs.
+        return f'/media/{obj.qr_imagen.name}' if obj.qr_imagen else None
+
+
+class QRMetodoPagoSerializer(serializers.Serializer):
+    """Subida del QR de cobro de un método de pago (PNG/JPG/WEBP, máx. 2 MB)."""
+    imagen = serializers.ImageField(required=False)
+    descripcion = serializers.CharField(required=False, allow_blank=True, max_length=150)
+
+    def validate_imagen(self, imagen):
+        if imagen.size > 2 * 1024 * 1024:
+            raise serializers.ValidationError('La imagen no puede superar los 2 MB.')
+        if getattr(getattr(imagen, 'image', None), 'format', None) not in ('PNG', 'JPEG', 'WEBP'):
+            raise serializers.ValidationError('Use una imagen PNG, JPG o WEBP.')
+        return imagen
 
 
 class ImpuestoSerializer(serializers.ModelSerializer):
