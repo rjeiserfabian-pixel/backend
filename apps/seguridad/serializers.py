@@ -7,7 +7,9 @@ Reglas aplicadas:
   - Validaciones explícitas con mensajes claros.
 """
 import logging
+from datetime import timedelta
 from django.contrib.auth import authenticate
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -26,6 +28,33 @@ logger = logging.getLogger(__name__)
 # AUTENTICACIÓN
 # ==============================================================================
 
+MAX_INTENTOS_LOGIN = 5     # contraseñas incorrectas seguidas antes de bloquear la cuenta
+MINUTOS_BLOQUEO_LOGIN = 15  # cuánto dura el bloqueo; se levanta solo al vencer
+
+
+def _mensaje_cuenta_bloqueada(usuario):
+    return (
+        f"Cuenta bloqueada hasta {usuario.bloqueado_hasta:%d/%m/%Y %H:%M}. "
+        "Contacte al administrador."
+    )
+
+
+def _registrar_intento_fallido(username):
+    """Suma un intento fallido; al llegar al máximo bloquea la cuenta unos minutos."""
+    with transaction.atomic():
+        usuario = Usuario.objects.select_for_update().filter(username=username).first()
+        if usuario is None or usuario.esta_bloqueado():
+            return
+        usuario.intentos_fallidos += 1
+        campos = ["intentos_fallidos"]
+        if usuario.intentos_fallidos >= MAX_INTENTOS_LOGIN:
+            usuario.bloqueado_hasta = timezone.now() + timedelta(minutes=MINUTOS_BLOQUEO_LOGIN)
+            usuario.intentos_fallidos = 0
+            campos.append("bloqueado_hasta")
+            logger.warning("Cuenta [%s] bloqueada %d min por intentos fallidos.", username, MINUTOS_BLOQUEO_LOGIN)
+        usuario.save(update_fields=campos)
+
+
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=50)
     password = serializers.CharField(write_only=True)
@@ -34,10 +63,16 @@ class LoginSerializer(serializers.Serializer):
         username = attrs.get("username")
         password = attrs.get("password")
 
+        # Una cuenta bloqueada no prueba contraseñas: se avisa de inmediato (y no se cuentan más intentos).
+        bloqueada = Usuario.objects.filter(username=username, bloqueado_hasta__gt=timezone.now()).first()
+        if bloqueada:
+            raise serializers.ValidationError(_mensaje_cuenta_bloqueada(bloqueada))
+
         usuario = authenticate(username=username, password=password)
 
         if not usuario:
             logger.warning("Intento de login fallido para username: %s", username)
+            _registrar_intento_fallido(username)
             raise serializers.ValidationError(
                 "Credenciales incorrectas. Verifique su usuario y contraseña."
             )

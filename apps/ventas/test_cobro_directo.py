@@ -185,17 +185,12 @@ class CobroRechazadoNoDejaRastroTests(CobroDirectoBase):
         self.assertIn('Stock insuficiente', resp.data['error'])
         self._nada_quedo_guardado()
 
-    def test_hoy_una_venta_al_contado_sin_pagos_se_acepta_sin_dinero_en_caja(self):
-        """
-        BRECHA CONOCIDA (se documenta, no se cambia sin autorización del dueño): el servidor acepta
-        una venta al contado sin ningún pago y la deja PAGADA sin ingreso en caja. La pantalla del POS
-        lo impide (exige pagar el total), pero la API no. Si se decide corregirlo, esta prueba debe
-        cambiar a esperar 400.
-        """
+    def test_una_venta_al_contado_sin_ningun_pago_se_rechaza(self):
+        """Antes el servidor la aceptaba y quedaba PAGADA sin dinero en caja (la pantalla del POS ya lo impedía)."""
         resp = self._cobrar(self._payload(pagos=[]))
-        self.assertEqual(resp.status_code, 201)
-        self.assertEqual(Venta.objects.get().estado, Venta.Estado.PAGADA)
-        self.assertEqual(MovimientoCaja.objects.count(), 0)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('al menos un metodo de pago', resp.data['error'])
+        self._nada_quedo_guardado()
 
     def test_serie_inexistente(self):
         resp = self._cobrar(self._payload(serie_id=999999))

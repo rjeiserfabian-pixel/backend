@@ -384,6 +384,11 @@ class VentasService:
                 raise ValueError("Sesión de caja abierta requerida para venta normal.")
             venta.sesion_caja = sesion
 
+            # Una venta al contado debe registrar al menos un pago: sin esto quedaba "pagada" sin
+            # dinero en caja. (La pantalla del POS ya lo exige; aquí se garantiza en el servidor.)
+            if venta.estado != Venta.Estado.AL_CREDITO and not data.get('pagos'):
+                raise ValueError("Debe indicar al menos un metodo de pago.")
+
         pagos_caja = []
         if not es_registro_manual and sesion and data.get('pagos') and venta.estado != Venta.Estado.AL_CREDITO:
             pagos_caja, monto_recibido_calculado, vuelto_calculado = VentasService.preparar_pagos_para_caja(
