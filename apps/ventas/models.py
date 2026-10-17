@@ -490,6 +490,10 @@ class PagoVenta(models.Model):
 # ──────────────────────────────────────────────
 
 class CuentaPorCobrar(models.Model):
+    class Origen(models.TextChoices):
+        VENTA = 'VENTA', 'Venta del sistema'
+        CREDITO_ANTERIOR = 'CREDITO_ANTERIOR', 'Crédito anterior'
+
     class Frecuencia(models.TextChoices):
         DIARIO = 'DIARIO', 'Diario'
         SEMANAL = 'SEMANAL', 'Semanal'
@@ -500,8 +504,34 @@ class CuentaPorCobrar(models.Model):
         PENDIENTE = 'PENDIENTE', 'Pendiente'
         PAGADO = 'PAGADO', 'Pagado'
         ATRASADO = 'ATRASADO', 'Atrasado'
+        ANULADO = 'ANULADO', 'Anulado'
 
-    venta = models.OneToOneField(Venta, on_delete=models.RESTRICT, related_name='cuenta_por_cobrar')
+    venta = models.OneToOneField(Venta, on_delete=models.RESTRICT, related_name='cuenta_por_cobrar', null=True, blank=True)
+    origen = models.CharField(max_length=20, choices=Origen.choices, default=Origen.VENTA)
+    cliente = models.ForeignKey(Cliente, on_delete=models.RESTRICT, related_name='cuentas_cobrar')
+    sucursal = models.ForeignKey(Sucursal, on_delete=models.RESTRICT, related_name='cuentas_cobrar')
+    vehiculo = models.ForeignKey(Vehiculo, on_delete=models.RESTRICT, null=True, blank=True, related_name='cuentas_cobrar')
+    placa_original = models.CharField(max_length=15, blank=True)
+    moneda = models.CharField(max_length=3, choices=Venta.Moneda.choices, default=Venta.Moneda.PEN)
+    sistema_origen = models.CharField(max_length=100, blank=True)
+    documento_origen = models.CharField(max_length=100, blank=True)
+    tipo_documento_origen = models.CharField(max_length=50, blank=True)
+    concepto = models.TextField(blank=True)
+    observaciones = models.TextField(blank=True)
+    sin_detalle = models.BooleanField(default=False)
+    sin_vehiculo = models.BooleanField(default=False)
+    fecha_original = models.DateField(null=True, blank=True)
+    fecha_corte = models.DateField(null=True, blank=True)
+    importe_original = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    abonos_anteriores = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    ajuste_documento = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    motivo_ajuste = models.CharField(max_length=255, blank=True)
+    solicitud_id = models.UUIDField(null=True, blank=True, unique=True)
+    solicitud_huella = models.CharField(max_length=64, blank=True)
+    creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='creditos_creados')
+    actualizado_en = models.DateTimeField(auto_now=True)
+    motivo_anulacion = models.TextField(blank=True)
+    anulado_en = models.DateTimeField(null=True, blank=True)
     codigo_credito = models.CharField(max_length=50, unique=True, db_index=True)
     frecuencia_pago = models.CharField(max_length=15, choices=Frecuencia.choices)
     
@@ -515,9 +545,41 @@ class CuentaPorCobrar(models.Model):
         db_table = 'ventas_cuenta_cobrar'
         verbose_name = 'Cuenta por Cobrar'
         verbose_name_plural = 'Cuentas por Cobrar'
+        constraints = [
+            models.CheckConstraint(condition=(models.Q(origen='VENTA', venta__isnull=False) | models.Q(origen='CREDITO_ANTERIOR', venta__isnull=True)), name='cxc_origen_venta_coherente'),
+            models.UniqueConstraint(fields=['sucursal', 'cliente', 'sistema_origen', 'documento_origen'], condition=models.Q(origen='CREDITO_ANTERIOR'), name='cxc_documento_anterior_unico'),
+        ]
+
+    def save(self, *args, **kwargs):
+        # Compatibilidad con todos los caminos existentes que crean cuentas desde Venta.
+        if self.origen == self.Origen.VENTA and self.venta_id:
+            self.cliente_id = self.venta.cliente_id
+            self.sucursal_id = self.venta.sucursal_id
+            self.vehiculo_id = self.venta.vehiculo_id
+            self.moneda = self.venta.moneda
+            if kwargs.get('update_fields') is not None:
+                kwargs['update_fields'] = set(kwargs['update_fields']) | {'cliente', 'sucursal', 'vehiculo', 'moneda'}
+        super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.codigo_credito} - {self.venta.cliente.nombres}"
+        return f"{self.codigo_credito} - {self.cliente.nombres}"
+
+
+class DetalleCreditoAnterior(models.Model):
+    cuenta = models.ForeignKey(CuentaPorCobrar, on_delete=models.CASCADE, related_name='detalles_anteriores')
+    tipo = models.CharField(max_length=10, choices=[('SERVICIO', 'Servicio'), ('REPUESTO', 'Repuesto')])
+    repuesto = models.ForeignKey(Repuesto, on_delete=models.RESTRICT, null=True, blank=True)
+    codigo_original = models.CharField(max_length=100, blank=True)
+    descripcion = models.CharField(max_length=255)
+    unidad = models.CharField(max_length=50, blank=True)
+    cantidad = models.DecimalField(max_digits=12, decimal_places=2)
+    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2)
+    descuento = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    subtotal_linea = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        ordering = ['id']
+        constraints = [models.CheckConstraint(condition=models.Q(cantidad__gt=0), name='detalle_credito_cantidad_positiva')]
 
 
 class CuotaCredito(models.Model):
@@ -550,6 +612,8 @@ class CuotaCredito(models.Model):
 import uuid
 
 class PagoCuota(models.Model):
+    recibo_datos = models.JSONField(default=dict, blank=True)
+    solicitud_id = models.UUIDField(null=True, blank=True, unique=True)
     cuota          = models.ForeignKey(CuotaCredito, on_delete=models.CASCADE, related_name='pagos')
     movimiento_caja = models.OneToOneField(MovimientoCaja, on_delete=models.RESTRICT, related_name='pago_cuota_rel')
     operacion_id   = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True)

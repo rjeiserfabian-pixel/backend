@@ -369,14 +369,24 @@ class CuotaCreditoSerializer(serializers.ModelSerializer):
         return obj.saldo_pendiente > 0 and obj.fecha_vencimiento < timezone.localdate()
 
 
+class DetalleCreditoAnteriorLecturaSerializer(serializers.ModelSerializer):
+    class Meta:
+        from .models import DetalleCreditoAnterior
+        model = DetalleCreditoAnterior
+        fields = '__all__'
+
+
 class CuentaPorCobrarSerializer(serializers.ModelSerializer):
+    detalles_anteriores = DetalleCreditoAnteriorLecturaSerializer(many=True, read_only=True)
+    placa = serializers.SerializerMethodField()
+    documento = serializers.SerializerMethodField()
     cuotas = CuotaCreditoSerializer(many=True, read_only=True)
     esta_atrasada = serializers.SerializerMethodField()
-    cliente_nombre = serializers.CharField(source='venta.cliente.nombres', read_only=True)
-    cliente_apellidos = serializers.CharField(source='venta.cliente.apellidos', read_only=True)
-    cliente_dni = serializers.CharField(source='venta.cliente.dni', read_only=True)
-    cliente_telefono = serializers.CharField(source='venta.cliente.telefono', read_only=True)
-    cliente_direccion = serializers.CharField(source='venta.cliente.direccion', read_only=True)
+    cliente_nombre = serializers.CharField(source='cliente.nombres', read_only=True)
+    cliente_apellidos = serializers.CharField(source='cliente.apellidos', read_only=True)
+    cliente_dni = serializers.CharField(source='cliente.dni', read_only=True)
+    cliente_telefono = serializers.CharField(source='cliente.telefono', read_only=True)
+    cliente_direccion = serializers.CharField(source='cliente.direccion', read_only=True)
     venta_serie = serializers.CharField(source='venta.serie_correlativo', read_only=True)
     venta_fecha = serializers.DateTimeField(source='venta.creado_en', read_only=True)
     venta_detalles = DetalleVentaSerializer(source='venta.detalles', many=True, read_only=True)
@@ -388,7 +398,13 @@ class CuentaPorCobrarSerializer(serializers.ModelSerializer):
     def get_esta_atrasada(self, obj):
         from django.utils import timezone
         hoy = timezone.localdate()
-        return any(cuota.saldo_pendiente > 0 and cuota.fecha_vencimiento < hoy for cuota in obj.cuotas.all())
+        return obj.estado != 'ANULADO' and any(cuota.saldo_pendiente > 0 and cuota.fecha_vencimiento < hoy for cuota in obj.cuotas.all())
+
+    def get_placa(self, obj):
+        return obj.placa_original or (obj.vehiculo.placa if obj.vehiculo_id else '')
+
+    def get_documento(self, obj):
+        return obj.documento_origen if obj.origen == 'CREDITO_ANTERIOR' else obj.venta.serie_correlativo
 
 from .models import SerieDocumentoInterno
 

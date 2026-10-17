@@ -302,7 +302,7 @@ class FacturacionService:
 
     @staticmethod
     def _reducir_cuenta_por_cobrar(venta: Venta, monto: Decimal) -> dict:
-        cuenta = getattr(venta, 'cuenta_por_cobrar', None)
+        cuenta = CuentaPorCobrar.objects.select_for_update().filter(venta=venta).first()
         if not cuenta or monto <= 0:
             return {'aplicado': False, 'motivo': 'La venta no tiene cuenta por cobrar pendiente.'}
 

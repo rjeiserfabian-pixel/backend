@@ -184,19 +184,19 @@ def _documentos(hoy, taller):
 
 
 def _cuotas(hoy, taller):
-    cuotas = CuotaCredito.objects.select_related('cuenta_cobrar__venta__cliente').filter(
+    cuotas = CuotaCredito.objects.select_related('cuenta_cobrar__cliente').exclude(cuenta_cobrar__estado='ANULADO').filter(
         estado__in=[CuotaCredito.Estado.PENDIENTE, CuotaCredito.Estado.PARCIAL, CuotaCredito.Estado.ATRASADA],
         saldo_pendiente__gt=0, fecha_vencimiento__lte=hoy + timedelta(days=DIAS_CUOTA_ANTES),
     )
     for cuota in cuotas:
-        cliente = cuota.cuenta_cobrar.venta.cliente
+        cliente = cuota.cuenta_cobrar.cliente
         vencida = cuota.fecha_vencimiento < hoy
         etapa = 'v' if vencida else 'pv'
         verbo = 'venció' if vencida else 'vence'
         yield _aviso(
             AvisoCliente.Tipo.CUOTA, f'cuota:{cuota.id}:{etapa}', cliente,
             f'Hola {cliente.nombres}, le recordamos que la cuota {cuota.numero_cuota} de su crédito '
-            f'({cuota.cuenta_cobrar.codigo_credito}) por S/ {cuota.saldo_pendiente:.2f} {verbo} el '
+            f'({cuota.cuenta_cobrar.codigo_credito}) por {cuota.cuenta_cobrar.moneda} {cuota.saldo_pendiente:.2f} {verbo} el '
             f'{_fecha(cuota.fecha_vencimiento)}. Gracias por su preferencia, {taller}.',
             cuota.fecha_vencimiento,
         )

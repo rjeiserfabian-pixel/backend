@@ -13,7 +13,7 @@ import logging
 import io
 from datetime import date, timedelta
 
-from django.db.models import Sum, Count, F, Q, Value, DecimalField, ExpressionWrapper
+from django.db.models import Sum, Count, F, Q, Value, DecimalField, ExpressionWrapper, OuterRef, Subquery, Exists
 from django.db.models.functions import Coalesce, TruncDate
 from django.http import HttpResponse
 from rest_framework.views import APIView
@@ -23,7 +23,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework import status
 
 from apps.ventas.models import (
-    Venta, MovimientoCaja, SesionCaja, Caja, MetodoPago, PagoVenta, DetalleVenta
+    Venta, MovimientoCaja, SesionCaja, Caja, MetodoPago, PagoVenta, DetalleVenta, CuentaPorCobrar
 )
 from apps.compras.models import Compra
 from apps.inventario.models import Repuesto, Sucursal
@@ -404,23 +404,24 @@ class ReporteClientesView(APIView):
                     Value(0, output_field=DecimalField()),
                 ),
                 saldo_pendiente=Coalesce(
-                    Sum(
-                        "ventas__cuenta_por_cobrar__saldo_pendiente",
-                        filter=~Q(ventas__estado=Venta.Estado.ANULADA)
-                    ),
+                    Subquery(CuentaPorCobrar.objects.filter(cliente_id=OuterRef('pk'), moneda='PEN').exclude(estado='ANULADO').exclude(venta__estado=Venta.Estado.ANULADA).order_by().values('cliente_id').annotate(s=Sum('saldo_pendiente')).values('s')[:1]),
                     Value(0, output_field=DecimalField()),
                 ),
             )
         )
 
+        cuentas_pendientes = CuentaPorCobrar.objects.filter(cliente_id=OuterRef('pk'), saldo_pendiente__gt=0).exclude(estado='ANULADO').exclude(venta__estado=Venta.Estado.ANULADA)
         if deuda_estado == "con_saldo":
-            qs = qs.filter(saldo_pendiente__gt=0)
+            qs = qs.filter(Exists(cuentas_pendientes))
         elif deuda_estado == "al_dia":
-            qs = qs.filter(saldo_pendiente=0)
+            qs = qs.filter(~Exists(cuentas_pendientes))
 
         total = qs.count()
         offset = (page - 1) * page_size
-        clientes = qs.order_by("-total_comprado")[offset: offset + page_size]
+        clientes = list(qs.order_by("-total_comprado")[offset: offset + page_size])
+        saldos = {}
+        for s in CuentaPorCobrar.objects.filter(cliente_id__in=[c.pk for c in clientes]).exclude(estado='ANULADO').exclude(venta__estado=Venta.Estado.ANULADA).order_by().values('cliente_id', 'moneda').annotate(saldo=Sum('saldo_pendiente')):
+            saldos.setdefault(s['cliente_id'], []).append({'moneda': s['moneda'], 'saldo': s['saldo']})
 
         data = []
         for c in clientes:
@@ -432,13 +433,15 @@ class ReporteClientesView(APIView):
                 "email": c.email or "—",
                 "total_comprado": float(c.total_comprado),
                 "saldo_pendiente": float(c.saldo_pendiente),
+                "moneda_saldo": "PEN",
+                "saldos_por_moneda": saldos.get(c.pk, []),
             })
 
         if formato == "excel":
             headers = ["DNI", "Nombre", "Teléfono", "Email", "Total Comprado", "Saldo Pendiente"]
             rows = [
                 [d["dni"], d["nombre"], d["telefono"], d["email"],
-                 d["total_comprado"], d["saldo_pendiente"]]
+                 d["total_comprado"], ' / '.join(f"{s['moneda']} {s['saldo']:.2f}" for s in d['saldos_por_moneda']) or 'PEN 0.00']
                 for d in data
             ]
             return _exportar_excel(headers, rows, "Reporte_Clientes")
@@ -447,7 +450,7 @@ class ReporteClientesView(APIView):
             headers = ["DNI", "Nombre", "Teléfono", "Total Comprado", "Saldo Pendiente"]
             rows = [
                 [d["dni"], d["nombre"], d["telefono"],
-                 str(d["total_comprado"]), str(d["saldo_pendiente"])]
+                 str(d["total_comprado"]), ' / '.join(f"{s['moneda']} {s['saldo']:.2f}" for s in d['saldos_por_moneda']) or 'PEN 0.00']
                 for d in data
             ]
             return _exportar_pdf("Reporte de Clientes", headers, rows)

@@ -633,6 +633,9 @@ class Command(BaseCommand):
             # ── CUENTAS ───────────────────────────────────────────────────────
             {"modulo": "CUENTAS", "codigo": "CUENTAS.POR_COBRAR.VER",            "nombre": "Ver cuentas por cobrar",       "accion": "VER",            "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Cobrar"},
             {"modulo": "CUENTAS", "codigo": "CUENTAS.POR_COBRAR.REGISTRAR_PAGO", "nombre": "Registrar pago a cuenta",      "accion": "REGISTRAR_PAGO", "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Cobrar"},
+            {"modulo": "CUENTAS", "codigo": "CUENTAS.POR_COBRAR.REGISTRAR_ANTERIOR", "nombre": "Registrar crédito anterior", "accion": "REGISTRAR_ANTERIOR", "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Cobrar"},
+            {"modulo": "CUENTAS", "codigo": "CUENTAS.POR_COBRAR.EDITAR_ANTERIOR", "nombre": "Corregir crédito anterior", "accion": "EDITAR_ANTERIOR", "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Cobrar"},
+            {"modulo": "CUENTAS", "codigo": "CUENTAS.POR_COBRAR.ANULAR_ANTERIOR", "nombre": "Anular crédito anterior", "accion": "ANULAR_ANTERIOR", "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Cobrar"},
             {"modulo": "CUENTAS", "codigo": "CUENTAS.POR_PAGAR.VER",             "nombre": "Ver cuentas por pagar",        "accion": "VER",            "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Pagar"},
             {"modulo": "CUENTAS", "codigo": "CUENTAS.POR_PAGAR.REGISTRAR_PAGO",  "nombre": "Registrar pago a proveedor",   "accion": "REGISTRAR_PAGO", "grupo_padre": GP_CUENTAS, "grupo_submodulo": "Por Pagar"},
 
