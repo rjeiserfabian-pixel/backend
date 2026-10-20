@@ -7,20 +7,31 @@ from .models import Cliente, Proveedor, Transportista
 from .serializers import ClienteSerializer, ProveedorSerializer, TransportistaSerializer
 from .services import ConsultaOrchestrator
 from apps.seguridad.permissions import PermisoPorMetodoMixin
+from rest_framework.pagination import PageNumberPagination
 import logging
 
 logger = logging.getLogger(__name__)
+
+class ContactoPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 500
+
+    def paginate_queryset(self, queryset, request, view=None):
+        if request.query_params.get('sin_paginar') == 'true' or request.query_params.get('paginate') == 'false':
+            return None
+        return super().paginate_queryset(queryset, request, view=view)
 
 class ClienteViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_ver = "CONTACTOS.CLIENTES.VER"
     permiso_crear = "CONTACTOS.CLIENTES.CREAR"
     permiso_editar = "CONTACTOS.CLIENTES.EDITAR"
     permiso_eliminar = "CONTACTOS.CLIENTES.ELIMINAR"
-    queryset = Cliente.objects.filter(estado=True)
+    queryset = Cliente.objects.filter(estado=True).order_by('-id')
     serializer_class = ClienteSerializer
+    pagination_class = ContactoPagination
     filter_backends = [filters.SearchFilter]
     search_fields = ['dni', 'nombres', 'apellidos']
-    # Reglas del skill Python Seguro aplicadas: la paginación global ya está en settings.py
 
     def perform_destroy(self, instance):
         # Soft delete: el campo ya existe para esto pero no se usaba.
@@ -236,6 +247,7 @@ class ProveedorViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_eliminar = "CONTACTOS.PROVEEDORES.ELIMINAR"
     queryset = Proveedor.objects.filter(estado=True)
     serializer_class = ProveedorSerializer
+    pagination_class = ContactoPagination
     filter_backends = [filters.SearchFilter]
     search_fields = ['numero_documento', 'nombre_o_razon_social', 'rubro_comercial']
 
@@ -292,6 +304,7 @@ class TransportistaViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_eliminar = "CONTACTOS.TRANSPORTISTAS.ELIMINAR"
     queryset = Transportista.objects.filter(estado=True)
     serializer_class = TransportistaSerializer
+    pagination_class = ContactoPagination
     filter_backends = [filters.SearchFilter]
     search_fields = ['numero_documento', 'nombre_o_razon_social']
 
