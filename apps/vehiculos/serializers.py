@@ -2,10 +2,48 @@ from rest_framework import serializers
 from .models import Vehiculo, VehiculoQR, MantenimientoVehiculo
 from django.utils import timezone
 
+class ClienteResumenVehiculoSerializer(serializers.ModelSerializer):
+    nombre_completo = serializers.SerializerMethodField()
+
+    class Meta:
+        from apps.clientes.models import Cliente
+        model = Cliente
+        fields = ['id', 'dni', 'nombres', 'apellidos', 'telefono', 'nombre_completo']
+
+    def get_nombre_completo(self, obj):
+        return f"{obj.nombres} {obj.apellidos}".strip()
+
 class VehiculoSerializer(serializers.ModelSerializer):
+    clientes_detalle = ClienteResumenVehiculoSerializer(source='clientes', many=True, read_only=True)
+    cliente_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+
     class Meta:
         model = Vehiculo
         fields = '__all__'
+
+    def create(self, validated_data):
+        from apps.clientes.models import Cliente
+        cliente_id = validated_data.pop('cliente_id', None)
+        vehiculo = super().create(validated_data)
+        if cliente_id:
+            try:
+                cliente = Cliente.objects.get(id=cliente_id, estado=True)
+                vehiculo.clientes.add(cliente)
+            except Cliente.DoesNotExist:
+                pass
+        return vehiculo
+
+    def update(self, instance, validated_data):
+        from apps.clientes.models import Cliente
+        cliente_id = validated_data.pop('cliente_id', None)
+        vehiculo = super().update(instance, validated_data)
+        if cliente_id:
+            try:
+                cliente = Cliente.objects.get(id=cliente_id, estado=True)
+                vehiculo.clientes.add(cliente)
+            except Cliente.DoesNotExist:
+                pass
+        return vehiculo
 
 
 class VehiculoQRSerializer(serializers.ModelSerializer):

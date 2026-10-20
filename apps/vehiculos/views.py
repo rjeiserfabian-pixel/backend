@@ -59,6 +59,17 @@ class HistorialQRPagination(PageNumberPagination):
     max_page_size = 25
 
 
+class VehiculoPagination(PageNumberPagination):
+    page_size = 25
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+    def paginate_queryset(self, queryset, request, view=None):
+        if request.query_params.get('sin_paginar') == 'true' or request.query_params.get('paginate') == 'false':
+            return None
+        return super().paginate_queryset(queryset, request, view=view)
+
+
 class ConsultaVehiculoQRPublicaView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -166,6 +177,7 @@ class VehiculoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     permiso_editar = "VEHICULOS.EDITAR"
     permiso_eliminar = "VEHICULOS.ELIMINAR"
     serializer_class = VehiculoSerializer
+    pagination_class = VehiculoPagination
     filter_backends = [filters.SearchFilter]
     search_fields = ['placa', 'marca', 'modelo']
 
@@ -229,7 +241,11 @@ class VehiculoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         # Reglas de Python Seguro: prefetch_related para relación M:N para evitar N+1
-        return Vehiculo.objects.filter(estado=True).prefetch_related('clientes').order_by('-id')
+        queryset = Vehiculo.objects.filter(estado=True).prefetch_related('clientes').order_by('-id')
+        cliente_id = self.request.query_params.get('cliente_id') or self.request.query_params.get('cliente')
+        if cliente_id:
+            queryset = queryset.filter(clientes__id=cliente_id)
+        return queryset
 
     def perform_destroy(self, instance):
         # Soft delete

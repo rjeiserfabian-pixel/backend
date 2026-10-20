@@ -468,6 +468,47 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
 
         numero_documento = orden.numero_cotizacion or orden.numero
 
+        # Consultar Estado Documentario del vehículo (SOAT y Revisión Técnica)
+        documento_soat = None
+        documento_rev_tecnica = None
+        if orden.vehiculo:
+            try:
+                from apps.documentos.models import Documento
+                docs_vehiculo = Documento.objects.filter(vehiculo=orden.vehiculo, activo=True)
+                doc_soat = docs_vehiculo.filter(tipo=Documento.Tipo.SOAT).order_by('-fecha_vencimiento', '-id').first()
+                doc_rt = docs_vehiculo.filter(tipo=Documento.Tipo.REVISION_TECNICA).order_by('-fecha_vencimiento', '-id').first()
+
+                def _formatear_doc(doc):
+                    if not doc:
+                        return None
+                    estado = doc.estado_vigencia
+                    color = '#16a34a'  # Verde: Vigente
+                    texto_estado = 'Vigente'
+                    if estado == 'VENCIDO':
+                        color = '#dc2626'  # Rojo: Vencido
+                        texto_estado = 'Vencido'
+                    elif estado == 'POR_VENCER':
+                        color = '#ea580c'  # Naranja: Por vencer
+                        texto_estado = 'Por vencer'
+                    elif estado == 'SIN_VENCIMIENTO':
+                        color = '#0284c7'  # Azul: Registrado
+                        texto_estado = 'Registrado'
+
+                    return {
+                        'tipo': doc.get_tipo_display(),
+                        'numero': doc.numero,
+                        'entidad_emisora': doc.entidad_emisora,
+                        'fecha_vencimiento': doc.fecha_vencimiento,
+                        'estado_vigencia': estado,
+                        'texto_estado': texto_estado,
+                        'color': color,
+                    }
+
+                documento_soat = _formatear_doc(doc_soat)
+                documento_rev_tecnica = _formatear_doc(doc_rt)
+            except Exception as e:
+                logger.warning(f"Error consultando documentos del vehículo {orden.vehiculo.placa}: {e}")
+
         # Configurar contexto
         context = {
             'orden': orden,
@@ -478,6 +519,8 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             'cuentas_bancarias': cuentas,
             'empresa': empresa,
             'empresa_logo_data_uri': empresa_logo_data_uri,
+            'documento_soat': documento_soat,
+            'documento_rev_tecnica': documento_rev_tecnica,
         }
 
         from django.template.loader import render_to_string

@@ -140,8 +140,32 @@
             <td style="width: 48%; padding: 12px; border: 1px solid #cbd5e1; background-color: #f8fafc; border-radius: 4px;">
                 <div class="section-title">ESTADO DOCUMENTARIO</div>
                 <table class="info-table">
-                    <tr><td class="info-label">SOAT:</td><td class="info-value">No registrado</td></tr>
-                    <tr><td class="info-label">Revisión técnica:</td><td class="info-value">No registrado</td></tr>
+                    <tr>
+                        <td class="info-label" style="width: 38%;">SOAT:</td>
+                        <td class="info-value">
+                            {% if documento_soat %}
+                                <span style="font-weight: bold; color: {{ documento_soat.color }};">{{ documento_soat.texto_estado }}</span>
+                                {% if documento_soat.fecha_vencimiento %}
+                                    <span style="font-weight: bold; color: #000000;"> (Vence: {{ documento_soat.fecha_vencimiento|date:"d/m/Y" }})</span>
+                                {% endif %}
+                            {% else %}
+                                <span style="color: #64748b; font-style: italic;">No registrado</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="info-label">Revisión técnica:</td>
+                        <td class="info-value">
+                            {% if documento_rev_tecnica %}
+                                <span style="font-weight: bold; color: {{ documento_rev_tecnica.color }};">{{ documento_rev_tecnica.texto_estado }}</span>
+                                {% if documento_rev_tecnica.fecha_vencimiento %}
+                                    <span style="font-weight: bold; color: #000000;"> (Vence: {{ documento_rev_tecnica.fecha_vencimiento|date:"d/m/Y" }})</span>
+                                {% endif %}
+                            {% else %}
+                                <span style="color: #64748b; font-style: italic;">No registrado</span>
+                            {% endif %}
+                        </td>
+                    </tr>
                 </table>
             </td>
         </tr>

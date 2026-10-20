@@ -237,7 +237,7 @@ class ProveedorViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     queryset = Proveedor.objects.filter(estado=True)
     serializer_class = ProveedorSerializer
     filter_backends = [filters.SearchFilter]
-    search_fields = ['numero_documento', 'nombre_o_razon_social']
+    search_fields = ['numero_documento', 'nombre_o_razon_social', 'rubro_comercial']
 
     def perform_destroy(self, instance):
         instance.estado = False

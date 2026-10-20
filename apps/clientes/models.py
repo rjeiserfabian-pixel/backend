@@ -34,6 +34,13 @@ class Proveedor(models.Model):
     direccion = models.CharField(max_length=255, null=True, blank=True)
     telefono = models.CharField(max_length=20, null=True, blank=True)
     email = models.EmailField(null=True, blank=True)
+    rubro_comercial = models.CharField(
+        max_length=255, 
+        null=True, 
+        blank=True, 
+        verbose_name='Productos o Servicios que provee',
+        help_text='Línea de productos, repuestos o servicios que suministra'
+    )
     estado = models.BooleanField(default=True) # Soft delete
 
     class Meta:
