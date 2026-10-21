@@ -437,3 +437,21 @@ class PlantillaCorrectiva(models.Model):
 
     def __str__(self):
         return self.nombre
+
+
+class OrdenEvidenciaIngreso(models.Model):
+    """Fotos y evidencias visuales del estado del vehículo al momento de su recepción/ingreso"""
+    orden = models.ForeignKey(OrdenTrabajo, on_delete=models.CASCADE, related_name='evidencias_ingreso')
+    imagen = models.ImageField(upload_to='ordenes_ingreso/')
+    descripcion = models.CharField(max_length=255, blank=True, default='')
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+    registrado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, null=True, blank=True)
+
+    class Meta:
+        db_table = 'taller_orden_evidencia_ingreso'
+        verbose_name = 'Evidencia de Ingreso'
+        verbose_name_plural = 'Evidencias de Ingreso'
+        ordering = ['fecha_registro']
+
+    def __str__(self):
+        return f"Evidencia OT-{self.orden.numero} ({self.descripcion or 'Sin descripción'})"

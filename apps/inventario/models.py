@@ -99,6 +99,7 @@ class Repuesto(models.Model):
         default=False,
         help_text="Define si este repuesto se muestra en el catalogo publico del kiosko."
     )
+    imagen = models.ImageField(upload_to='repuestos/', null=True, blank=True)
     estado = models.BooleanField(default=True)
 
     class Meta:

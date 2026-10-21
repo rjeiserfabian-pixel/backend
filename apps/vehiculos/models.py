@@ -33,6 +33,7 @@ class Vehiculo(models.Model):
     # Relación M:N con clientes para mantener trazabilidad histórica
     clientes = models.ManyToManyField('clientes.Cliente', related_name='vehiculos', blank=True)
     
+    imagen = models.ImageField(upload_to='vehiculos/', null=True, blank=True)
     estado = models.BooleanField(default=True) # Soft delete
 
     class Meta:

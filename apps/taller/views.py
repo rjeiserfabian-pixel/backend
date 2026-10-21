@@ -12,7 +12,7 @@ from django.utils import timezone
 from .models import (
     BloqueoAgendaSucursal, Cita, CitaHistorial, ConfiguracionAgendaSucursal, HorarioAgendaSucursal,
     ListaEsperaCita, OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva,
-    PlantillaCorrectiva, TipoServicio, OrdenHistorialEstado
+    PlantillaCorrectiva, TipoServicio, OrdenHistorialEstado, OrdenEvidenciaIngreso
 )
 from apps.vehiculos.models import Vehiculo
 from .serializers import (
@@ -20,7 +20,8 @@ from .serializers import (
     ListaEsperaCitaSerializer, ReservaPublicaCitaSerializer,
     OrdenTrabajoListSerializer, OrdenTrabajoDetailSerializer,
     HallazgoSerializer, OrdenServicioSerializer, OrdenRepuestoSerializer,
-    PlantillaPreventivaSerializer, PlantillaCorrectivaSerializer, TipoServicioSerializer
+    PlantillaPreventivaSerializer, PlantillaCorrectivaSerializer, TipoServicioSerializer,
+    OrdenEvidenciaIngresoSerializer
 )
 from .services import aprobar_cotizacion_orden
 from apps.inventario.models import MovimientoInventario, InventarioStock, Sucursal
@@ -80,7 +81,7 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         
         if self.action == 'retrieve':
             queryset = queryset.prefetch_related(
-                'hallazgos', 'servicios', 
+                'hallazgos', 'servicios', 'evidencias_ingreso',
                 Prefetch('repuestos', queryset=OrdenRepuesto.objects.select_related('repuesto'))
             )
             
@@ -540,6 +541,63 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             return HttpResponse('Error generando PDF', status=500)
 
         return response
+
+    @action(detail=True, methods=['get', 'post'], url_path='evidencias')
+    def evidencias(self, request, pk=None):
+        orden = self.get_object()
+        if request.method == 'GET':
+            evidencias = orden.evidencias_ingreso.select_related('registrado_por').all()
+            serializer = OrdenEvidenciaIngresoSerializer(evidencias, many=True)
+            return Response(serializer.data)
+
+        # POST: Recibir una o múltiples imágenes de evidencia de ingreso
+        imagenes = request.FILES.getlist('imagenes')
+        if not imagenes and 'imagen' in request.FILES:
+            imagenes = [request.FILES['imagen']]
+
+        if not imagenes:
+            return Response({'error': 'No se enviaron imágenes para registrar.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        descripcion_general = request.data.get('descripcion', '').strip()
+        descripciones_raw = request.data.get('descripciones', None)
+        descripciones_list = []
+        if descripciones_raw:
+            import json
+            try:
+                descripciones_list = json.loads(descripciones_raw) if isinstance(descripciones_raw, str) else descripciones_raw
+            except Exception:
+                descripciones_list = []
+
+        nuevas_evidencias = []
+        with transaction.atomic():
+            for idx, img in enumerate(imagenes):
+                desc = descripciones_list[idx] if idx < len(descripciones_list) else descripcion_general
+                evidencia = OrdenEvidenciaIngreso.objects.create(
+                    orden=orden,
+                    imagen=img,
+                    descripcion=desc or '',
+                    registrado_por=request.user
+                )
+                nuevas_evidencias.append(evidencia)
+
+        serializer = OrdenEvidenciaIngresoSerializer(nuevas_evidencias, many=True)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class OrdenEvidenciaIngresoViewSet(viewsets.ModelViewSet):
+    queryset = OrdenEvidenciaIngreso.objects.select_related('registrado_por', 'orden').all()
+    serializer_class = OrdenEvidenciaIngresoSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("ORDENES_TRABAJO.VER")]
+        if self.request.method == 'DELETE':
+            return [TienePermiso("ORDENES_TRABAJO.ELIMINAR")]
+        return [TienePermiso("ORDENES_TRABAJO.EDITAR")]
+
+    def perform_create(self, serializer):
+        serializer.save(registrado_por=self.request.user)
+
 
 class HallazgoViewSet(viewsets.ModelViewSet):
     queryset = Hallazgo.objects.all()

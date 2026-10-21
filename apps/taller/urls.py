@@ -6,7 +6,8 @@ from .views import (
     OrdenTrabajoViewSet, HallazgoViewSet, 
     OrdenServicioViewSet, OrdenRepuestoViewSet,
     PlantillaPreventivaViewSet, PlantillaCorrectivaViewSet, ReservaCitaPublicaView,
-    ConsultaVehiculoPublicaView, AprobarCotizacionPublicaView, TipoServicioViewSet
+    ConsultaVehiculoPublicaView, AprobarCotizacionPublicaView, TipoServicioViewSet,
+    OrdenEvidenciaIngresoViewSet
 )
 
 router = DefaultRouter()
@@ -18,6 +19,7 @@ router.register(r'ordenes', OrdenTrabajoViewSet, basename='orden_trabajo')
 router.register(r'hallazgos', HallazgoViewSet, basename='hallazgo')
 router.register(r'servicios', OrdenServicioViewSet, basename='servicio')
 router.register(r'repuestos', OrdenRepuestoViewSet, basename='repuesto')
+router.register(r'evidencias', OrdenEvidenciaIngresoViewSet, basename='evidencia')
 router.register(r'plantillas', PlantillaPreventivaViewSet, basename='plantilla')
 router.register(r'plantillas-correctivas', PlantillaCorrectivaViewSet, basename='plantilla_correctiva')
 router.register(r'tipos-servicio', TipoServicioViewSet, basename='tipo_servicio')

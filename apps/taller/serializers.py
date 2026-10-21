@@ -4,7 +4,7 @@ from .models import (
     BloqueoAgendaSucursal, Cita, CitaHistorial, ConfiguracionAgendaSucursal, HorarioAgendaSucursal,
     ListaEsperaCita,
     OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva,
-    TipoServicio, OrdenHistorialEstado, PlantillaCorrectiva
+    TipoServicio, OrdenHistorialEstado, PlantillaCorrectiva, OrdenEvidenciaIngreso
 )
 from apps.vehiculos.serializers import VehiculoSerializer
 from apps.inventario.models import InventarioStock
@@ -338,6 +338,15 @@ class OrdenTrabajoListSerializer(serializers.ModelSerializer):
         cliente = obj.vehiculo.clientes.first()
         return cliente.nombres + " " + (cliente.apellidos or "") if cliente else "Sin Cliente"
 
+class OrdenEvidenciaIngresoSerializer(serializers.ModelSerializer):
+    registrado_por_nombre = serializers.CharField(source='registrado_por.nombre_completo', read_only=True)
+
+    class Meta:
+        model = OrdenEvidenciaIngreso
+        fields = ['id', 'orden', 'imagen', 'descripcion', 'fecha_registro', 'registrado_por', 'registrado_por_nombre']
+        read_only_fields = ['registrado_por']
+
+
 class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
     vehiculo_detalle = VehiculoSerializer(source='vehiculo', read_only=True)
     cliente_detalle = ClienteSerializer(source='cliente', read_only=True)
@@ -345,6 +354,7 @@ class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
     hallazgos = HallazgoSerializer(many=True, read_only=True)
     servicios = OrdenServicioSerializer(many=True, read_only=True)
     repuestos = OrdenRepuestoSerializer(many=True, read_only=True)
+    evidencias_ingreso = OrdenEvidenciaIngresoSerializer(many=True, read_only=True)
     recepcionista_nombre = serializers.CharField(source='recepcionista.nombre_completo', read_only=True)
     mecanico_nombre = serializers.CharField(source='mecanico_asignado.nombre_completo', read_only=True)
     historial_estados = OrdenHistorialEstadoSerializer(many=True, read_only=True)
@@ -355,7 +365,7 @@ class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
             'id', 'numero', 'vehiculo', 'vehiculo_detalle', 'cliente', 'cliente_detalle', 'recepcionista', 'recepcionista_nombre',
             'mecanico_asignado', 'mecanico_nombre', 'estado', 'tipo_servicio', 'tipo_servicio_detalle', 'kilometraje_ingreso',
             'motivo_ingreso', 'url_cotizacion_pdf', 'fecha_vencimiento_cotizacion', 'fecha_estimada_entrega', 'fecha_ingreso',
-            'fecha_finalizacion', 'hallazgos', 'servicios', 'repuestos', 'historial_estados'
+            'fecha_finalizacion', 'hallazgos', 'servicios', 'repuestos', 'evidencias_ingreso', 'historial_estados'
         ]
         read_only_fields = ['recepcionista', 'numero']
 

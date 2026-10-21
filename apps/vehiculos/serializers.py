@@ -21,6 +21,26 @@ class VehiculoSerializer(serializers.ModelSerializer):
         model = Vehiculo
         fields = '__all__'
 
+    def to_internal_value(self, data):
+        if hasattr(data, 'dict'):
+            mutable_data = data.dict()
+        elif hasattr(data, 'copy'):
+            mutable_data = data.copy()
+        else:
+            mutable_data = dict(data)
+
+        if 'imagen' in mutable_data:
+            val = mutable_data['imagen']
+            if val in ('null', 'undefined', '', None):
+                mutable_data['imagen'] = None
+            elif isinstance(val, str) and (val.startswith('http://') or val.startswith('https://') or val.startswith('/media/')):
+                # URL existente devuelta sin cambios, no sobreescribir ni revalidar
+                mutable_data.pop('imagen', None)
+            elif isinstance(val, dict) and not val:
+                mutable_data.pop('imagen', None)
+
+        return super().to_internal_value(mutable_data)
+
     def create(self, validated_data):
         from apps.clientes.models import Cliente
         cliente_id = validated_data.pop('cliente_id', None)

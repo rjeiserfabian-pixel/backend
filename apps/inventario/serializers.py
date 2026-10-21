@@ -1,3 +1,4 @@
+import json
 from rest_framework import serializers
 from decimal import Decimal
 from .models import (
@@ -86,6 +87,35 @@ class RepuestoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Repuesto
         fields = '__all__'
+
+    def to_internal_value(self, data):
+        # Soporte para multipart/form-data donde data es QueryDict
+        if hasattr(data, 'dict'):
+            mutable_data = data.dict()
+        elif hasattr(data, 'copy'):
+            mutable_data = data.copy()
+        else:
+            mutable_data = dict(data)
+
+        # Parsear aplicaciones si viene como JSON serializado
+        if 'aplicaciones' in mutable_data and isinstance(mutable_data['aplicaciones'], str):
+            try:
+                mutable_data['aplicaciones'] = json.loads(mutable_data['aplicaciones'])
+            except (ValueError, TypeError):
+                mutable_data['aplicaciones'] = []
+
+        # Limpiar imagen si viene como string 'null', 'undefined' o vacío
+        if 'imagen' in mutable_data:
+            val = mutable_data['imagen']
+            if val in ('null', 'undefined', '', None):
+                mutable_data['imagen'] = None
+            elif isinstance(val, str) and (val.startswith('http://') or val.startswith('https://') or val.startswith('/media/')):
+                # URL existente devuelta sin cambios, no sobreescribir ni revalidar
+                mutable_data.pop('imagen', None)
+            elif isinstance(val, dict) and not val:
+                mutable_data.pop('imagen', None)
+
+        return super().to_internal_value(mutable_data)
 
     def validate_codigo_barra(self, value):
         if value is None:
