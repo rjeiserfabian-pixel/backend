@@ -174,6 +174,9 @@ class ProformaSerializer(serializers.ModelSerializer):
     cliente_apellidos = serializers.CharField(source='cliente.apellidos', read_only=True)
     cliente_dni = serializers.CharField(source='cliente.dni', read_only=True)
     cliente_telefono = serializers.CharField(source='cliente.telefono', read_only=True)
+    vehiculo_placa = serializers.CharField(source='vehiculo.placa', read_only=True, default=None)
+    vehiculo_marca = serializers.CharField(source='vehiculo.marca', read_only=True, default=None)
+    vehiculo_modelo = serializers.CharField(source='vehiculo.modelo', read_only=True, default=None)
     sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)
     creado_por_nombre = serializers.CharField(source='creado_por.nombre_completo', read_only=True)
     venta_generada_ticket = serializers.CharField(source='venta_generada.ticket_kiosko', read_only=True)
@@ -281,6 +284,12 @@ class ProformaSerializer(serializers.ModelSerializer):
             )
         self._recalcular_totales(proforma)
 
+    def _actualizar_kilometraje_vehiculo(self, vehiculo, kilometraje):
+        if vehiculo and kilometraje is not None:
+            if vehiculo.kilometraje_actual is None or kilometraje >= vehiculo.kilometraje_actual:
+                vehiculo.kilometraje_actual = kilometraje
+                vehiculo.save(update_fields=['kilometraje_actual'])
+
     def create(self, validated_data):
         detalles_data = validated_data.pop('detalles')
         request = self.context.get('request')
@@ -290,6 +299,7 @@ class ProformaSerializer(serializers.ModelSerializer):
         validated_data['numero'] = self._generar_numero(sucursal)
         proforma = Proforma.objects.create(**validated_data)
         self._guardar_detalles(proforma, detalles_data)
+        self._actualizar_kilometraje_vehiculo(proforma.vehiculo, proforma.kilometraje)
         return proforma
 
     def update(self, instance, validated_data):
@@ -303,6 +313,7 @@ class ProformaSerializer(serializers.ModelSerializer):
             self._guardar_detalles(instance, detalles_data)
         else:
             self._recalcular_totales(instance)
+        self._actualizar_kilometraje_vehiculo(instance.vehiculo, instance.kilometraje)
         return instance
 
 

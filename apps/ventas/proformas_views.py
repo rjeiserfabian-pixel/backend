@@ -55,7 +55,7 @@ class ProformaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().select_related(
-            'cliente', 'sucursal', 'creado_por', 'venta_generada'
+            'cliente', 'vehiculo', 'sucursal', 'creado_por', 'venta_generada'
         ).prefetch_related('detalles__repuesto__unidad_medida')
 
         sucursal = self.request.query_params.get('sucursal')
@@ -73,7 +73,8 @@ class ProformaViewSet(viewsets.ModelViewSet):
                 Q(cliente__nombres__icontains=search) |
                 Q(cliente__apellidos__icontains=search) |
                 Q(cliente__dni__icontains=search) |
-                Q(cliente__ruc__icontains=search)
+                Q(cliente__ruc__icontains=search) |
+                Q(vehiculo__placa__icontains=search)
             )
 
         fecha_desde = self.request.query_params.get('fecha_desde')
@@ -88,7 +89,7 @@ class ProformaViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='convertir-a-pos')
     @transaction.atomic
     def convertir_a_pos(self, request, pk=None):
-        proforma = Proforma.objects.select_for_update().select_related('cliente', 'sucursal').prefetch_related('detalles').get(pk=pk)
+        proforma = Proforma.objects.select_for_update().select_related('cliente', 'vehiculo', 'sucursal').prefetch_related('detalles').get(pk=pk)
         if proforma.estado == Proforma.Estado.CONVERTIDA and proforma.venta_generada:
             return Response(VentaSerializer(proforma.venta_generada).data)
         if proforma.estado == Proforma.Estado.ANULADA:
@@ -98,6 +99,8 @@ class ProformaViewSet(viewsets.ModelViewSet):
 
         venta = Venta.objects.create(
             cliente=proforma.cliente,
+            vehiculo=proforma.vehiculo,
+            kilometraje=proforma.kilometraje,
             sucursal=proforma.sucursal,
             estado=Venta.Estado.PRE_VENTA,
             ticket_kiosko=f"PROF-{str(uuid.uuid4())[:6].upper()}",

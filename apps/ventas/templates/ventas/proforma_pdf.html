@@ -106,6 +106,30 @@
         </tr>
     </table>
 
+    {% if proforma.vehiculo %}
+    <table style="margin-top: 10px;">
+        <tr>
+            <td style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; background-color: #f8fafc; border-radius: 4px;">
+                <div class="section-title">Datos del vehículo</div>
+                <table class="info-table">
+                    <tr>
+                        <td class="info-label" style="width: 15%;">Placa:</td>
+                        <td class="info-value" style="width: 35%; font-weight: bold;">{{ proforma.vehiculo.placa }}</td>
+                        <td class="info-label" style="width: 15%;">Vehículo:</td>
+                        <td class="info-value" style="width: 35%;">{{ proforma.vehiculo.marca }} {{ proforma.vehiculo.modelo }}{% if proforma.vehiculo.anio_fabricacion %} ({{ proforma.vehiculo.anio_fabricacion }}){% endif %}</td>
+                    </tr>
+                    <tr>
+                        <td class="info-label">Kilometraje:</td>
+                        <td class="info-value">{% if proforma.kilometraje %}{{ proforma.kilometraje }} km{% elif proforma.vehiculo.kilometraje_actual %}{{ proforma.vehiculo.kilometraje_actual }} km{% else %}-{% endif %}</td>
+                        <td class="info-label">Color:</td>
+                        <td class="info-value">{{ proforma.vehiculo.color|default:"-" }}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+    {% endif %}
+
     <table class="items-table">
         <thead>
             <tr>

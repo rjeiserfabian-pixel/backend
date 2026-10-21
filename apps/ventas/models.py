@@ -282,6 +282,8 @@ class Proforma(models.Model):
         CREDITO = 'CREDITO', 'Crédito'
 
     cliente = models.ForeignKey(Cliente, on_delete=models.RESTRICT, related_name='proformas')
+    vehiculo = models.ForeignKey(Vehiculo, on_delete=models.SET_NULL, related_name='proformas', null=True, blank=True)
+    kilometraje = models.IntegerField(null=True, blank=True)
     sucursal = models.ForeignKey(Sucursal, on_delete=models.RESTRICT, related_name='proformas')
     creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, related_name='proformas_creadas')
     venta_generada = models.OneToOneField(Venta, on_delete=models.SET_NULL, related_name='proforma_origen', null=True, blank=True)
