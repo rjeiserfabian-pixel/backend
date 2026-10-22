@@ -9,6 +9,18 @@ logger = logging.getLogger(__name__)
 class TipoServicio(models.Model):
     nombre = models.CharField(max_length=50, unique=True, db_index=True)
     estado = models.BooleanField(default=True)
+    aplica_checklist_preventivo = models.BooleanField(
+        default=False,
+        help_text="Activa el checklist de servicios preventivos en la recepción"
+    )
+    aplica_checklist_correctivo = models.BooleanField(
+        default=False,
+        help_text="Activa el checklist de servicios correctivos en la recepción"
+    )
+    aplica_checklist_diagnostico = models.BooleanField(
+        default=False,
+        help_text="Activa el checklist de servicios de diagnóstico en la recepción"
+    )
 
     class Meta:
         db_table = 'taller_tipo_servicio'
@@ -439,6 +451,31 @@ class PlantillaCorrectiva(models.Model):
         return self.nombre
 
 
+class PlantillaDiagnostico(models.Model):
+    """
+    Servicios de diagnóstico estandarizados para seleccionar en la recepción.
+    Permite registrar rápidamente diagnósticos, revisiones y escaneos
+    requeridos por el cliente mediante un checklist, en lugar de escribirlos manualmente.
+    """
+    nombre = models.CharField(max_length=150, unique=True, db_index=True)
+    descripcion = models.TextField(null=True, blank=True)
+    precio_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    tiempo_estimado_minutos = models.IntegerField(
+        null=True, blank=True,
+        help_text="Tiempo aproximado estimado para este diagnóstico"
+    )
+    activo = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        db_table = 'taller_plantilla_diagnostico'
+        verbose_name = 'Plantilla de Diagnóstico'
+        verbose_name_plural = 'Plantillas de Diagnóstico'
+        ordering = ['nombre']
+
+    def __str__(self):
+        return self.nombre
+
+
 class OrdenEvidenciaIngreso(models.Model):
     """Fotos y evidencias visuales del estado del vehículo al momento de su recepción/ingreso"""
     orden = models.ForeignKey(OrdenTrabajo, on_delete=models.CASCADE, related_name='evidencias_ingreso')
@@ -455,3 +492,56 @@ class OrdenEvidenciaIngreso(models.Model):
 
     def __str__(self):
         return f"Evidencia OT-{self.orden.numero} ({self.descripcion or 'Sin descripción'})"
+
+
+class AccesorioPertenencia(models.Model):
+    """
+    Catálogo administrable de accesorios y pertenencias del vehículo que pueden quedar
+    en custodia del taller durante la recepción (ej. Extintor, Llanta de repuesto, Gata, etc.)
+    """
+    nombre = models.CharField(max_length=150, unique=True, db_index=True)
+    descripcion = models.TextField(null=True, blank=True)
+    orden = models.PositiveIntegerField(default=0, help_text="Orden de visualización en el checklist")
+    activo = models.BooleanField(default=True, db_index=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'taller_accesorio_pertenencia'
+        verbose_name = 'Accesorio y Pertenencia'
+        verbose_name_plural = 'Accesorios y Pertenencias'
+        ordering = ['orden', 'nombre']
+
+    def __str__(self):
+        return self.nombre
+
+
+class OrdenAccesorioPertenencia(models.Model):
+    """
+    Registro de accesorios y pertenencias que el cliente deja en custodia para una orden de trabajo específica.
+    """
+    class EstadoConservacion(models.TextChoices):
+        BUENO = 'BUENO', 'Bueno'
+        REGULAR = 'REGULAR', 'Regular'
+        MALO = 'MALO', 'Malo'
+
+    orden = models.ForeignKey(OrdenTrabajo, on_delete=models.CASCADE, related_name='accesorios_pertenencias')
+    accesorio = models.ForeignKey(AccesorioPertenencia, on_delete=models.RESTRICT, related_name='ordenes_asociadas')
+    cantidad = models.PositiveSmallIntegerField(default=1)
+    estado_conservacion = models.CharField(
+        max_length=20,
+        choices=EstadoConservacion.choices,
+        default=EstadoConservacion.BUENO
+    )
+    observaciones = models.CharField(max_length=255, null=True, blank=True)
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'taller_orden_accesorio_pertenencia'
+        verbose_name = 'Accesorio de Orden'
+        verbose_name_plural = 'Accesorios de Órdenes'
+        ordering = ['accesorio__orden', 'accesorio__nombre']
+        unique_together = [('orden', 'accesorio')]
+
+    def __str__(self):
+        return f"{self.accesorio.nombre} x{self.cantidad} ({self.get_estado_conservacion_display()}) - OT-{self.orden.numero}"
+

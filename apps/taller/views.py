@@ -12,7 +12,8 @@ from django.utils import timezone
 from .models import (
     BloqueoAgendaSucursal, Cita, CitaHistorial, ConfiguracionAgendaSucursal, HorarioAgendaSucursal,
     ListaEsperaCita, OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva,
-    PlantillaCorrectiva, TipoServicio, OrdenHistorialEstado, OrdenEvidenciaIngreso
+    PlantillaCorrectiva, PlantillaDiagnostico, TipoServicio, OrdenHistorialEstado, OrdenEvidenciaIngreso,
+    AccesorioPertenencia, OrdenAccesorioPertenencia
 )
 from apps.vehiculos.models import Vehiculo
 from .serializers import (
@@ -20,8 +21,9 @@ from .serializers import (
     ListaEsperaCitaSerializer, ReservaPublicaCitaSerializer,
     OrdenTrabajoListSerializer, OrdenTrabajoDetailSerializer,
     HallazgoSerializer, OrdenServicioSerializer, OrdenRepuestoSerializer,
-    PlantillaPreventivaSerializer, PlantillaCorrectivaSerializer, TipoServicioSerializer,
-    OrdenEvidenciaIngresoSerializer
+    PlantillaPreventivaSerializer, PlantillaCorrectivaSerializer, PlantillaDiagnosticoSerializer, TipoServicioSerializer,
+    OrdenEvidenciaIngresoSerializer,
+    AccesorioPertenenciaSerializer, OrdenAccesorioPertenenciaSerializer
 )
 from .services import aprobar_cotizacion_orden
 from apps.inventario.models import MovimientoInventario, InventarioStock, Sucursal
@@ -82,6 +84,7 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         if self.action == 'retrieve':
             queryset = queryset.prefetch_related(
                 'hallazgos', 'servicios', 'evidencias_ingreso',
+                'accesorios_pertenencias__accesorio',
                 Prefetch('repuestos', queryset=OrdenRepuesto.objects.select_related('repuesto'))
             )
             
@@ -583,6 +586,44 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         serializer = OrdenEvidenciaIngresoSerializer(nuevas_evidencias, many=True)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['get', 'post'], url_path='accesorios')
+    def accesorios(self, request, pk=None):
+        orden = self.get_object()
+        if request.method == 'GET':
+            items = orden.accesorios_pertenencias.select_related('accesorio').all()
+            return Response(OrdenAccesorioPertenenciaSerializer(items, many=True).data)
+
+        # POST: Guardar o sincronizar la lista de accesorios que el cliente deja
+        items_data = request.data.get('accesorios', [])
+        if not isinstance(items_data, list):
+            return Response({'error': 'accesorios debe ser una lista'}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            orden.accesorios_pertenencias.all().delete()
+            nuevos = []
+            for item in items_data:
+                accesorio_id = item.get('accesorio_id') or item.get('accesorio')
+                if not accesorio_id:
+                    continue
+                nuevos.append(
+                    OrdenAccesorioPertenencia(
+                        orden=orden,
+                        accesorio_id=accesorio_id,
+                        cantidad=max(1, int(item.get('cantidad', 1))),
+                        estado_conservacion=item.get('estado_conservacion') or 'BUENO',
+                        observaciones=(item.get('observaciones') or '').strip()
+                    )
+                )
+            if nuevos:
+                OrdenAccesorioPertenencia.objects.bulk_create(nuevos)
+
+        items_actualizados = orden.accesorios_pertenencias.select_related('accesorio').all()
+        return Response(
+            OrdenAccesorioPertenenciaSerializer(items_actualizados, many=True).data,
+            status=status.HTTP_200_OK
+        )
+
+
 
 class OrdenEvidenciaIngresoViewSet(viewsets.ModelViewSet):
     queryset = OrdenEvidenciaIngreso.objects.select_related('registrado_por', 'orden').all()
@@ -742,6 +783,95 @@ class PlantillaCorrectivaViewSet(viewsets.ModelViewSet):
         if self.request.method == 'DELETE':
             return [TienePermiso("PLANTILLAS_TALLER.ELIMINAR")]
         return [TienePermiso("PLANTILLAS_TALLER.EDITAR")]
+
+
+class PlantillaDiagnosticoViewSet(viewsets.ModelViewSet):
+    """
+    CRUD de plantillas de diagnóstico. Reutiliza los mismos permisos de
+    PLANTILLAS_TALLER para no requerir nuevos perfiles de acceso.
+    Filtro ?activo=true disponible para que NuevaOrdenPage solo cargue
+    las plantillas visibles en recepción.
+    """
+    serializer_class = PlantillaDiagnosticoSerializer
+
+    def get_queryset(self):
+        qs = PlantillaDiagnostico.objects.all()
+        activo = self.request.query_params.get('activo')
+        if activo is not None:
+            qs = qs.filter(activo=(activo.lower() == 'true'))
+        return qs
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("PLANTILLAS_TALLER.VER")]
+        if self.request.method == 'POST':
+            return [TienePermiso("PLANTILLAS_TALLER.CREAR")]
+        if self.request.method == 'DELETE':
+            return [TienePermiso("PLANTILLAS_TALLER.ELIMINAR")]
+        return [TienePermiso("PLANTILLAS_TALLER.EDITAR")]
+
+
+class AccesorioPagination(pagination.PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+class AccesorioPertenenciaViewSet(viewsets.ModelViewSet):
+    """
+    CRUD del catálogo administrable de Accesorios y Pertenencias que pueden quedar en custodia.
+    Soporta filtros ?activo=true, ?page_size=..., ?page=... y ?search=...
+    """
+    serializer_class = AccesorioPertenenciaSerializer
+    pagination_class = AccesorioPagination
+
+    def get_queryset(self):
+        qs = AccesorioPertenencia.objects.all()
+        activo = self.request.query_params.get('activo')
+        if activo is not None:
+            qs = qs.filter(activo=(activo.lower() == 'true'))
+        search = self.request.query_params.get('search')
+        if search:
+            qs = qs.filter(nombre__icontains=search.strip())
+        return qs
+
+    def paginate_queryset(self, queryset):
+        if self.request.query_params.get('sin_paginar') == 'true':
+            return None
+        return super().paginate_queryset(queryset)
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("ACCESORIOS_TALLER.VER")]
+        if self.request.method == 'POST':
+            return [TienePermiso("ACCESORIOS_TALLER.CREAR")]
+        if self.request.method == 'DELETE':
+            return [TienePermiso("ACCESORIOS_TALLER.ELIMINAR")]
+        return [TienePermiso("ACCESORIOS_TALLER.EDITAR")]
+
+
+class OrdenAccesorioPertenenciaViewSet(viewsets.ModelViewSet):
+    """
+    CRUD / listado de accesorios asociados a una orden de trabajo.
+    Permite filtrar por ?orden_id=...
+    """
+    serializer_class = OrdenAccesorioPertenenciaSerializer
+
+    def get_queryset(self):
+        qs = OrdenAccesorioPertenencia.objects.select_related('accesorio', 'orden').all()
+        orden_id = self.request.query_params.get('orden_id')
+        if orden_id:
+            qs = qs.filter(orden_id=orden_id)
+        return qs
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [TienePermiso("ORDENES_TRABAJO.VER")]
+        if self.request.method == 'POST':
+            return [TienePermiso("ORDENES_TRABAJO.CREAR")]
+        if self.request.method == 'DELETE':
+            return [TienePermiso("ORDENES_TRABAJO.ELIMINAR")]
+        return [TienePermiso("ORDENES_TRABAJO.EDITAR")]
 
 
 # Los bloques movidos se re-exportan para que `from .views import ...` siga funcionando.

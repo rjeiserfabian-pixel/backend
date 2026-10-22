@@ -5,9 +5,9 @@ from .views import (
     CitasCatalogoPublicoView, DisponibilidadCitasPublicaView, ListaEsperaCitaViewSet,
     OrdenTrabajoViewSet, HallazgoViewSet, 
     OrdenServicioViewSet, OrdenRepuestoViewSet,
-    PlantillaPreventivaViewSet, PlantillaCorrectivaViewSet, ReservaCitaPublicaView,
+    PlantillaPreventivaViewSet, PlantillaCorrectivaViewSet, PlantillaDiagnosticoViewSet, ReservaCitaPublicaView,
     ConsultaVehiculoPublicaView, AprobarCotizacionPublicaView, TipoServicioViewSet,
-    OrdenEvidenciaIngresoViewSet
+    OrdenEvidenciaIngresoViewSet, AccesorioPertenenciaViewSet, OrdenAccesorioPertenenciaViewSet
 )
 
 router = DefaultRouter()
@@ -22,7 +22,10 @@ router.register(r'repuestos', OrdenRepuestoViewSet, basename='repuesto')
 router.register(r'evidencias', OrdenEvidenciaIngresoViewSet, basename='evidencia')
 router.register(r'plantillas', PlantillaPreventivaViewSet, basename='plantilla')
 router.register(r'plantillas-correctivas', PlantillaCorrectivaViewSet, basename='plantilla_correctiva')
+router.register(r'plantillas-diagnostico', PlantillaDiagnosticoViewSet, basename='plantilla_diagnostico')
 router.register(r'tipos-servicio', TipoServicioViewSet, basename='tipo_servicio')
+router.register(r'accesorios', AccesorioPertenenciaViewSet, basename='accesorio_pertenencia')
+router.register(r'ordenes-accesorios', OrdenAccesorioPertenenciaViewSet, basename='orden_accesorio_pertenencia')
 
 urlpatterns = [
     path('public/citas/catalogo/', CitasCatalogoPublicoView.as_view(), name='citas_catalogo_publico'),
