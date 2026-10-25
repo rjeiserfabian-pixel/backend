@@ -3,7 +3,7 @@ from django.utils import timezone
 from .models import (
     BloqueoAgendaSucursal, Cita, CitaHistorial, ConfiguracionAgendaSucursal, HorarioAgendaSucursal,
     ListaEsperaCita,
-    OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva,
+    OrdenTrabajo, Hallazgo, HallazgoFoto, OrdenServicio, OrdenRepuesto, PlantillaPreventiva,
     TipoServicio, OrdenHistorialEstado, PlantillaCorrectiva, PlantillaDiagnostico, OrdenEvidenciaIngreso,
     AccesorioPertenencia, OrdenAccesorioPertenencia
 )
@@ -257,12 +257,27 @@ class OrdenHistorialEstadoSerializer(serializers.ModelSerializer):
             return obj.usuario.nombre_completo
         return 'Portal del cliente'
 
+class RelativeImageField(serializers.ImageField):
+    """Retorna siempre la URL relativa (/media/...) sin host fijo para funcionar en cualquier IP/dispositivo."""
+    def to_representation(self, value):
+        if not value:
+            return None
+        return value.url
+
+class HallazgoFotoSerializer(serializers.ModelSerializer):
+    imagen = RelativeImageField()
+
+    class Meta:
+        model = HallazgoFoto
+        fields = ['id', 'imagen', 'fecha_registro']
+
 class HallazgoSerializer(serializers.ModelSerializer):
     registrado_por_nombre = serializers.CharField(source='registrado_por.nombre_completo', read_only=True)
+    fotos = HallazgoFotoSerializer(many=True, read_only=True)
 
     class Meta:
         model = Hallazgo
-        fields = ['id', 'orden', 'descripcion', 'severidad', 'fecha_registro', 'registrado_por', 'registrado_por_nombre']
+        fields = ['id', 'orden', 'descripcion', 'severidad', 'fecha_registro', 'registrado_por', 'registrado_por_nombre', 'fotos']
         read_only_fields = ['registrado_por']
 
 class OrdenServicioSerializer(serializers.ModelSerializer):
@@ -339,12 +354,6 @@ class OrdenTrabajoListSerializer(serializers.ModelSerializer):
         cliente = obj.vehiculo.clientes.first()
         return cliente.nombres + " " + (cliente.apellidos or "") if cliente else "Sin Cliente"
 
-class RelativeImageField(serializers.ImageField):
-    """Retorna siempre la URL relativa (/media/...) sin host fijo para funcionar en cualquier IP/dispositivo."""
-    def to_representation(self, value):
-        if not value:
-            return None
-        return value.url
 
 class OrdenEvidenciaIngresoSerializer(serializers.ModelSerializer):
     registrado_por_nombre = serializers.CharField(source='registrado_por.nombre_completo', read_only=True)

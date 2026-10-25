@@ -134,9 +134,14 @@ class CompraViewSet(viewsets.ModelViewSet):
             repuesto.precio_compra = nuevo_costo.quantize(Decimal('0.00'))
 
             # 5. Evaluar Margen y Alerta
-            # Margen = ((Precio Lista - Nuevo Costo) / Precio Lista) * 100
+            # Margen Real Comercial = ((Valor Venta Neto - Costo) / Valor Venta Neto) * 100
+            # donde Valor Venta Neto = Precio Lista / 1.18 (descontando IGV)
             if repuesto.precio_lista > 0:
-                margen_actual = ((repuesto.precio_lista - repuesto.precio_compra) / repuesto.precio_lista) * 100
+                valor_venta_neto = repuesto.precio_lista / Decimal('1.18')
+                if valor_venta_neto > 0:
+                    margen_actual = ((valor_venta_neto - repuesto.precio_compra) / valor_venta_neto) * 100
+                else:
+                    margen_actual = Decimal('0')
                 margen_esperado = repuesto.categoria.margen_minimo_esperado
                 if margen_actual < margen_esperado:
                     repuesto.alerta_precio = True

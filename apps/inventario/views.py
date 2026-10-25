@@ -109,7 +109,7 @@ class RepuestoViewSet(PermisoPorMetodoMixin, viewsets.ModelViewSet):
     queryset = (
         Repuesto.objects
         .filter(estado=True)
-        .select_related('categoria', 'marca', 'unidad_medida')
+        .select_related('categoria', 'marca', 'unidad_medida', 'tipo_igv')
         .prefetch_related(
             'aplicaciones',
             # Prefetch del inventario con sus relaciones anidadas para el detalle
@@ -788,7 +788,8 @@ class TrasladoInventarioViewSet(viewsets.ModelViewSet):
                 return Response({'error': f'No hay stock registrado del repuesto {repuesto.codigo} en la ubicación de origen.'}, status=status.HTTP_400_BAD_REQUEST)
 
             if stock_origen.stock_disponible < cantidad:
-                return Response({'error': f'Stock insuficiente para el repuesto {repuesto.codigo} en la ubicación origen.'}, status=status.HTTP_400_BAD_REQUEST)
+                nombre_rep = f" - {repuesto.nombre}" if repuesto.nombre else ""
+                return Response({'error': f'Stock insuficiente para el repuesto {repuesto.codigo}{nombre_rep} en la ubicación origen.'}, status=status.HTTP_400_BAD_REQUEST)
 
             # 2. Descontar stock en origen (sale de inmediato, queda "en tránsito")
             stock_origen.stock_disponible -= cantidad

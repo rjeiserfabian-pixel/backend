@@ -10,7 +10,7 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 
-from .models import Venta, DetalleVenta, Proforma, ProformaDetalle
+from .models import Venta, DetalleVenta, Proforma, ProformaDetalle, Impuesto
 from .serializers import VentaSerializer, ProformaSerializer
 from apps.seguridad.permissions import TienePermiso
 from apps.seguridad.models import CuentaBancaria
@@ -89,7 +89,7 @@ class ProformaViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='convertir-a-pos')
     @transaction.atomic
     def convertir_a_pos(self, request, pk=None):
-        proforma = Proforma.objects.select_for_update().select_related('cliente', 'vehiculo', 'sucursal').prefetch_related('detalles').get(pk=pk)
+        proforma = Proforma.objects.select_for_update(of=('self',)).select_related('cliente', 'vehiculo', 'sucursal').prefetch_related('detalles').get(pk=pk)
         if proforma.estado == Proforma.Estado.CONVERTIDA and proforma.venta_generada:
             return Response(VentaSerializer(proforma.venta_generada).data)
         if proforma.estado == Proforma.Estado.ANULADA:
@@ -111,7 +111,12 @@ class ProformaViewSet(viewsets.ModelViewSet):
             total=proforma.total,
         )
 
+        impuesto_igv = Impuesto.objects.filter(estado=True, nombre__iexact='IGV').first()
+        if not impuesto_igv:
+            impuesto_igv = Impuesto.objects.filter(estado=True, tasa=18.00).first()
+
         for detalle in proforma.detalles.all():
+            es_gravado = detalle.tipo_afectacion == ProformaDetalle.TipoAfectacion.GRAVADO_18
             DetalleVenta.objects.create(
                 venta=venta,
                 repuesto=detalle.repuesto if detalle.tipo == ProformaDetalle.Tipo.REPUESTO else None,
@@ -120,6 +125,8 @@ class ProformaViewSet(viewsets.ModelViewSet):
                 precio_unitario=detalle.precio_unitario,
                 descuento=detalle.descuento,
                 costo_unitario=detalle.repuesto.precio_compra if detalle.repuesto else None,
+                impuesto_aplicado=impuesto_igv if es_gravado else None,
+                monto_impuesto=detalle.igv_linea,
                 subtotal_linea=detalle.subtotal_linea,
             )
 
@@ -134,11 +141,13 @@ class ProformaViewSet(viewsets.ModelViewSet):
     def generar_pdf(self, request, pk=None):
         proforma = self.get_object()
         cuentas = CuentaBancaria.objects.filter(estado=True).select_related('tipo_cuenta')
+        moneda_simbolo = 'S/' if proforma.moneda == 'PEN' else ('$' if proforma.moneda == 'USD' else '€')
         context = {
             **contexto_empresa_pdf(),
             'proforma': proforma,
             'cuentas_bancarias': cuentas,
             'numero_documento': proforma.numero,
+            'moneda_simbolo': moneda_simbolo,
         }
         html_string = render_to_string('ventas/proforma_pdf.html', context)
         response = HttpResponse(content_type='application/pdf')

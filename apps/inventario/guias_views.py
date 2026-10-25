@@ -386,8 +386,9 @@ class GuiaRemisionViewSet(viewsets.ModelViewSet):
                 cantidad_restante -= descontar
 
             if cantidad_restante > 0:
+                nombre_rep = f" - {detalle.repuesto.nombre}" if detalle.repuesto.nombre else ""
                 raise ValueError(
-                    f"Stock insuficiente para {detalle.repuesto.codigo} en el almacen "
+                    f"Stock insuficiente para {detalle.repuesto.codigo}{nombre_rep} en el almacen "
                     f"{guia.almacen_origen.nombre}. Faltan {cantidad_restante} unidades."
                 )
 

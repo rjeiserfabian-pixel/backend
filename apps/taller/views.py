@@ -3,15 +3,17 @@ from datetime import date, datetime, time, timedelta
 from rest_framework import viewsets, status, pagination
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
+from django.shortcuts import get_object_or_404
 from .models import (
     BloqueoAgendaSucursal, Cita, CitaHistorial, ConfiguracionAgendaSucursal, HorarioAgendaSucursal,
-    ListaEsperaCita, OrdenTrabajo, Hallazgo, OrdenServicio, OrdenRepuesto, PlantillaPreventiva,
+    ListaEsperaCita, OrdenTrabajo, Hallazgo, HallazgoFoto, OrdenServicio, OrdenRepuesto, PlantillaPreventiva,
     PlantillaCorrectiva, PlantillaDiagnostico, TipoServicio, OrdenHistorialEstado, OrdenEvidenciaIngreso,
     AccesorioPertenencia, OrdenAccesorioPertenencia
 )
@@ -83,7 +85,7 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         
         if self.action == 'retrieve':
             queryset = queryset.prefetch_related(
-                'hallazgos', 'servicios', 'evidencias_ingreso',
+                'hallazgos__fotos', 'servicios', 'evidencias_ingreso',
                 'accesorios_pertenencias__accesorio',
                 Prefetch('repuestos', queryset=OrdenRepuesto.objects.select_related('repuesto'))
             )
@@ -641,8 +643,9 @@ class OrdenEvidenciaIngresoViewSet(viewsets.ModelViewSet):
 
 
 class HallazgoViewSet(viewsets.ModelViewSet):
-    queryset = Hallazgo.objects.all()
+    queryset = Hallazgo.objects.prefetch_related('fotos').all()
     serializer_class = HallazgoSerializer
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
 
     def get_permissions(self):
         if self.request.method == 'GET':
@@ -652,7 +655,37 @@ class HallazgoViewSet(viewsets.ModelViewSet):
         return [TienePermiso("ORDENES_TRABAJO.EDITAR")]
 
     def perform_create(self, serializer):
-        serializer.save(registrado_por=self.request.user)
+        hallazgo = serializer.save(registrado_por=self.request.user)
+        fotos = self.request.FILES.getlist('fotos')
+        # Límite estricto: máximo 2 fotos por hallazgo
+        for f in fotos[:2]:
+            HallazgoFoto.objects.create(
+                hallazgo=hallazgo,
+                imagen=f,
+                registrado_por=self.request.user
+            )
+
+    def perform_update(self, serializer):
+        hallazgo = serializer.save()
+        fotos = self.request.FILES.getlist('fotos')
+        if fotos:
+            fotos_actuales = hallazgo.fotos.count()
+            disponibles = max(0, 2 - fotos_actuales)
+            for f in fotos[:disponibles]:
+                HallazgoFoto.objects.create(
+                    hallazgo=hallazgo,
+                    imagen=f,
+                    registrado_por=self.request.user
+                )
+
+    @action(detail=True, methods=['delete'], url_path=r'fotos/(?P<foto_id>\d+)')
+    def eliminar_foto(self, request, pk=None, foto_id=None):
+        hallazgo = self.get_object()
+        foto = get_object_or_404(HallazgoFoto, pk=foto_id, hallazgo=hallazgo)
+        if foto.imagen:
+            foto.imagen.delete(save=False)
+        foto.delete()
+        return Response({'status': 'Foto eliminada'}, status=status.HTTP_200_OK)
 
 class OrdenServicioViewSet(viewsets.ModelViewSet):
     queryset = OrdenServicio.objects.all()

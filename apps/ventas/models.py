@@ -303,6 +303,11 @@ class Proforma(models.Model):
     descuento_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
+    # Desglose tributario SUNAT (Fase 1: Auditoría tributaria)
+    total_gravado = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Total de operaciones gravadas con IGV")
+    total_exonerado = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Total de operaciones exoneradas de IGV")
+    total_inafecto = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Total de operaciones inafectas de IGV")
+
     creado_en = models.DateTimeField(default=timezone.now, db_index=True)
     actualizado_en = models.DateTimeField(auto_now=True)
     convertido_en = models.DateTimeField(null=True, blank=True)
@@ -322,6 +327,11 @@ class ProformaDetalle(models.Model):
         REPUESTO = 'REPUESTO', 'Repuesto / Producto'
         SERVICIO = 'SERVICIO', 'Servicio'
 
+    class TipoAfectacion(models.TextChoices):
+        GRAVADO_18 = 'GRAVADO_18', 'Gravado - Operación Onerosa (18%)'
+        EXONERADO = 'EXONERADO', 'Exonerado - Operación Onerosa'
+        INAFECTO = 'INAFECTO', 'Inafecto - Operación Onerosa'
+
     proforma = models.ForeignKey(Proforma, on_delete=models.CASCADE, related_name='detalles')
     tipo = models.CharField(max_length=10, choices=Tipo.choices, default=Tipo.REPUESTO)
     repuesto = models.ForeignKey(Repuesto, on_delete=models.RESTRICT, related_name='detalles_proforma', null=True, blank=True)
@@ -330,6 +340,30 @@ class ProformaDetalle(models.Model):
     precio_unitario = models.DecimalField(max_digits=10, decimal_places=2)
     descuento = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     subtotal_linea = models.DecimalField(max_digits=12, decimal_places=2)
+
+    # Configuración y desglose tributario por línea (Catálogo 07 SUNAT)
+    tipo_afectacion = models.CharField(
+        max_length=20,
+        choices=TipoAfectacion.choices,
+        default=TipoAfectacion.GRAVADO_18,
+        help_text="Tipo de afectación al IGV de esta línea"
+    )
+    precio_incluye_igv = models.BooleanField(
+        default=True,
+        help_text="Indica si el precio_unitario ingresado para esta línea ya incluye IGV"
+    )
+    base_imponible = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        help_text="Base imponible neta calculada de la línea"
+    )
+    igv_linea = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        help_text="Monto de IGV calculado de la línea"
+    )
 
     class Meta:
         db_table = 'ventas_proforma_detalle'

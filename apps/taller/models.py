@@ -363,6 +363,23 @@ class Hallazgo(models.Model):
         return f"Hallazgo de OT-{self.orden.numero}: {self.descripcion}"
 
 
+class HallazgoFoto(models.Model):
+    """Fotografías y evidencias de inspección asociadas a un hallazgo específico (máximo 2 por hallazgo)"""
+    hallazgo = models.ForeignKey(Hallazgo, on_delete=models.CASCADE, related_name='fotos')
+    imagen = models.ImageField(upload_to='hallazgos/')
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+    registrado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, null=True, blank=True)
+
+    class Meta:
+        db_table = 'taller_hallazgo_foto'
+        verbose_name = 'Foto de Hallazgo'
+        verbose_name_plural = 'Fotos de Hallazgos'
+        ordering = ['fecha_registro']
+
+    def __str__(self):
+        return f"Foto de Hallazgo #{self.hallazgo_id}"
+
+
 class OrdenServicio(models.Model):
     """Mano de obra o servicios a realizar en la OT"""
     orden = models.ForeignKey(OrdenTrabajo, on_delete=models.CASCADE, related_name='servicios')
@@ -413,6 +430,10 @@ class PlantillaPreventiva(models.Model):
     nombre = models.CharField(max_length=150, unique=True, db_index=True)
     descripcion = models.TextField(null=True, blank=True)
     precio_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    precio_incluye_igv = models.BooleanField(
+        default=True,
+        help_text="Indica si el precio base sugerido incluye IGV (18%)"
+    )
     tiempo_estimado_minutos = models.IntegerField(null=True, blank=True, help_text="Tiempo aproximado que toma el servicio")
     activo = models.BooleanField(default=True, db_index=True)
 
@@ -435,6 +456,10 @@ class PlantillaCorrectiva(models.Model):
     nombre = models.CharField(max_length=150, unique=True, db_index=True)
     descripcion = models.TextField(null=True, blank=True)
     precio_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    precio_incluye_igv = models.BooleanField(
+        default=True,
+        help_text="Indica si el precio base sugerido incluye IGV (18%)"
+    )
     tiempo_estimado_minutos = models.IntegerField(
         null=True, blank=True,
         help_text="Tiempo aproximado estimado para este correctivo"
@@ -460,6 +485,10 @@ class PlantillaDiagnostico(models.Model):
     nombre = models.CharField(max_length=150, unique=True, db_index=True)
     descripcion = models.TextField(null=True, blank=True)
     precio_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    precio_incluye_igv = models.BooleanField(
+        default=True,
+        help_text="Indica si el precio base sugerido incluye IGV (18%)"
+    )
     tiempo_estimado_minutos = models.IntegerField(
         null=True, blank=True,
         help_text="Tiempo aproximado estimado para este diagnóstico"

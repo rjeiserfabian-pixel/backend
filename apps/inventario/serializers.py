@@ -83,6 +83,9 @@ class RepuestoSerializer(serializers.ModelSerializer):
     stock_total_disponible = serializers.ReadOnlyField()
     stock_minimo_global = serializers.ReadOnlyField()
     inventario_stock = InventarioStockResumenSerializer(many=True, read_only=True)
+    tipo_igv_nombre = serializers.CharField(source='tipo_igv.nombre', read_only=True)
+    tipo_igv_codigo = serializers.CharField(source='tipo_igv.codigo_sunat', read_only=True)
+    tipo_igv_tasa = serializers.DecimalField(source='tipo_igv.tasa', max_digits=5, decimal_places=2, read_only=True)
 
     class Meta:
         model = Repuesto

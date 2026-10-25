@@ -35,7 +35,7 @@ from django.views.static import serve
 # MEDIA_ROOT es la raíz del backend (ahí viven .env, settings.py, etc.), así que NUNCA se
 # sirve completa: solo las carpetas de imágenes públicas (logo de la empresa, avatares y
 # QR de pago). Los documentos privados (SOAT, licencias) van por /api/documentos/.
-CARPETAS_MEDIA_PUBLICAS = ('empresa', 'avatars', 'pagos_qr', 'repuestos', 'vehiculos', 'ordenes_ingreso')
+CARPETAS_MEDIA_PUBLICAS = ('empresa', 'avatars', 'pagos_qr', 'repuestos', 'vehiculos', 'ordenes_ingreso', 'hallazgos')
 
 
 def media_publica(request, path):

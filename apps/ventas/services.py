@@ -671,7 +671,8 @@ class VentasService:
             cantidad_restante -= descontar
             
         if cantidad_restante > 0:
-            raise ValueError(f"Stock insuficiente para {repuesto.codigo} en el almacén {almacen.nombre}. Faltan {cantidad_restante} unidades.")
+            nombre_repuesto = f" - {repuesto.nombre}" if repuesto.nombre else ""
+            raise ValueError(f"Stock insuficiente para {repuesto.codigo}{nombre_repuesto} en el almacén {almacen.nombre}. Faltan {cantidad_restante} unidades.")
 
 
 class CreditoService:

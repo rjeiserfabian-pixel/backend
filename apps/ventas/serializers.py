@@ -161,11 +161,14 @@ class ProformaDetalleSerializer(serializers.ModelSerializer):
     repuesto_nombre = serializers.CharField(source='repuesto.nombre', read_only=True)
     repuesto_codigo = serializers.CharField(source='repuesto.codigo', read_only=True)
     repuesto_unidad_medida = serializers.CharField(source='repuesto.unidad_medida.abreviatura', read_only=True)
+    repuesto_stock = serializers.DecimalField(source='repuesto.stock_total_disponible', max_digits=12, decimal_places=2, read_only=True, default=0)
+    repuesto_tipo_igv_codigo = serializers.CharField(source='repuesto.tipo_igv.codigo_sunat', read_only=True, default=None)
+    descripcion = serializers.CharField(required=False, allow_blank=True, default='')
 
     class Meta:
         model = ProformaDetalle
         fields = '__all__'
-        read_only_fields = ('proforma', 'subtotal_linea')
+        read_only_fields = ('proforma', 'subtotal_linea', 'base_imponible', 'igv_linea')
 
 
 class ProformaSerializer(serializers.ModelSerializer):
@@ -186,6 +189,7 @@ class ProformaSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = (
             'numero', 'subtotal', 'igv', 'descuento_total', 'total',
+            'total_gravado', 'total_exonerado', 'total_inafecto',
             'creado_por', 'creado_en', 'actualizado_en', 'convertido_en', 'venta_generada'
         )
 
@@ -199,6 +203,7 @@ class ProformaSerializer(serializers.ModelSerializer):
             cantidad = Decimal(str(item.get('cantidad') or 0))
             precio = Decimal(str(item.get('precio_unitario') or 0))
             descuento = Decimal(str(item.get('descuento') or 0))
+            tipo_afectacion = item.get('tipo_afectacion')
 
             if cantidad <= 0:
                 raise serializers.ValidationError("La cantidad de cada item debe ser mayor a cero.")
@@ -212,6 +217,8 @@ class ProformaSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Los items de repuesto deben indicar un producto.")
             if tipo == ProformaDetalle.Tipo.SERVICIO and not descripcion:
                 raise serializers.ValidationError("Los servicios deben tener una descripción.")
+            if tipo_afectacion and tipo_afectacion not in ProformaDetalle.TipoAfectacion.values:
+                raise serializers.ValidationError(f"Tipo de afectación '{tipo_afectacion}' no válido.")
         return value
 
     def _generar_numero(self, sucursal):
@@ -232,34 +239,70 @@ class ProformaSerializer(serializers.ModelSerializer):
         return f"PROF-{str(max_id + 1).zfill(6)}"
 
     def _recalcular_totales(self, proforma):
-        bruto = Decimal('0.00')
+        suma_base_gravada = Decimal('0.00')
+        suma_base_exonerada = Decimal('0.00')
+        suma_base_inafecta = Decimal('0.00')
         descuento_items = Decimal('0.00')
-        for detalle in proforma.detalles.all():
-            bruto += (detalle.cantidad * detalle.precio_unitario)
-            descuento_items += detalle.descuento
 
+        detalles = list(proforma.detalles.all())
+        for detalle in detalles:
+            descuento_items += detalle.descuento
+            if detalle.tipo_afectacion == ProformaDetalle.TipoAfectacion.GRAVADO_18:
+                suma_base_gravada += detalle.base_imponible
+            elif detalle.tipo_afectacion == ProformaDetalle.TipoAfectacion.EXONERADO:
+                suma_base_exonerada += detalle.base_imponible
+            elif detalle.tipo_afectacion == ProformaDetalle.TipoAfectacion.INAFECTO:
+                suma_base_inafecta += detalle.base_imponible
+
+        suma_base_total = suma_base_gravada + suma_base_exonerada + suma_base_inafecta
         descuento_global = Decimal(str(proforma.descuento_global or 0))
         if descuento_global < 0:
             descuento_global = Decimal('0.00')
-        descuento_total = min(descuento_items + descuento_global, bruto)
-        total = (bruto - descuento_total).quantize(Decimal('0.01'))
+        descuento_global = min(descuento_global, suma_base_total)
 
-        if proforma.incluye_igv:
-            # Los precios ingresados YA incluyen IGV → descomponemos
-            subtotal, igv = VentasService.descomponer_total_con_impuesto(total)
+        if descuento_global > 0 and suma_base_total > 0:
+            factor_gravado = suma_base_gravada / suma_base_total
+            factor_exonerado = suma_base_exonerada / suma_base_total
+
+            desc_gravado = (descuento_global * factor_gravado).quantize(Decimal('0.01'))
+            desc_exonerado = (descuento_global * factor_exonerado).quantize(Decimal('0.01'))
+            desc_inafecto = (descuento_global - desc_gravado - desc_exonerado).quantize(Decimal('0.01'))
+
+            total_gravado = max(Decimal('0.00'), suma_base_gravada - desc_gravado)
+            total_exonerado = max(Decimal('0.00'), suma_base_exonerada - desc_exonerado)
+            total_inafecto = max(Decimal('0.00'), suma_base_inafecta - desc_inafecto)
         else:
-            # Los precios ingresados NO incluyen IGV → IGV = 0, total sin cambio
-            subtotal = total
-            igv = Decimal('0.00')
+            total_gravado = suma_base_gravada
+            total_exonerado = suma_base_exonerada
+            total_inafecto = suma_base_inafecta
 
+        tasa_decimal = VentasService.obtener_tasa_impuesto() / Decimal('100')
+        if descuento_global > 0:
+            igv = (total_gravado * tasa_decimal).quantize(Decimal('0.01'))
+        else:
+            igv = sum(d.igv_linea for d in detalles).quantize(Decimal('0.01'))
+
+        subtotal = (total_gravado + total_exonerado + total_inafecto).quantize(Decimal('0.01'))
+        total = (subtotal + igv).quantize(Decimal('0.01'))
+        descuento_total = (descuento_items + descuento_global).quantize(Decimal('0.01'))
+
+        proforma.total_gravado = total_gravado
+        proforma.total_exonerado = total_exonerado
+        proforma.total_inafecto = total_inafecto
         proforma.subtotal = subtotal
         proforma.igv = igv
-        proforma.descuento_total = descuento_total.quantize(Decimal('0.01'))
+        proforma.descuento_total = descuento_total
         proforma.total = total
-        proforma.save(update_fields=['subtotal', 'igv', 'descuento_total', 'total', 'actualizado_en'])
+        proforma.save(update_fields=[
+            'total_gravado', 'total_exonerado', 'total_inafecto',
+            'subtotal', 'igv', 'descuento_total', 'total', 'actualizado_en'
+        ])
 
     def _guardar_detalles(self, proforma, detalles_data):
         proforma.detalles.all().delete()
+        tasa_decimal = VentasService.obtener_tasa_impuesto() / Decimal('100')
+        factor = Decimal('1') + tasa_decimal
+
         for item in detalles_data:
             tipo = item.get('tipo') or ProformaDetalle.Tipo.REPUESTO
             repuesto = item.get('repuesto')
@@ -270,7 +313,41 @@ class ProformaSerializer(serializers.ModelSerializer):
             cantidad = Decimal(str(item.get('cantidad') or 0))
             precio = Decimal(str(item.get('precio_unitario') or 0))
             descuento = Decimal(str(item.get('descuento') or 0))
-            subtotal_linea = ((cantidad * precio) - descuento).quantize(Decimal('0.01'))
+
+            tipo_afectacion = item.get('tipo_afectacion')
+            if not tipo_afectacion:
+                if repuesto and getattr(repuesto, 'tipo_igv', None):
+                    cod = str(repuesto.tipo_igv.codigo_sunat or '').strip()
+                    if cod == '10':
+                        tipo_afectacion = ProformaDetalle.TipoAfectacion.GRAVADO_18
+                    elif cod == '30':
+                        tipo_afectacion = ProformaDetalle.TipoAfectacion.INAFECTO
+                    else:
+                        tipo_afectacion = ProformaDetalle.TipoAfectacion.EXONERADO
+                else:
+                    tipo_afectacion = ProformaDetalle.TipoAfectacion.EXONERADO
+
+            precio_incluye_igv = item.get('precio_incluye_igv')
+            if precio_incluye_igv is None:
+                precio_incluye_igv = proforma.incluye_igv
+
+            if tipo_afectacion == ProformaDetalle.TipoAfectacion.GRAVADO_18:
+                if precio_incluye_igv:
+                    # El precio unitario ingresado incluye IGV (18%)
+                    importe_con_igv = max(Decimal('0.00'), (cantidad * precio) - descuento)
+                    base_imponible = (importe_con_igv / factor).quantize(Decimal('0.01'))
+                    igv_linea = (importe_con_igv - base_imponible).quantize(Decimal('0.01'))
+                    subtotal_linea = importe_con_igv.quantize(Decimal('0.01'))
+                else:
+                    # El precio unitario ingresado es valor neto sin IGV
+                    base_imponible = max(Decimal('0.00'), (cantidad * precio) - descuento).quantize(Decimal('0.01'))
+                    igv_linea = (base_imponible * tasa_decimal).quantize(Decimal('0.01'))
+                    subtotal_linea = (base_imponible + igv_linea).quantize(Decimal('0.01'))
+            else:
+                # EXONERADO o INAFECTO: sin IGV
+                base_imponible = max(Decimal('0.00'), (cantidad * precio) - descuento).quantize(Decimal('0.01'))
+                igv_linea = Decimal('0.00')
+                subtotal_linea = base_imponible
 
             ProformaDetalle.objects.create(
                 proforma=proforma,
@@ -280,6 +357,10 @@ class ProformaSerializer(serializers.ModelSerializer):
                 cantidad=cantidad,
                 precio_unitario=precio,
                 descuento=descuento,
+                tipo_afectacion=tipo_afectacion,
+                precio_incluye_igv=precio_incluye_igv,
+                base_imponible=base_imponible,
+                igv_linea=igv_linea,
                 subtotal_linea=subtotal_linea,
             )
         self._recalcular_totales(proforma)
@@ -297,6 +378,9 @@ class ProformaSerializer(serializers.ModelSerializer):
         sucursal = validated_data['sucursal']
         validated_data['creado_por'] = usuario
         validated_data['numero'] = self._generar_numero(sucursal)
+        validated_data.setdefault('total_gravado', Decimal('0.00'))
+        validated_data.setdefault('total_exonerado', Decimal('0.00'))
+        validated_data.setdefault('total_inafecto', Decimal('0.00'))
         proforma = Proforma.objects.create(**validated_data)
         self._guardar_detalles(proforma, detalles_data)
         self._actualizar_kilometraje_vehiculo(proforma.vehiculo, proforma.kilometraje)
