@@ -252,7 +252,7 @@ class OrdenTrabajoTests(TestCase):
         self.assertFalse(orp.instalado)
         self.assertFalse(orp.aprobado_cliente)
 
-    def test_no_permite_agregar_repuesto_sin_stock_a_cotizacion(self):
+    def test_permite_agregar_repuesto_sin_stock_pero_bloquea_instalacion_sin_compra(self):
         resp = self._crear_orden()
         orden_id = resp.data['id']
 
@@ -266,22 +266,43 @@ class OrdenTrabajoTests(TestCase):
             precio_cash=Decimal('9.00'),
             precio_lista=Decimal('10.00'),
         )
-        InventarioStock.objects.create(
+        inv_stock = InventarioStock.objects.create(
             repuesto=repuesto_sin_stock,
             ubicacion=self.ubicacion,
             stock_disponible=Decimal('0.00'),
         )
 
+        # 1. Permite agregar a la cotización de la OT aunque tenga stock 0 (Alternativa 1)
         resp_rep = self.client.post('/api/taller/repuestos/', {
             'orden': orden_id,
             'repuesto': repuesto_sin_stock.id,
             'cantidad': '1',
             'precio_unitario': '10.00',
         }, format='json')
+        self.assertEqual(resp_rep.status_code, 201, resp_rep.data)
+        orp_id = resp_rep.data['id']
 
-        self.assertEqual(resp_rep.status_code, 400, resp_rep.data)
-        self.assertIn('stock disponible suficiente', str(resp_rep.data))
-        self.assertFalse(OrdenRepuesto.objects.filter(orden_id=orden_id, repuesto=repuesto_sin_stock).exists())
+        # 2. Permite aprobar la cotización
+        resp_apr = self.client.post(f'/api/taller/ordenes/{orden_id}/aprobar_servicios/', {
+            'servicios_aprobados': [],
+            'repuestos_aprobados': [orp_id],
+        }, format='json')
+        self.assertEqual(resp_apr.status_code, 200, resp_apr.data)
+
+        # 3. Intentar instalar sin haber comprado el repuesto debe ser rechazado
+        resp_inst = self.client.patch(f'/api/taller/repuestos/{orp_id}/marcar_instalado/', {}, format='json')
+        self.assertEqual(resp_inst.status_code, 400, resp_inst.data)
+        self.assertIn('no cuenta con stock físico en almacén', str(resp_inst.data))
+
+        # 4. Llega la compra del repuesto a almacén (+2 unidades)
+        inv_stock.stock_disponible = Decimal('2.00')
+        inv_stock.save()
+
+        # 5. Ahora sí permite marcar como instalado y descuenta del stock disponible
+        resp_inst_ok = self.client.patch(f'/api/taller/repuestos/{orp_id}/marcar_instalado/', {}, format='json')
+        self.assertEqual(resp_inst_ok.status_code, 200, resp_inst_ok.data)
+        inv_stock.refresh_from_db()
+        self.assertEqual(inv_stock.stock_disponible, Decimal('1.00'))
 
 
 class ConsultaVehiculoPublicaTests(TestCase):

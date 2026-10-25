@@ -183,6 +183,8 @@ class ProformaSerializer(serializers.ModelSerializer):
     sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)
     creado_por_nombre = serializers.CharField(source='creado_por.nombre_completo', read_only=True)
     venta_generada_ticket = serializers.CharField(source='venta_generada.ticket_kiosko', read_only=True)
+    orden_trabajo_id = serializers.IntegerField(source='orden_trabajo_generada.id', read_only=True, default=None)
+    orden_trabajo_numero = serializers.CharField(source='orden_trabajo_generada.numero', read_only=True, default=None)
 
     class Meta:
         model = Proforma
@@ -190,7 +192,7 @@ class ProformaSerializer(serializers.ModelSerializer):
         read_only_fields = (
             'numero', 'subtotal', 'igv', 'descuento_total', 'total',
             'total_gravado', 'total_exonerado', 'total_inafecto',
-            'creado_por', 'creado_en', 'actualizado_en', 'convertido_en', 'venta_generada'
+            'creado_por', 'creado_en', 'actualizado_en', 'convertido_en', 'venta_generada', 'orden_trabajo_generada'
         )
 
     def validate_detalles(self, value):

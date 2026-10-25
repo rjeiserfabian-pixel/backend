@@ -175,6 +175,7 @@ class AprobarCotizacionPublicaView(APIView):
                 observaciones='Aprobado por el cliente desde Estado de Vehiculo.',
                 exigir_esperando_aprobacion=True,
                 exigir_seleccion=True,
+                exigir_stock=True,
             )
         except ValidationError as exc:
             detail = exc.detail[0] if isinstance(exc.detail, list) else exc.detail

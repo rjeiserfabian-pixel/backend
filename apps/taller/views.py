@@ -32,7 +32,7 @@ from apps.inventario.models import MovimientoInventario, InventarioStock, Sucurs
 from apps.clientes.models import Cliente
 from apps.ventas.models import Venta, DetalleVenta
 from apps.ventas.services import VentasService
-from apps.seguridad.permissions import TienePermiso, permisos_efectivos
+from apps.seguridad.permissions import TienePermiso, TieneAlgunPermiso, permisos_efectivos
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,10 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
             return [TienePermiso("VENTAS.POS.CREAR")]
         if self.action == 'anular':
             return [TienePermiso("ORDENES_TRABAJO.CAMBIAR_ESTADO")]
+        if self.action == 'accesorios':
+            if self.request.method == 'GET':
+                return [TienePermiso("ORDENES_TRABAJO.VER")]
+            return [TieneAlgunPermiso("ORDENES_TRABAJO.GESTIONAR_ACCESORIOS", "ORDENES_TRABAJO.CREAR")]
         if self.request.method == 'GET':
             return [TienePermiso("ORDENES_TRABAJO.VER")]
         if self.request.method == 'POST':
@@ -382,7 +386,7 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
 
         for orp in orden.repuestos.filter(aprobado_cliente=True, instalado=False):
             stock_record = InventarioStock.objects.filter(repuesto=orp.repuesto).first()
-            if stock_record:
+            if stock_record and stock_record.stock_reservado >= orp.cantidad:
                 stock_record.stock_disponible += orp.cantidad
                 stock_record.stock_reservado -= orp.cantidad
                 stock_record.save()
@@ -739,11 +743,18 @@ class OrdenRepuestoViewSet(viewsets.ModelViewSet):
         if nuevo_valor and not repuesto_orden.aprobado_cliente:
             raise ValidationError("No se puede instalar un repuesto que no ha sido aprobado.")
 
-        stock_record = InventarioStock.objects.select_for_update().filter(repuesto=repuesto_orden.repuesto).first()
+        if nuevo_valor:
+            # Para instalar, verificar de dónde proviene el stock físico:
+            # 1. ¿Estaba en stock_reservado de la cotización?
+            # 2. O si no estaba reservado, ¿hay stock_disponible (ej. ingresó por compra posterior)?
+            stock_record = InventarioStock.objects.select_for_update().filter(repuesto=repuesto_orden.repuesto).first()
+            if not stock_record:
+                raise ValidationError(
+                    f"No existe registro de inventario para el repuesto '{repuesto_orden.repuesto.nombre}'."
+                )
 
-        if stock_record:
-            if nuevo_valor:
-                # Instalar: convertir la reserva en salida definitiva.
+            if stock_record.stock_reservado >= repuesto_orden.cantidad:
+                # Convertir la reserva previa en salida definitiva
                 stock_record.stock_reservado -= repuesto_orden.cantidad
                 stock_record.save()
                 MovimientoInventario.objects.create(
@@ -757,8 +768,31 @@ class OrdenRepuestoViewSet(viewsets.ModelViewSet):
                     referencia_id=orden.id,
                     referencia_tipo='OT'
                 )
+            elif stock_record.stock_disponible >= repuesto_orden.cantidad:
+                # El repuesto ingresó por compra después de cotizar: descontar de disponible directamente
+                stock_record.stock_disponible -= repuesto_orden.cantidad
+                stock_record.save()
+                MovimientoInventario.objects.create(
+                    repuesto=repuesto_orden.repuesto,
+                    ubicacion=stock_record.ubicacion,
+                    tipo_movimiento=MovimientoInventario.TipoMovimiento.SALIDA,
+                    cantidad=-repuesto_orden.cantidad,
+                    stock_resultante=stock_record.stock_disponible,
+                    motivo=f"Instalación en OT-{orden.numero} (compra directa)",
+                    usuario=request.user,
+                    referencia_id=orden.id,
+                    referencia_tipo='OT'
+                )
             else:
-                # Revertir instalación: la reserva vuelve a estar activa.
+                raise ValidationError(
+                    f"No se puede marcar como instalado: el repuesto '{repuesto_orden.repuesto.nombre}' no cuenta con stock físico en almacén "
+                    f"(requerido: {repuesto_orden.cantidad}, disponible: {stock_record.stock_disponible}). "
+                    "Debe registrar la compra o ingreso de mercadería en el módulo de Compras antes de instalarlo."
+                )
+        else:
+            # Revertir instalación: la reserva vuelve a estar activa
+            stock_record = InventarioStock.objects.select_for_update().filter(repuesto=repuesto_orden.repuesto).first()
+            if stock_record:
                 stock_record.stock_reservado += repuesto_orden.cantidad
                 stock_record.save()
                 MovimientoInventario.objects.create(
@@ -901,10 +935,10 @@ class OrdenAccesorioPertenenciaViewSet(viewsets.ModelViewSet):
         if self.request.method == 'GET':
             return [TienePermiso("ORDENES_TRABAJO.VER")]
         if self.request.method == 'POST':
-            return [TienePermiso("ORDENES_TRABAJO.CREAR")]
+            return [TieneAlgunPermiso("ORDENES_TRABAJO.GESTIONAR_ACCESORIOS", "ORDENES_TRABAJO.CREAR")]
         if self.request.method == 'DELETE':
-            return [TienePermiso("ORDENES_TRABAJO.ELIMINAR")]
-        return [TienePermiso("ORDENES_TRABAJO.EDITAR")]
+            return [TieneAlgunPermiso("ORDENES_TRABAJO.GESTIONAR_ACCESORIOS", "ORDENES_TRABAJO.ELIMINAR")]
+        return [TieneAlgunPermiso("ORDENES_TRABAJO.GESTIONAR_ACCESORIOS", "ORDENES_TRABAJO.EDITAR")]
 
 
 # Los bloques movidos se re-exportan para que `from .views import ...` siga funcionando.

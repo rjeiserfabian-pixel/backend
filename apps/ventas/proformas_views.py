@@ -18,6 +18,10 @@ from apps.seguridad.pdf_utils import contexto_empresa_pdf
 
 from .paginacion import VentaPagination
 
+from apps.taller.models import OrdenTrabajo, OrdenServicio, OrdenRepuesto, OrdenHistorialEstado
+from apps.taller.serializers import OrdenTrabajoDetailSerializer
+from apps.inventario.models import InventarioStock, MovimientoInventario
+
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────
@@ -43,7 +47,7 @@ class ProformaViewSet(viewsets.ModelViewSet):
         return super().partial_update(request, *args, **kwargs)
 
     def get_permissions(self):
-        if self.action == 'convertir_a_pos':
+        if self.action in ['convertir_a_pos', 'convertir_a_ot']:
             return [TienePermiso("VENTAS.PROFORMAS.CONVERTIR")]
         if self.request.method == 'GET':
             return [TienePermiso("VENTAS.PROFORMAS.VER")]
@@ -55,7 +59,7 @@ class ProformaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().select_related(
-            'cliente', 'vehiculo', 'sucursal', 'creado_por', 'venta_generada'
+            'cliente', 'vehiculo', 'sucursal', 'creado_por', 'venta_generada', 'orden_trabajo_generada'
         ).prefetch_related('detalles__repuesto__unidad_medida')
 
         sucursal = self.request.query_params.get('sucursal')
@@ -89,9 +93,11 @@ class ProformaViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='convertir-a-pos')
     @transaction.atomic
     def convertir_a_pos(self, request, pk=None):
-        proforma = Proforma.objects.select_for_update(of=('self',)).select_related('cliente', 'vehiculo', 'sucursal').prefetch_related('detalles').get(pk=pk)
+        proforma = Proforma.objects.select_for_update(of=('self',)).select_related('cliente', 'vehiculo', 'sucursal', 'venta_generada').prefetch_related('detalles').get(pk=pk)
         if proforma.estado == Proforma.Estado.CONVERTIDA and proforma.venta_generada:
             return Response(VentaSerializer(proforma.venta_generada).data)
+        if proforma.estado == Proforma.Estado.CONVERTIDA_OT:
+            return Response({"error": "Esta proforma ya fue convertida a Orden de Trabajo y no puede convertirse a POS."}, status=status.HTTP_400_BAD_REQUEST)
         if proforma.estado == Proforma.Estado.ANULADA:
             return Response({"error": "No se puede convertir una proforma anulada."}, status=status.HTTP_400_BAD_REQUEST)
         if not proforma.detalles.exists():
@@ -136,6 +142,107 @@ class ProformaViewSet(viewsets.ModelViewSet):
         proforma.save(update_fields=['estado', 'venta_generada', 'convertido_en', 'actualizado_en'])
 
         return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='convertir-a-ot')
+    @transaction.atomic
+    def convertir_a_ot(self, request, pk=None):
+        proforma = Proforma.objects.select_for_update(of=('self',)).select_related(
+            'cliente', 'vehiculo', 'sucursal', 'orden_trabajo_generada'
+        ).prefetch_related('detalles__repuesto').get(pk=pk)
+
+        if proforma.estado == Proforma.Estado.CONVERTIDA_OT and proforma.orden_trabajo_generada:
+            return Response(OrdenTrabajoDetailSerializer(proforma.orden_trabajo_generada).data)
+
+        if proforma.estado == Proforma.Estado.CONVERTIDA:
+            return Response({"error": "Esta proforma ya fue convertida a Venta/POS y no puede convertirse a Orden de Trabajo."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if proforma.estado == Proforma.Estado.ANULADA:
+            return Response({"error": "No se puede convertir una proforma anulada."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not proforma.vehiculo:
+            return Response({
+                "error": "Esta proforma no tiene un vehículo asignado. Para crear una Orden de Trabajo en taller, primero edita la proforma y asigna el vehículo del cliente."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not proforma.detalles.exists():
+            return Response({"error": "La proforma no tiene items para convertir."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Generar número correlativo único de 6 dígitos
+        last_ot = OrdenTrabajo.objects.order_by('-id').first()
+        next_num = 1 if not last_ot else last_ot.id + 1
+        numero_ot = f"{next_num:06d}"
+
+        motivo_texto = f"Orden creada a partir de la Proforma {proforma.numero}"
+        if proforma.observaciones:
+            motivo_texto += f"\nObservaciones: {proforma.observaciones}"
+
+        orden = OrdenTrabajo.objects.create(
+            numero=numero_ot,
+            cliente=proforma.cliente,
+            vehiculo=proforma.vehiculo,
+            recepcionista=request.user,
+            estado=OrdenTrabajo.Estado.RECEPCIONADO,
+            kilometraje_ingreso=proforma.kilometraje,
+            motivo_ingreso=motivo_texto,
+        )
+
+        if orden.cliente:
+            orden.vehiculo.clientes.add(orden.cliente)
+
+        if orden.kilometraje_ingreso is not None:
+            vehiculo = orden.vehiculo
+            if not vehiculo.kilometraje_actual or orden.kilometraje_ingreso > vehiculo.kilometraje_actual:
+                vehiculo.kilometraje_actual = orden.kilometraje_ingreso
+                vehiculo.save(update_fields=['kilometraje_actual'])
+
+        OrdenHistorialEstado.objects.create(
+            orden=orden,
+            estado=OrdenTrabajo.Estado.RECEPCIONADO,
+            usuario=request.user,
+            observaciones=f"Orden creada a partir de la Proforma {proforma.numero}"
+        )
+
+        for detalle in proforma.detalles.all():
+            if detalle.tipo == ProformaDetalle.Tipo.SERVICIO:
+                OrdenServicio.objects.create(
+                    orden=orden,
+                    descripcion=detalle.descripcion,
+                    precio_estimado=detalle.precio_unitario,
+                    aprobado_cliente=True,
+                )
+            elif detalle.tipo == ProformaDetalle.Tipo.REPUESTO and detalle.repuesto:
+                OrdenRepuesto.objects.create(
+                    orden=orden,
+                    repuesto=detalle.repuesto,
+                    cantidad=detalle.cantidad,
+                    precio_unitario=detalle.precio_unitario,
+                    aprobado_cliente=True,
+                )
+                stock_record = InventarioStock.objects.select_for_update().filter(
+                    repuesto=detalle.repuesto, stock_disponible__gte=detalle.cantidad
+                ).first()
+                if stock_record:
+                    stock_record.stock_disponible -= detalle.cantidad
+                    stock_record.stock_reservado += detalle.cantidad
+                    stock_record.save()
+                    MovimientoInventario.objects.create(
+                        repuesto=detalle.repuesto,
+                        ubicacion=stock_record.ubicacion,
+                        tipo_movimiento=MovimientoInventario.TipoMovimiento.RESERVA,
+                        cantidad=-detalle.cantidad,
+                        stock_resultante=stock_record.stock_disponible,
+                        motivo=f"Reserva por conversión de Proforma {proforma.numero} a OT-{orden.numero}",
+                        usuario=request.user,
+                        referencia_id=orden.id,
+                        referencia_tipo="OT",
+                    )
+
+        proforma.estado = Proforma.Estado.CONVERTIDA_OT
+        proforma.orden_trabajo_generada = orden
+        proforma.convertido_en = timezone.now()
+        proforma.save(update_fields=['estado', 'orden_trabajo_generada', 'convertido_en', 'actualizado_en'])
+
+        return Response(OrdenTrabajoDetailSerializer(orden).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'], url_path='pdf')
     def generar_pdf(self, request, pk=None):

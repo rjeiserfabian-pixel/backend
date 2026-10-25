@@ -276,6 +276,7 @@ class Proforma(models.Model):
         VENCIDA = 'VENCIDA', 'Vencida'
         ANULADA = 'ANULADA', 'Anulada'
         CONVERTIDA = 'CONVERTIDA', 'Convertida a POS'
+        CONVERTIDA_OT = 'CONVERTIDA_OT', 'Convertida a OT'
 
     class FormaPago(models.TextChoices):
         CONTADO = 'CONTADO', 'Contado'
@@ -287,6 +288,7 @@ class Proforma(models.Model):
     sucursal = models.ForeignKey(Sucursal, on_delete=models.RESTRICT, related_name='proformas')
     creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, related_name='proformas_creadas')
     venta_generada = models.OneToOneField(Venta, on_delete=models.SET_NULL, related_name='proforma_origen', null=True, blank=True)
+    orden_trabajo_generada = models.OneToOneField('taller.OrdenTrabajo', on_delete=models.SET_NULL, related_name='proforma_origen', null=True, blank=True)
 
     numero = models.CharField(max_length=50, unique=True, db_index=True)
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.EMITIDA, db_index=True)

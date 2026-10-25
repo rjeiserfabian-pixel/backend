@@ -294,47 +294,51 @@ class OrdenServicioSerializer(serializers.ModelSerializer):
 
 class OrdenRepuestoSerializer(serializers.ModelSerializer):
     repuesto_detalle = RepuestoSerializer(source='repuesto', read_only=True)
+    stock_disponible = serializers.SerializerMethodField()
+    tiene_stock_suficiente = serializers.SerializerMethodField()
 
     class Meta:
         model = OrdenRepuesto
-        fields = ['id', 'orden', 'repuesto', 'repuesto_detalle', 'cantidad', 'precio_unitario', 'aprobado_cliente', 'entregado_por_almacen', 'instalado']
+        fields = [
+            'id', 'orden', 'repuesto', 'repuesto_detalle', 'cantidad', 'precio_unitario',
+            'aprobado_cliente', 'entregado_por_almacen', 'instalado',
+            'stock_disponible', 'tiene_stock_suficiente'
+        ]
         # aprobado_cliente/instalado solo deben cambiar vía las acciones dedicadas
         # (aprobar_servicios / marcar_instalado), que mantienen sincronizado el
         # stock reservado. Un PATCH directo a estos campos desincronizaba stock
         # y estado (bug real ya detectado y corregido).
         read_only_fields = ['aprobado_cliente', 'instalado']
 
-    def validate(self, attrs):
-        orden = attrs.get('orden') or getattr(self.instance, 'orden', None)
-        repuesto = attrs.get('repuesto') or getattr(self.instance, 'repuesto', None)
-        cantidad = attrs.get('cantidad') or getattr(self.instance, 'cantidad', None)
-
-        if not orden or not repuesto or cantidad is None:
-            return attrs
-
-        if cantidad <= 0:
-            raise serializers.ValidationError("La cantidad del repuesto debe ser mayor a cero.")
-
-        stock_disponible = sum(
+    def get_stock_disponible(self, obj):
+        if not obj.repuesto_id:
+            return 0
+        from apps.inventario.models import InventarioStock
+        return sum(
             item.stock_disponible
-            for item in InventarioStock.objects.filter(repuesto=repuesto)
+            for item in InventarioStock.objects.filter(repuesto_id=obj.repuesto_id)
         )
-        cantidad_pendiente_misma_orden = sum(
-            item.cantidad
-            for item in OrdenRepuesto.objects.filter(
-                orden=orden,
-                repuesto=repuesto,
-                aprobado_cliente=False,
-            ).exclude(pk=getattr(self.instance, 'pk', None))
+
+    def get_tiene_stock_suficiente(self, obj):
+        if obj.instalado:
+            return True
+        if not obj.repuesto_id:
+            return False
+        from apps.inventario.models import InventarioStock
+        stock_disp = sum(
+            item.stock_disponible
+            for item in InventarioStock.objects.filter(repuesto_id=obj.repuesto_id)
         )
-        cantidad_necesaria = cantidad + cantidad_pendiente_misma_orden
+        stock_res = sum(
+            item.stock_reservado
+            for item in InventarioStock.objects.filter(repuesto_id=obj.repuesto_id)
+        )
+        return (stock_disp >= obj.cantidad) or (stock_res >= obj.cantidad)
 
-        if stock_disponible < cantidad_necesaria:
-            raise serializers.ValidationError(
-                f"No hay stock disponible suficiente para el repuesto '{repuesto.nombre}'. "
-                f"Disponible: {stock_disponible}. Cantidad solicitada: {cantidad_necesaria}."
-            )
-
+    def validate(self, attrs):
+        cantidad = attrs.get('cantidad') or getattr(self.instance, 'cantidad', None)
+        if cantidad is not None and cantidad <= 0:
+            raise serializers.ValidationError("La cantidad del repuesto debe ser mayor a cero.")
         return attrs
 
 class OrdenTrabajoListSerializer(serializers.ModelSerializer):
@@ -395,6 +399,8 @@ class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
     recepcionista_nombre = serializers.CharField(source='recepcionista.nombre_completo', read_only=True)
     mecanico_nombre = serializers.CharField(source='mecanico_asignado.nombre_completo', read_only=True)
     historial_estados = OrdenHistorialEstadoSerializer(many=True, read_only=True)
+    proforma_origen_id = serializers.IntegerField(source='proforma_origen.id', read_only=True, default=None)
+    proforma_origen_numero = serializers.CharField(source='proforma_origen.numero', read_only=True, default=None)
 
     class Meta:
         model = OrdenTrabajo
@@ -402,7 +408,8 @@ class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
             'id', 'numero', 'vehiculo', 'vehiculo_detalle', 'cliente', 'cliente_detalle', 'recepcionista', 'recepcionista_nombre',
             'mecanico_asignado', 'mecanico_nombre', 'estado', 'tipo_servicio', 'tipo_servicio_detalle', 'kilometraje_ingreso',
             'motivo_ingreso', 'url_cotizacion_pdf', 'fecha_vencimiento_cotizacion', 'fecha_estimada_entrega', 'fecha_ingreso',
-            'fecha_finalizacion', 'hallazgos', 'servicios', 'repuestos', 'evidencias_ingreso', 'accesorios_pertenencias', 'historial_estados'
+            'fecha_finalizacion', 'hallazgos', 'servicios', 'repuestos', 'evidencias_ingreso', 'accesorios_pertenencias', 'historial_estados',
+            'proforma_origen_id', 'proforma_origen_numero'
         ]
         read_only_fields = ['recepcionista', 'numero']
 

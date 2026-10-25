@@ -21,6 +21,7 @@ def aprobar_cotizacion_orden(
     validar_vencimiento=True,
     exigir_esperando_aprobacion=False,
     exigir_seleccion=False,
+    exigir_stock=False,
 ):
     """
     Registra la aprobacion de una cotizacion y mantiene sincronizadas las
@@ -61,7 +62,7 @@ def aprobar_cotizacion_orden(
             stock_record = InventarioStock.objects.select_for_update().filter(
                 repuesto=orp.repuesto, stock_disponible__gte=orp.cantidad
             ).first()
-            if not stock_record:
+            if not stock_record and exigir_stock:
                 raise ValidationError(
                     f"No hay stock disponible suficiente para el repuesto '{orp.repuesto.nombre}'. "
                     f"Cantidad requerida: {orp.cantidad}."
@@ -69,22 +70,27 @@ def aprobar_cotizacion_orden(
 
             orp.aprobado_cliente = True
             orp.save(update_fields=["aprobado_cliente"])
+            if stock_record:
+                stock_record.stock_disponible -= orp.cantidad
+                stock_record.stock_reservado += orp.cantidad
+                stock_record.save()
 
-            stock_record.stock_disponible -= orp.cantidad
-            stock_record.stock_reservado += orp.cantidad
-            stock_record.save()
-
-            MovimientoInventario.objects.create(
-                repuesto=orp.repuesto,
-                ubicacion=stock_record.ubicacion,
-                tipo_movimiento=MovimientoInventario.TipoMovimiento.RESERVA,
-                cantidad=-orp.cantidad,
-                stock_resultante=stock_record.stock_disponible,
-                motivo=f"Reserva para OT-{orden.numero}",
-                usuario=usuario,
-                referencia_id=orden.id,
-                referencia_tipo="OT",
-            )
+                MovimientoInventario.objects.create(
+                    repuesto=orp.repuesto,
+                    ubicacion=stock_record.ubicacion,
+                    tipo_movimiento=MovimientoInventario.TipoMovimiento.RESERVA,
+                    cantidad=-orp.cantidad,
+                    stock_resultante=stock_record.stock_disponible,
+                    motivo=f"Reserva para OT-{orden.numero}",
+                    usuario=usuario,
+                    referencia_id=orden.id,
+                    referencia_tipo="OT",
+                )
+            else:
+                logger.info(
+                    "Repuesto '%s' (OT-%s) aprobado por cliente sin stock disponible; requiere compra previa.",
+                    orp.repuesto.codigo, orden.numero
+                )
 
     repuestos_a_desaprobar = OrdenRepuesto.objects.filter(
         orden=orden, aprobado_cliente=True
@@ -96,7 +102,7 @@ def aprobar_cotizacion_orden(
                 "ya fue instalado. Revierta la instalacion primero."
             )
         stock_record = InventarioStock.objects.select_for_update().filter(repuesto=orp.repuesto).first()
-        if stock_record:
+        if stock_record and stock_record.stock_reservado >= orp.cantidad:
             stock_record.stock_disponible += orp.cantidad
             stock_record.stock_reservado -= orp.cantidad
             stock_record.save()
