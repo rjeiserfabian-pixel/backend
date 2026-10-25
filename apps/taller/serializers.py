@@ -423,7 +423,7 @@ class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'numero', 'sucursal', 'sucursal_nombre', 'vehiculo', 'vehiculo_detalle', 'cliente', 'cliente_detalle', 'recepcionista', 'recepcionista_nombre',
             'mecanico_asignado', 'mecanico_nombre', 'estado', 'tipo_servicio', 'tipo_servicio_detalle', 'kilometraje_ingreso',
-            'motivo_ingreso', 'url_cotizacion_pdf', 'fecha_vencimiento_cotizacion', 'fecha_estimada_entrega', 'fecha_ingreso',
+            'kilometraje_salida', 'motivo_ingreso', 'observaciones_entrega', 'url_cotizacion_pdf', 'fecha_vencimiento_cotizacion', 'fecha_estimada_entrega', 'fecha_ingreso',
             'fecha_finalizacion', 'hallazgos', 'servicios', 'repuestos', 'evidencias_ingreso', 'accesorios_pertenencias', 'historial_estados',
             'proforma_origen_id', 'proforma_origen_numero'
         ]

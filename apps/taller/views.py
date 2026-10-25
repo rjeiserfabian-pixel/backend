@@ -264,18 +264,55 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         if repuestos_aprobados.filter(instalado=False).exists():
             return Response({'error': 'Todos los repuestos aprobados deben estar marcados como Instalados.'}, status=status.HTTP_400_BAD_REQUEST)
             
+        # Capturar y validar kilometraje de salida y observaciones
+        kilometraje_salida = request.data.get('kilometraje_salida')
+        observaciones_entrega = request.data.get('observaciones_entrega', '')
+        if observaciones_entrega is not None:
+            observaciones_entrega = str(observaciones_entrega).strip()
+            
+        campos_update = ['estado', 'fecha_finalizacion']
+
+        if kilometraje_salida is not None and str(kilometraje_salida).strip() != '':
+            try:
+                km_salida = int(kilometraje_salida)
+                if km_salida < 0:
+                    return Response({'error': 'El kilometraje de entrega no puede ser negativo.'}, status=status.HTTP_400_BAD_REQUEST)
+                if orden.kilometraje_ingreso and km_salida < orden.kilometraje_ingreso:
+                    return Response({
+                        'error': f"El kilometraje de entrega ({km_salida} km) no puede ser menor al kilometraje de ingreso ({orden.kilometraje_ingreso} km)."
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                orden.kilometraje_salida = km_salida
+                campos_update.append('kilometraje_salida')
+
+                # Sincronizar kilometraje actual del vehículo
+                if orden.vehiculo:
+                    orden.vehiculo.kilometraje_actual = km_salida
+                    orden.vehiculo.save(update_fields=['kilometraje_actual'])
+            except (ValueError, TypeError):
+                return Response({'error': 'El kilometraje de entrega debe ser un número entero válido.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if observaciones_entrega:
+            orden.observaciones_entrega = observaciones_entrega
+            campos_update.append('observaciones_entrega')
+
         # Cambiar estado
         orden.estado = OrdenTrabajo.Estado.FINALIZADO
         orden.fecha_finalizacion = timezone.now()
-        orden.save(update_fields=['estado', 'fecha_finalizacion'])
+        orden.save(update_fields=campos_update)
 
         OrdenHistorialEstado.objects.create(
             orden=orden,
             estado=orden.estado,
             usuario=request.user,
+            observaciones=observaciones_entrega or None,
         )
 
-        return Response({'status': 'ok', 'message': 'Orden finalizada correctamente.', 'estado': orden.estado})
+        return Response({
+            'status': 'ok',
+            'message': 'Orden finalizada correctamente.',
+            'estado': orden.estado,
+            'acta_url': f'/api/taller/ordenes/{orden.id}/acta-entrega-pdf/'
+        })
 
     @action(detail=True, methods=['post'])
     def enviar_a_pos(self, request, pk=None):
@@ -562,6 +599,129 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
 
         if pisa_status.err:
             return HttpResponse('Error generando PDF', status=500)
+
+        return response
+
+    @action(detail=True, methods=['get'], url_path='acta-entrega-pdf')
+    def acta_entrega_pdf(self, request, pk=None):
+        orden = OrdenTrabajo.objects.select_related(
+            'sucursal', 'cliente', 'vehiculo', 'recepcionista', 'mecanico_asignado', 'tipo_servicio'
+        ).prefetch_related(
+            'servicios', 'repuestos__repuesto__unidad_medida', 'accesorios_pertenencias__accesorio', 'hallazgos'
+        ).get(pk=pk)
+
+        # Servicios liquidados (priorizar aprobados y completados)
+        servicios_liquidados = [s for s in orden.servicios.all() if s.aprobado_cliente and s.completado]
+        if not servicios_liquidados:
+            servicios_liquidados = [s for s in orden.servicios.all() if s.completado]
+            if not servicios_liquidados:
+                servicios_liquidados = list(orden.servicios.all())
+
+        # Repuestos liquidados (priorizar aprobados e instalados)
+        repuestos_liquidados = [r for r in orden.repuestos.all() if r.aprobado_cliente and r.instalado]
+        if not repuestos_liquidados:
+            repuestos_liquidados = [r for r in orden.repuestos.all() if r.instalado]
+            if not repuestos_liquidados:
+                repuestos_liquidados = list(orden.repuestos.all())
+
+        total_mano_obra = sum(s.precio_estimado for s in servicios_liquidados)
+        total_repuestos = sum(r.cantidad * r.precio_unitario for r in repuestos_liquidados)
+        total_liquidado = total_mano_obra + total_repuestos
+
+        accesorios = list(orden.accesorios_pertenencias.all())
+        hallazgos = list(orden.hallazgos.all())
+
+        # Recorrido y próximo servicio
+        km_recorrido = None
+        if orden.kilometraje_salida is not None and orden.kilometraje_ingreso is not None:
+            if orden.kilometraje_salida >= orden.kilometraje_ingreso:
+                km_recorrido = orden.kilometraje_salida - orden.kilometraje_ingreso
+
+        proximo_mantenimiento_km = None
+        if orden.kilometraje_salida:
+            proximo_mantenimiento_km = orden.kilometraje_salida + 5000
+        elif orden.kilometraje_ingreso:
+            proximo_mantenimiento_km = orden.kilometraje_ingreso + 5000
+
+        # Cálculo de tiempo de permanencia en taller
+        fecha_fin = orden.fecha_finalizacion or timezone.now()
+        tiempo_permanencia_str = "Menos de 1 hora"
+        if orden.fecha_ingreso:
+            delta = fecha_fin - orden.fecha_ingreso
+            dias = delta.days
+            horas = int(delta.seconds // 3600)
+            minutos = int((delta.seconds % 3600) // 60)
+            partes = []
+            if dias > 0:
+                partes.append(f"{dias} día{'s' if dias > 1 else ''}")
+            if horas > 0:
+                partes.append(f"{horas} h")
+            if minutos > 0 and dias == 0:
+                partes.append(f"{minutos} min")
+            if partes:
+                tiempo_permanencia_str = ", ".join(partes)
+
+        from apps.seguridad.models import Empresa
+        empresa, _ = Empresa.objects.get_or_create(id=1, defaults={
+            "razon_social": "Mi Empresa",
+            "ruc": "00000000000",
+            "direccion": "Dirección no configurada"
+        })
+
+        empresa_logo_data_uri = None
+        if empresa.logo:
+            import base64
+            import mimetypes
+            try:
+                with empresa.logo.open('rb') as f:
+                    logo_bytes = f.read()
+                mime_type = mimetypes.guess_type(empresa.logo.name)[0] or 'image/png'
+                empresa_logo_data_uri = f"data:{mime_type};base64,{base64.b64encode(logo_bytes).decode('ascii')}"
+            except (OSError, ValueError) as e:
+                logger.error(f"No se pudo incrustar el logo de la empresa en el PDF: {e}")
+                empresa_logo_data_uri = None
+
+        mecanico_nombre = (
+            orden.mecanico_asignado.nombre_completo
+            if orden.mecanico_asignado and orden.mecanico_asignado.nombre_completo
+            else (orden.mecanico_asignado.username if orden.mecanico_asignado else "Técnico Responsable")
+        )
+        recepcionista_nombre = (
+            orden.recepcionista.nombre_completo
+            if orden.recepcionista and orden.recepcionista.nombre_completo
+            else (orden.recepcionista.username if orden.recepcionista else "Personal de Taller")
+        )
+
+        context = {
+            'orden': orden,
+            'servicios_liquidados': servicios_liquidados,
+            'repuestos_liquidados': repuestos_liquidados,
+            'total_mano_obra': total_mano_obra,
+            'total_repuestos': total_repuestos,
+            'total_liquidado': total_liquidado,
+            'accesorios': accesorios,
+            'hallazgos': hallazgos,
+            'km_recorrido': km_recorrido,
+            'proximo_mantenimiento_km': proximo_mantenimiento_km,
+            'tiempo_permanencia': tiempo_permanencia_str,
+            'empresa': empresa,
+            'empresa_logo_data_uri': empresa_logo_data_uri,
+            'fecha_entrega': orden.fecha_finalizacion or timezone.now(),
+            'mecanico_nombre': mecanico_nombre,
+            'recepcionista_nombre': recepcionista_nombre,
+        }
+
+        from django.template.loader import render_to_string
+        from django.http import HttpResponse
+        from xhtml2pdf import pisa
+
+        html_string = render_to_string('taller/acta_entrega_pdf.html', context)
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="acta_entrega_OT_{orden.numero}.pdf"'
+
+        pisa_status = pisa.CreatePDF(html_string, dest=response)
+        if pisa_status.err:
+            return HttpResponse('Error generando PDF de Acta de Entrega', status=500)
 
         return response
 

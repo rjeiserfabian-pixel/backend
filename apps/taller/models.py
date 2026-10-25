@@ -296,7 +296,17 @@ class OrdenTrabajo(models.Model):
     tipo_servicio = models.ForeignKey(TipoServicio, on_delete=models.RESTRICT, related_name='ordenes', null=True, blank=True)
     
     kilometraje_ingreso = models.IntegerField(null=True, blank=True)
+    kilometraje_salida = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Kilometraje registrado al momento de la entrega o finalización del vehículo"
+    )
     motivo_ingreso = models.TextField(help_text="Motivo principal o correctivo reportado por el cliente", null=True, blank=True)
+    observaciones_entrega = models.TextField(
+        null=True,
+        blank=True,
+        help_text="Observaciones técnicas o recomendaciones para el cliente en el acta de entrega"
+    )
     
     fecha_ingreso = models.DateTimeField(auto_now_add=True, db_index=True)
     fecha_estimada_entrega = models.DateTimeField(null=True, blank=True)

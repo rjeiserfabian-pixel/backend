@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Acta de Entrega OT-{{ orden.numero }}</title>
+    <style>
+        @page {
+            size: a4 portrait;
+            margin: 1.2cm;
+            @frame footer {
+                -pdf-frame-content: footer_content;
+                bottom: 0.8cm;
+                margin-left: 1.2cm;
+                margin-right: 1.2cm;
+                height: 0.8cm;
+            }
+        }
+        body { 
+            font-family: 'Helvetica', 'Arial', sans-serif; 
+            font-size: 9.5px; 
+            color: #1e293b; 
+            line-height: 1.35;
+        }
+        .bold { font-weight: bold; color: #000000; }
+        .text-orange { color: #ea580c; }
+        .text-navy { color: #0f172a; }
+        .text-emerald { color: #16a34a; }
+        .uppercase { text-transform: uppercase; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        td { vertical-align: top; }
+        
+        .header-title { font-size: 15px; font-weight: bold; letter-spacing: 0.2px; margin: 0; }
+        .header-info-text { font-size: 10px; color: #334155; margin-top: 4px; line-height: 1.45; }
+        
+        .section-title { 
+            font-size: 9.5px; 
+            font-weight: bold; 
+            color: #ea580c; 
+            margin-bottom: 3px; 
+            text-transform: uppercase; 
+            letter-spacing: 0.5px; 
+        }
+        
+        .info-table td { padding: 3px 0; }
+        .info-label { color: #475569; font-size: 9px; font-weight: bold; }
+        .info-value { color: #000000; font-weight: bold; font-size: 9px; }
+
+        .items-table { margin-top: 6px; border: 1px solid #94a3b8; width: 100%; }
+        .items-table th { 
+            background-color: #0f172a; 
+            color: white; 
+            padding: 5px 6px; 
+            font-size: 8.5px; 
+            font-weight: bold; 
+            text-align: left; 
+            border: 1px solid #0f172a; 
+        }
+        .items-table td { 
+            padding: 5px 6px; 
+            border-bottom: 1px solid #cbd5e1; 
+            border-left: 1px solid #cbd5e1; 
+            border-right: 1px solid #cbd5e1; 
+            color: #000000; 
+            font-size: 9px; 
+        }
+
+        .badge-success {
+            background-color: #dcfce7;
+            color: #166534;
+            padding: 2px 5px;
+            font-size: 8px;
+            font-weight: bold;
+            border-radius: 3px;
+        }
+
+        .signatures-table td {
+            text-align: center;
+            vertical-align: bottom;
+            padding: 10px 20px 0 20px;
+        }
+
+        .sign-line {
+            border-top: 1.2px solid #0f172a;
+            margin-bottom: 4px;
+            width: 85%;
+            margin-left: auto;
+            margin-right: auto;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Principal -->
+    <table style="margin-bottom: 15px; width: 100%;">
+        <tr>
+            <!-- Logo + Datos de Empresa -->
+            <td style="width: 70%; vertical-align: middle; padding-right: 12px;">
+                <table style="width: 100%;">
+                    <tr>
+                        <td style="width: auto; vertical-align: middle; padding-right: 14px;">
+                            {% if empresa_logo_data_uri %}
+                            <img src="{{ empresa_logo_data_uri }}" style="max-height: 78px; max-width: 180px; display: block;" />
+                            {% else %}
+                            <div style="font-family: serif; font-size: 44px; color: #ea580c; line-height: 1; font-weight: normal;">&Omega;</div>
+                            {% endif %}
+                        </td>
+                        <td style="vertical-align: middle;">
+                            <div class="header-title text-navy">{{ empresa.razon_social|default:"EMPRESA DE TALLER AUTOMOTRIZ" }}</div>
+                            <div class="header-info-text">
+                                <span class="bold">RUC {{ empresa.ruc|default:"-" }}</span><br>
+                                {{ empresa.direccion|default:"Dirección no configurada" }}{% if empresa.distrito %}, {{ empresa.distrito }}{% endif %}<br>
+                                {% if empresa.telefono %}Tel: {{ empresa.telefono }}{% endif %}{% if empresa.telefono and empresa.email %} | {% endif %}{% if empresa.email %}{{ empresa.email }}{% endif %}
+                                {% if orden.sucursal %}
+                                <br><span class="bold" style="color: #ea580c;">Sede de Atención:</span> {{ orden.sucursal.nombre }}{% if orden.sucursal.direccion %} - {{ orden.sucursal.direccion }}{% endif %}
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+            <!-- Recuadro Oficial de Documento -->
+            <td style="width: 30%; vertical-align: top;">
+                <table style="width: 100%; border: 1.5px solid #0f172a; border-radius: 4px; background-color: #ffffff;">
+                    <tr>
+                        <td style="text-align: center; padding: 4px 5px; background-color: #f1f5f9; border-bottom: 1px solid #cbd5e1;">
+                            <span style="color: #0f172a; font-size: 9.5px; font-weight: bold; letter-spacing: 0.5px;">R.U.C. N.° {{ empresa.ruc|default:"00000000000" }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background-color: #0f172a; color: #ffffff; text-align: center; padding: 6px 5px;">
+                            <div style="font-size: 8px; font-weight: bold; letter-spacing: 0.6px; color: #f8fafc;">ACTA DE ENTREGA Y LIQUIDACIÓN</div>
+                            <div style="font-size: 14px; font-weight: bold; padding-top: 2px; color: #fb923c;">OT N.° {{ orden.numero }}</div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="text-align: center; padding: 4px 5px; background-color: #f8fafc;">
+                            <div style="font-size: 7.5px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Fecha y Hora de Entrega</div>
+                            <div style="font-size: 10.5px; font-weight: bold; color: #0f172a; padding-top: 1px;">
+                                {{ fecha_entrega|date:"d/m/Y H:i" }}
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <div style="height: 2px; background-color: #ea580c; margin-bottom: 10px;"></div>
+
+    <!-- BLOQUE 1: DATOS CLIENTE & DATOS VEHÍCULO -->
+    <table>
+        <tr>
+            <!-- Datos Cliente -->
+            <td style="width: 49%; padding: 8px 10px; border: 1px solid #cbd5e1; background-color: #f8fafc; border-radius: 4px;">
+                <div class="section-title">DATOS DEL CLIENTE</div>
+                <table style="width: 100%;">
+                    <tr>
+                        <td style="width: 25%; color: #475569; font-size: 9px; font-weight: bold; padding: 3px 0;">Cliente:</td>
+                        <td style="width: 75%; font-size: 9px; font-weight: bold; color: #000000; padding: 3px 0;">{{ orden.cliente.nombres }} {{ orden.cliente.apellidos|default:"" }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 25%; color: #475569; font-size: 9px; font-weight: bold; padding: 3px 0;">Doc. Identidad:</td>
+                        <td style="width: 75%; font-size: 9px; font-weight: bold; color: #000000; padding: 3px 0;">{{ orden.cliente.tipo_documento|default:"DNI" }}: {{ orden.cliente.dni|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 25%; color: #475569; font-size: 9px; font-weight: bold; padding: 3px 0;">Teléfono / Cel.:</td>
+                        <td style="width: 75%; font-size: 9px; font-weight: bold; color: #000000; padding: 3px 0;">{{ orden.cliente.telefono|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 25%; color: #475569; font-size: 9px; font-weight: bold; padding: 3px 0;">Dirección:</td>
+                        <td style="width: 75%; font-size: 9px; font-weight: bold; color: #000000; padding: 3px 0;">{{ orden.cliente.direccion|default:"-" }}</td>
+                    </tr>
+                </table>
+            </td>
+            <td style="width: 2%;"></td>
+            <!-- Datos Vehículo -->
+            <td style="width: 49%; padding: 8px 10px; border: 1px solid #cbd5e1; background-color: #f8fafc; border-radius: 4px;">
+                <div class="section-title">DATOS DEL VEHÍCULO</div>
+                <table style="width: 100%;">
+                    <tr>
+                        <td style="width: 20%; color: #475569; font-size: 9px; font-weight: bold; padding: 3px 0;">Placa:</td>
+                        <td style="width: 28%; font-size: 10.5px; font-weight: bold; color: #ea580c; padding: 3px 0;">{{ orden.vehiculo.placa }}</td>
+                        <td style="width: 16%; color: #475569; font-size: 9px; font-weight: bold; padding: 3px 0;">Color:</td>
+                        <td style="width: 36%; font-size: 9px; font-weight: bold; color: #000000; padding: 3px 0;">{{ orden.vehiculo.color|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 20%; color: #475569; font-size: 9px; font-weight: bold; padding: 3px 0;">Marca / Mod.:</td>
+                        <td colspan="3" style="width: 80%; font-size: 9px; font-weight: bold; color: #000000; padding: 3px 0;">{{ orden.vehiculo.marca }} {{ orden.vehiculo.modelo }}{% if orden.vehiculo.anio_fabricacion %} (Año {{ orden.vehiculo.anio_fabricacion }}){% endif %}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 20%; color: #475569; font-size: 9px; font-weight: bold; padding: 3px 0;">Km. Ingreso:</td>
+                        <td style="width: 28%; font-size: 9px; font-weight: bold; color: #000000; padding: 3px 0;">{{ orden.kilometraje_ingreso|default:"-" }} km</td>
+                        <td style="width: 18%; color: #475569; font-size: 9px; font-weight: bold; padding: 3px 0;">Km. Salida:</td>
+                        <td style="width: 34%; font-size: 9px; font-weight: bold; padding: 3px 0;">
+                            <span style="color: #166534; font-weight: bold; background-color: #dcfce7; padding: 1.5px 6px; border-radius: 3px; font-size: 9.5px;">
+                                {{ orden.kilometraje_salida|default:orden.kilometraje_ingreso|default:"-" }} km
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="width: 20%; color: #475569; font-size: 9px; font-weight: bold; padding: 3px 0;">Serie / Motor:</td>
+                        <td colspan="3" style="width: 80%; font-size: 9px; font-weight: bold; color: #000000; padding: 3px 0;">{{ orden.vehiculo.numero_serie|default:orden.vehiculo.numero_motor|default:"No especificado" }}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <div style="height: 6px;"></div>
+
+    <!-- BLOQUE 2: TIEMPOS DE ATENCIÓN Y TÉCNICOS -->
+    <table>
+        <tr>
+            <td style="width: 49%; padding: 6px 10px; border: 1px solid #e2e8f0; background-color: #ffffff; border-radius: 4px;">
+                <table style="width: 100%;">
+                    <tr>
+                        <td style="width: 32%; color: #475569; font-size: 9px; font-weight: bold; padding: 2px 0;">Fecha Ingreso:</td>
+                        <td style="width: 68%; font-size: 9px; font-weight: bold; color: #000000; padding: 2px 0;">{{ orden.fecha_ingreso|date:"d/m/Y H:i" }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 32%; color: #475569; font-size: 9px; font-weight: bold; padding: 2px 0;">Fecha Entrega:</td>
+                        <td style="width: 68%; font-size: 9px; font-weight: bold; color: #000000; padding: 2px 0;">{{ fecha_entrega|date:"d/m/Y H:i" }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 32%; color: #475569; font-size: 9px; font-weight: bold; padding: 2px 0;">Tiempo Estadía:</td>
+                        <td style="width: 68%; font-size: 9px; font-weight: bold; color: #000000; padding: 2px 0;">{{ tiempo_permanencia }}</td>
+                    </tr>
+                </table>
+            </td>
+            <td style="width: 2%;"></td>
+            <td style="width: 49%; padding: 6px 10px; border: 1px solid #e2e8f0; background-color: #ffffff; border-radius: 4px;">
+                <table style="width: 100%;">
+                    <tr>
+                        <td style="width: 34%; color: #475569; font-size: 9px; font-weight: bold; padding: 2px 0;">Asesor Recepción:</td>
+                        <td style="width: 66%; font-size: 9px; font-weight: bold; color: #000000; padding: 2px 0;">{{ recepcionista_nombre }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 34%; color: #475569; font-size: 9px; font-weight: bold; padding: 2px 0;">Técnico Mecánico:</td>
+                        <td style="width: 66%; font-size: 9px; font-weight: bold; color: #0f172a; padding: 2px 0;">{{ mecanico_nombre }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 34%; color: #475569; font-size: 9px; font-weight: bold; padding: 2px 0;">Tipo Servicio:</td>
+                        <td style="width: 66%; font-size: 9px; font-weight: bold; color: #000000; padding: 2px 0;">{{ orden.tipo_servicio.nombre|default:"General / Integral" }}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <!-- SECCIÓN: MANO DE OBRA Y SERVICIOS EJECUTADOS -->
+    <div style="margin-top: 10px;">
+        <span class="section-title">1. MANO DE OBRA Y SERVICIOS REALIZADOS</span>
+    </div>
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 5%; text-align: center;">#</th>
+                <th style="width: 60%;">DESCRIPCIÓN DEL SERVICIO / PROCEDIMIENTO</th>
+                <th style="width: 18%; text-align: center;">ESTADO</th>
+                <th style="width: 17%; text-align: right;">IMPORTE (S/)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in servicios_liquidados %}
+            <tr>
+                <td style="text-align: center;">{{ forloop.counter }}</td>
+                <td>{{ s.descripcion|capfirst }}</td>
+                <td style="text-align: center;">
+                    <span class="badge-success">CONFORME / EJECUTADO</span>
+                </td>
+                <td style="text-align: right; font-weight: bold; color: #0f172a;">{{ s.precio_estimado|floatformat:2 }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="4" style="text-align: center; color: #64748b; padding: 6px;">No se registraron servicios adicionales de mano de obra.</td>
+            </tr>
+            {% endfor %}
+            <tr>
+                <td colspan="3" style="text-align: right; font-weight: bold; background-color: #f8fafc; border-top: 1px solid #94a3b8;">
+                    SUBTOTAL MANO DE OBRA:
+                </td>
+                <td style="text-align: right; font-weight: bold; background-color: #f8fafc; border-top: 1px solid #94a3b8; color: #0f172a;">
+                    S/ {{ total_mano_obra|floatformat:2 }}
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- SECCIÓN: REPUESTOS E INSUMOS INSTALADOS -->
+    <div style="margin-top: 10px;">
+        <span class="section-title">2. REPUESTOS, FLUIDOS E INSUMOS INSTALADOS</span>
+    </div>
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 5%; text-align: center;">#</th>
+                <th style="width: 18%;">CÓDIGO</th>
+                <th style="width: 42%;">DESCRIPCIÓN DEL REPUESTO / INSUMO</th>
+                <th style="width: 10%; text-align: right;">CANT.</th>
+                <th style="width: 12%; text-align: right;">P. UNIT.</th>
+                <th style="width: 13%; text-align: right;">TOTAL (S/)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in repuestos_liquidados %}
+            <tr>
+                <td style="text-align: center;">{{ forloop.counter }}</td>
+                <td style="color: #475569; font-size: 8.5px;">{{ r.repuesto.codigo|default:"-" }}</td>
+                <td>{{ r.repuesto.nombre }}</td>
+                <td style="text-align: right;">{{ r.cantidad|floatformat:2 }} {{ r.repuesto.unidad_medida.abreviatura|default:"UND" }}</td>
+                <td style="text-align: right;">{{ r.precio_unitario|floatformat:2 }}</td>
+                <td style="text-align: right; font-weight: bold; color: #0f172a;">{{ r.total|floatformat:2 }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6" style="text-align: center; color: #64748b; padding: 6px;">No se instalaron repuestos en esta orden de trabajo.</td>
+            </tr>
+            {% endfor %}
+            <tr>
+                <td colspan="5" style="text-align: right; font-weight: bold; background-color: #f8fafc; border-top: 1px solid #94a3b8;">
+                    SUBTOTAL REPUESTOS E INSUMOS:
+                </td>
+                <td style="text-align: right; font-weight: bold; background-color: #f8fafc; border-top: 1px solid #94a3b8; color: #0f172a;">
+                    S/ {{ total_repuestos|floatformat:2 }}
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- TOTALES Y RECOMENDACIONES -->
+    <table style="width: 100%; margin-top: 8px;">
+        <tr>
+            <!-- Observaciones / Recomendaciones Técnicas -->
+            <td style="width: 60%; padding-right: 12px;">
+                <table style="width: 100%; background-color: #f8fafc; border-left: 3.5px solid #ea580c; border-top: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; border-radius: 3px;">
+                    <tr>
+                        <td style="padding: 7px 9px;">
+                            <span style="font-size: 9px; font-weight: bold; color: #ea580c; text-transform: uppercase; letter-spacing: 0.5px;">OBSERVACIONES Y RECOMENDACIONES TÉCNICAS:</span><br>
+                            <span style="color: #1e293b; font-size: 9px; line-height: 1.35;">
+                                {% if orden.observaciones_entrega %}
+                                    {{ orden.observaciones_entrega|linebreaksbr }}
+                                {% else %}
+                                    Vehículo probado en ruta e inspeccionado técnicamente. Todos los sistemas intervenidos operan en condiciones estándar de fábrica.
+                                {% endif %}
+                            </span>
+                            {% if proximo_mantenimiento_km %}
+                            <div style="margin-top: 5px; padding-top: 4px; border-top: 1px dashed #cbd5e1; font-size: 8.5px; color: #0f172a;">
+                                <span class="bold" style="color: #ea580c;">Próximo Servicio Sugerido:</span> a los 
+                                <span class="bold" style="color: #16a34a; font-size: 9.5px;">{{ proximo_mantenimiento_km }} km</span> o en 3 meses.
+                            </div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </td>
+            <!-- Resumen Liquidación -->
+            <td style="width: 40%;">
+                <table style="width: 100%; border: 1px solid #cbd5e1; border-radius: 4px; background-color: #ffffff;">
+                    <tr>
+                        <td style="padding: 4px 8px; font-size: 9px; color: #475569;">Subtotal M. Obra:</td>
+                        <td style="padding: 4px 8px; font-size: 9px; font-weight: bold; text-align: right; color: #0f172a;">S/ {{ total_mano_obra|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 4px 8px; font-size: 9px; color: #475569; border-bottom: 1px solid #e2e8f0;">Subtotal Repuestos:</td>
+                        <td style="padding: 4px 8px; font-size: 9px; font-weight: bold; text-align: right; color: #0f172a; border-bottom: 1px solid #e2e8f0;">S/ {{ total_repuestos|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="padding: 0;">
+                            <table style="width: 100%; background-color: #0f172a; color: white;">
+                                <tr>
+                                    <td style="padding: 7px 10px; font-size: 9.5px; font-weight: bold; color: #cbd5e1; vertical-align: middle;">TOTAL LIQUIDADO:</td>
+                                    <td style="padding: 7px 10px; text-align: right; font-size: 13px; font-weight: bold; color: #fb923c; vertical-align: middle;">S/ {{ total_liquidado|floatformat:2 }}</td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <!-- INVENTARIO Y CUSTODIA DE PERTENENCIAS DEVUELTAS -->
+    <div style="margin-top: 8px;">
+        <span class="section-title">3. VERIFICACIÓN Y DEVOLUCIÓN DE PERTENENCIAS / ACCESORIOS</span>
+    </div>
+    {% if accesorios.count > 0 %}
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 5%; text-align: center;">#</th>
+                <th style="width: 40%;">ÍTEM / ACCESORIO EN CUSTODIA</th>
+                <th style="width: 12%; text-align: center;">CANTIDAD</th>
+                <th style="width: 20%; text-align: center;">ESTADO INICIAL</th>
+                <th style="width: 23%; text-align: center;">ESTADO DEVOLUCIÓN</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for a in accesorios %}
+            <tr>
+                <td style="text-align: center;">{{ forloop.counter }}</td>
+                <td>{{ a.accesorio.nombre }}</td>
+                <td style="text-align: center; font-weight: bold;">{{ a.cantidad }}</td>
+                <td style="text-align: center;">{{ a.get_estado_conservacion_display }}</td>
+                <td style="text-align: center;">
+                    <span class="badge-success">DEVUELTO CONFORME</span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="padding: 5px 8px; border: 1px solid #e2e8f0; background-color: #f8fafc; font-size: 8.5px; color: #475569; border-radius: 3px;">
+        El vehículo se retira con sus pertenencias ordinarias y accesorios de viaje verificados y devueltos conforme.
+    </div>
+    {% endif %}
+
+    <!-- DECLARACIÓN DE CONFORMIDAD Y GARANTÍA -->
+    <div style="margin-top: 8px; padding: 6px 8px; border: 1px solid #cbd5e1; background-color: #f8fafc; border-radius: 4px; font-size: 8px; color: #334155; line-height: 1.35;">
+        <span class="bold" style="color: #0f172a;">TÉRMINOS DE GARANTÍA Y ACTA DE CONFORMIDAD:</span>
+        Los servicios ejecutados y repuestos originales instalados cuentan con garantía técnica del taller conforme a políticas de calidad. 
+        El cliente suscribe la presente acta dejando constancia de haber recibido el vehículo a su entera satisfacción, habiendo comprobado el funcionamiento adecuado de los trabajos detallados, la integridad física del vehículo y la devolución completa de sus accesorios y pertenencias.
+    </div>
+
+    <!-- FIRMAS DE CONFORMIDAD -->
+    <table class="signatures-table" style="margin-top: 25px; width: 100%;">
+        <tr>
+            <!-- Firma Taller -->
+            <td style="width: 45%;">
+                <div class="sign-line"></div>
+                <div style="font-size: 9px; font-weight: bold; color: #0f172a;">RESPONSABLE TÉCNICO / JEFE DE TALLER</div>
+                <div style="font-size: 8px; color: #475569;">{{ mecanico_nombre }}</div>
+                <div style="font-size: 8px; color: #64748b;">Firma y Sello Autorizado</div>
+            </td>
+            <td style="width: 10%;"></td>
+            <!-- Firma Cliente -->
+            <td style="width: 45%;">
+                <div class="sign-line"></div>
+                <div style="font-size: 9px; font-weight: bold; color: #0f172a;">CLIENTE / PROPIETARIO CONFORME</div>
+                <div style="font-size: 8px; color: #475569;">{{ orden.cliente.nombres }} {{ orden.cliente.apellidos|default:"" }}</div>
+                <div style="font-size: 8px; color: #64748b;">{{ orden.cliente.tipo_documento|default:"DNI" }}: {{ orden.cliente.dni|default:"____________________" }}</div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Footer Content Frame -->
+    <div id="footer_content" style="font-size: 7.5px; color: #94a3b8; text-align: center; border-top: 0.8px solid #cbd5e1; padding-top: 3px;">
+        Documento oficial de entrega y liquidación técnica - OT N.° {{ orden.numero }} | Generado el {{ fecha_entrega|date:"d/m/Y H:i" }} | Página <pdf:pagenumber> de <pdf:pagecount>
+    </div>
+
+</body>
+</html>

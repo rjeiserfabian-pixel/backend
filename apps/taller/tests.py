@@ -366,6 +366,82 @@ class OrdenTrabajoTests(TestCase):
         stock_a.refresh_from_db()
         self.assertEqual(stock_a.stock_disponible, Decimal('0.00'))
 
+    def test_finalizar_orden_con_kilometraje_salida_y_observaciones(self):
+        resp = self._crear_orden()
+        orden_id = resp.data['id']
+
+        # Agregar servicio y aprobarlo
+        resp_serv = self.client.post('/api/taller/servicios/', {
+            'orden': orden_id,
+            'descripcion': 'Mantenimiento 10,000 km',
+            'precio_estimado': '150.00',
+        }, format='json')
+        self.assertEqual(resp_serv.status_code, 201)
+        srv_id = resp_serv.data['id']
+
+        # Aprobar
+        resp_apr = self.client.post(f'/api/taller/ordenes/{orden_id}/aprobar_servicios/', {
+            'servicios_aprobados': [srv_id],
+            'repuestos_aprobados': [],
+        }, format='json')
+        self.assertEqual(resp_apr.status_code, 200)
+
+        # Completar servicio
+        resp_comp = self.client.patch(f'/api/taller/servicios/{srv_id}/marcar_completado/', {}, format='json')
+        self.assertEqual(resp_comp.status_code, 200)
+
+        # Finalizar con kilometraje de salida y observaciones
+        resp_fin = self.client.post(f'/api/taller/ordenes/{orden_id}/finalizar_orden/', {
+            'kilometraje_salida': 15500,
+            'observaciones_entrega': 'Vehículo probado en ruta. Se recomienda cambio de pastillas en 5,000 km.',
+        }, format='json')
+        self.assertEqual(resp_fin.status_code, 200, resp_fin.data)
+        self.assertEqual(resp_fin.data['estado'], 'FINALIZADO')
+        self.assertIn('acta_url', resp_fin.data)
+
+        orden = OrdenTrabajo.objects.get(id=orden_id)
+        self.assertEqual(orden.estado, 'FINALIZADO')
+        self.assertEqual(orden.kilometraje_salida, 15500)
+        self.assertEqual(orden.observaciones_entrega, 'Vehículo probado en ruta. Se recomienda cambio de pastillas en 5,000 km.')
+
+        # Verificar que el vehículo actualizó su kilometraje actual
+        self.vehiculo.refresh_from_db()
+        self.assertEqual(self.vehiculo.kilometraje_actual, 15500)
+
+        # Verificar PDF de acta de entrega
+        resp_pdf = self.client.get(f'/api/taller/ordenes/{orden_id}/acta-entrega-pdf/')
+        self.assertEqual(resp_pdf.status_code, 200)
+        self.assertEqual(resp_pdf['Content-Type'], 'application/pdf')
+        self.assertTrue(resp_pdf.content.startswith(b'%PDF'))
+
+    def test_finalizar_orden_con_kilometraje_salida_menor_al_ingreso_se_rechaza(self):
+        resp = self._crear_orden()
+        orden_id = resp.data['id']
+        orden = OrdenTrabajo.objects.get(id=orden_id)
+        orden.kilometraje_ingreso = 20000
+        orden.save()
+
+        # Agregar y completar servicio
+        resp_serv = self.client.post('/api/taller/servicios/', {
+            'orden': orden_id,
+            'descripcion': 'Alineamiento',
+            'precio_estimado': '80.00',
+        }, format='json')
+        srv_id = resp_serv.data['id']
+
+        self.client.post(f'/api/taller/ordenes/{orden_id}/aprobar_servicios/', {
+            'servicios_aprobados': [srv_id],
+            'repuestos_aprobados': [],
+        }, format='json')
+        self.client.patch(f'/api/taller/servicios/{srv_id}/marcar_completado/', {}, format='json')
+
+        # Intentar finalizar con kilometraje menor (19000 < 20000)
+        resp_fin = self.client.post(f'/api/taller/ordenes/{orden_id}/finalizar_orden/', {
+            'kilometraje_salida': 19000,
+        }, format='json')
+        self.assertEqual(resp_fin.status_code, 400)
+        self.assertIn('no puede ser menor al kilometraje de ingreso', resp_fin.data['error'])
+
 
 class ConsultaVehiculoPublicaTests(TestCase):
     def setUp(self):
