@@ -277,6 +277,14 @@ class OrdenTrabajo(models.Model):
         CANCELADO = 'CANCELADO', 'Cancelado'
 
     numero = models.CharField(max_length=20, unique=True, db_index=True)
+    sucursal = models.ForeignKey(
+        'inventario.Sucursal',
+        on_delete=models.RESTRICT,
+        related_name='ordenes_trabajo',
+        null=True,
+        blank=True,
+        help_text="Sucursal donde se ejecuta la Orden de Trabajo y de donde se descuenta el stock."
+    )
     cliente = models.ForeignKey('clientes.Cliente', on_delete=models.RESTRICT, related_name='ordenes_trabajo', null=True, blank=False)
     vehiculo = models.ForeignKey(Vehiculo, on_delete=models.RESTRICT, related_name='ordenes_trabajo')
     recepcionista = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, related_name='ordenes_recepcionadas')
@@ -315,6 +323,9 @@ class OrdenTrabajo(models.Model):
         verbose_name = 'Orden de Trabajo'
         verbose_name_plural = 'Órdenes de Trabajo'
         ordering = ['-fecha_ingreso']
+        indexes = [
+            models.Index(fields=['sucursal', 'estado'], name='idx_ot_sucursal_estado'),
+        ]
 
     def __str__(self):
         return f"OT-{self.numero} | {self.vehiculo.placa}"

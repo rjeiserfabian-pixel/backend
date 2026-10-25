@@ -178,6 +178,7 @@ class ProformaViewSet(viewsets.ModelViewSet):
 
         orden = OrdenTrabajo.objects.create(
             numero=numero_ot,
+            sucursal=proforma.sucursal,
             cliente=proforma.cliente,
             vehiculo=proforma.vehiculo,
             recepcionista=request.user,

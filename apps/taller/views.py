@@ -111,6 +111,9 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         fecha_desde = params.get('fecha_desde')
         fecha_hasta = params.get('fecha_hasta')
 
+        sucursal = params.get('sucursal') or params.get('sucursal_id')
+        if sucursal:
+            queryset = queryset.filter(sucursal_id=sucursal)
         if estado:
             queryset = queryset.filter(estado=estado)
         if mecanico_asignado:
@@ -136,10 +139,21 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         last_ot = OrdenTrabajo.objects.order_by('-id').first()
         next_num = 1 if not last_ot else last_ot.id + 1
         numero_ot = f"{next_num:06d}"
+
+        # Obtener sucursal desde datos enviados o fallback
+        sucursal_id = self.request.data.get('sucursal') or self.request.data.get('sucursal_id')
+        sucursal = None
+        if sucursal_id:
+            from apps.inventario.models import Sucursal
+            sucursal = Sucursal.objects.filter(pk=sucursal_id).first()
+        if not sucursal:
+            from apps.inventario.models import Sucursal
+            sucursal = Sucursal.objects.first()
         
         orden = serializer.save(
             recepcionista=self.request.user,
-            numero=numero_ot
+            numero=numero_ot,
+            sucursal=sucursal
         )
         
         if orden.cliente:
@@ -743,69 +757,119 @@ class OrdenRepuestoViewSet(viewsets.ModelViewSet):
         if nuevo_valor and not repuesto_orden.aprobado_cliente:
             raise ValidationError("No se puede instalar un repuesto que no ha sido aprobado.")
 
+        sucursal = orden.sucursal
+        qs_stock = InventarioStock.objects.select_for_update().filter(repuesto=repuesto_orden.repuesto)
+        if sucursal:
+            qs_stock_local = qs_stock.filter(ubicacion__almacen__sucursal=sucursal)
+        else:
+            qs_stock_local = qs_stock
+
         if nuevo_valor:
             # Para instalar, verificar de dónde proviene el stock físico:
-            # 1. ¿Estaba en stock_reservado de la cotización?
-            # 2. O si no estaba reservado, ¿hay stock_disponible (ej. ingresó por compra posterior)?
-            stock_record = InventarioStock.objects.select_for_update().filter(repuesto=repuesto_orden.repuesto).first()
+            # 1. ¿Estaba en stock_reservado de la cotización en esta sucursal?
+            # 2. O si no estaba reservado, ¿hay stock_disponible (ej. ingresó por compra posterior) en esta sucursal?
+            stocks_reservados = list(
+                qs_stock_local.filter(stock_reservado__gt=0).order_by('-stock_reservado')
+            )
+            total_reservado = sum(s.stock_reservado for s in stocks_reservados)
+
+            if total_reservado >= repuesto_orden.cantidad:
+                # Convertir la reserva previa en salida definitiva
+                pendiente = repuesto_orden.cantidad
+                for stock_record in stocks_reservados:
+                    if pendiente <= 0:
+                        break
+                    descontar = min(stock_record.stock_reservado, pendiente)
+                    stock_record.stock_reservado -= descontar
+                    stock_record.save(update_fields=['stock_reservado'])
+                    pendiente -= descontar
+
+                    MovimientoInventario.objects.create(
+                        repuesto=repuesto_orden.repuesto,
+                        ubicacion=stock_record.ubicacion,
+                        tipo_movimiento=MovimientoInventario.TipoMovimiento.SALIDA,
+                        cantidad=-descontar,
+                        stock_resultante=stock_record.stock_disponible,
+                        motivo=f"Instalación en OT-{orden.numero}",
+                        usuario=request.user,
+                        referencia_id=orden.id,
+                        referencia_tipo='OT'
+                    )
+            else:
+                # 2. Si no estaba reservado (aprobado sin stock), buscar en stock_disponible de esta sucursal
+                stocks_disponibles = list(
+                    qs_stock_local.filter(stock_disponible__gt=0).order_by('-stock_disponible')
+                )
+                total_disponible = sum(s.stock_disponible for s in stocks_disponibles)
+
+                if total_disponible >= repuesto_orden.cantidad:
+                    pendiente = repuesto_orden.cantidad
+                    for stock_record in stocks_disponibles:
+                        if pendiente <= 0:
+                            break
+                        descontar = min(stock_record.stock_disponible, pendiente)
+                        stock_record.stock_disponible -= descontar
+                        stock_record.save(update_fields=['stock_disponible'])
+                        pendiente -= descontar
+
+                        MovimientoInventario.objects.create(
+                            repuesto=repuesto_orden.repuesto,
+                            ubicacion=stock_record.ubicacion,
+                            tipo_movimiento=MovimientoInventario.TipoMovimiento.SALIDA,
+                            cantidad=-descontar,
+                            stock_resultante=stock_record.stock_disponible,
+                            motivo=f"Instalación en OT-{orden.numero} (compra directa)",
+                            usuario=request.user,
+                            referencia_id=orden.id,
+                            referencia_tipo='OT'
+                        )
+                else:
+                    # Validar si hay existencias en otra(s) sucursal(es)
+                    total_otras_sucursales = 0
+                    if sucursal:
+                        qs_otras = InventarioStock.objects.filter(
+                            repuesto=repuesto_orden.repuesto
+                        ).exclude(ubicacion__almacen__sucursal=sucursal)
+                        total_otras_sucursales = sum(s.stock_disponible for s in qs_otras)
+
+                    nombre_sucursal = f"la sucursal '{sucursal.nombre}'" if sucursal else "el almacén"
+                    if total_otras_sucursales >= repuesto_orden.cantidad:
+                        raise ValidationError(
+                            f"No se puede marcar como instalado: el repuesto '{repuesto_orden.repuesto.nombre}' no cuenta con stock en {nombre_sucursal} "
+                            f"(requerido: {repuesto_orden.cantidad}, disponible en esta sede: {total_disponible}). "
+                            f"Existen {total_otras_sucursales} unidades en otra(s) sucursal(es). "
+                            "Debe realizar un Traslado de Almacén hacia esta sucursal antes de poder instalarlo."
+                        )
+                    else:
+                        raise ValidationError(
+                            f"No se puede marcar como instalado: el repuesto '{repuesto_orden.repuesto.nombre}' no cuenta con stock físico en {nombre_sucursal} "
+                            f"(requerido: {repuesto_orden.cantidad}, disponible en esta sede: {total_disponible}). "
+                            "Debe registrar la compra o ingreso de mercadería en el módulo de Compras antes de instalarlo."
+                        )
+        else:
+            # Revertir instalación: devolver a la sucursal de la orden
+            stock_record = qs_stock_local.order_by('-stock_disponible', '-stock_reservado').first()
+            if not stock_record:
+                stock_record = qs_stock.order_by('-stock_disponible', '-stock_reservado').first()
+
             if not stock_record:
                 raise ValidationError(
                     f"No existe registro de inventario para el repuesto '{repuesto_orden.repuesto.nombre}'."
                 )
 
-            if stock_record.stock_reservado >= repuesto_orden.cantidad:
-                # Convertir la reserva previa en salida definitiva
-                stock_record.stock_reservado -= repuesto_orden.cantidad
-                stock_record.save()
-                MovimientoInventario.objects.create(
-                    repuesto=repuesto_orden.repuesto,
-                    ubicacion=stock_record.ubicacion,
-                    tipo_movimiento=MovimientoInventario.TipoMovimiento.SALIDA,
-                    cantidad=-repuesto_orden.cantidad,
-                    stock_resultante=stock_record.stock_disponible,
-                    motivo=f"Instalación en OT-{orden.numero}",
-                    usuario=request.user,
-                    referencia_id=orden.id,
-                    referencia_tipo='OT'
-                )
-            elif stock_record.stock_disponible >= repuesto_orden.cantidad:
-                # El repuesto ingresó por compra después de cotizar: descontar de disponible directamente
-                stock_record.stock_disponible -= repuesto_orden.cantidad
-                stock_record.save()
-                MovimientoInventario.objects.create(
-                    repuesto=repuesto_orden.repuesto,
-                    ubicacion=stock_record.ubicacion,
-                    tipo_movimiento=MovimientoInventario.TipoMovimiento.SALIDA,
-                    cantidad=-repuesto_orden.cantidad,
-                    stock_resultante=stock_record.stock_disponible,
-                    motivo=f"Instalación en OT-{orden.numero} (compra directa)",
-                    usuario=request.user,
-                    referencia_id=orden.id,
-                    referencia_tipo='OT'
-                )
-            else:
-                raise ValidationError(
-                    f"No se puede marcar como instalado: el repuesto '{repuesto_orden.repuesto.nombre}' no cuenta con stock físico en almacén "
-                    f"(requerido: {repuesto_orden.cantidad}, disponible: {stock_record.stock_disponible}). "
-                    "Debe registrar la compra o ingreso de mercadería en el módulo de Compras antes de instalarlo."
-                )
-        else:
-            # Revertir instalación: la reserva vuelve a estar activa
-            stock_record = InventarioStock.objects.select_for_update().filter(repuesto=repuesto_orden.repuesto).first()
-            if stock_record:
-                stock_record.stock_reservado += repuesto_orden.cantidad
-                stock_record.save()
-                MovimientoInventario.objects.create(
-                    repuesto=repuesto_orden.repuesto,
-                    ubicacion=stock_record.ubicacion,
-                    tipo_movimiento=MovimientoInventario.TipoMovimiento.RESERVA,
-                    cantidad=repuesto_orden.cantidad,
-                    stock_resultante=stock_record.stock_disponible,
-                    motivo=f"Reversión de instalación en OT-{orden.numero}",
-                    usuario=request.user,
-                    referencia_id=orden.id,
-                    referencia_tipo='OT'
-                )
+            stock_record.stock_reservado += repuesto_orden.cantidad
+            stock_record.save(update_fields=['stock_reservado'])
+            MovimientoInventario.objects.create(
+                repuesto=repuesto_orden.repuesto,
+                ubicacion=stock_record.ubicacion,
+                tipo_movimiento=MovimientoInventario.TipoMovimiento.RESERVA,
+                cantidad=repuesto_orden.cantidad,
+                stock_resultante=stock_record.stock_disponible,
+                motivo=f"Reversión de instalación en OT-{orden.numero}",
+                usuario=request.user,
+                referencia_id=orden.id,
+                referencia_tipo='OT'
+            )
 
         repuesto_orden.instalado = nuevo_valor
         repuesto_orden.save(update_fields=['instalado'])

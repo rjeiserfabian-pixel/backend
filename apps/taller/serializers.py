@@ -296,13 +296,14 @@ class OrdenRepuestoSerializer(serializers.ModelSerializer):
     repuesto_detalle = RepuestoSerializer(source='repuesto', read_only=True)
     stock_disponible = serializers.SerializerMethodField()
     tiene_stock_suficiente = serializers.SerializerMethodField()
+    stock_otras_sucursales = serializers.SerializerMethodField()
 
     class Meta:
         model = OrdenRepuesto
         fields = [
             'id', 'orden', 'repuesto', 'repuesto_detalle', 'cantidad', 'precio_unitario',
             'aprobado_cliente', 'entregado_por_almacen', 'instalado',
-            'stock_disponible', 'tiene_stock_suficiente'
+            'stock_disponible', 'tiene_stock_suficiente', 'stock_otras_sucursales'
         ]
         # aprobado_cliente/instalado solo deben cambiar vía las acciones dedicadas
         # (aprobar_servicios / marcar_instalado), que mantienen sincronizado el
@@ -314,10 +315,21 @@ class OrdenRepuestoSerializer(serializers.ModelSerializer):
         if not obj.repuesto_id:
             return 0
         from apps.inventario.models import InventarioStock
-        return sum(
-            item.stock_disponible
-            for item in InventarioStock.objects.filter(repuesto_id=obj.repuesto_id)
-        )
+        sucursal = getattr(obj.orden, 'sucursal', None)
+        qs = InventarioStock.objects.filter(repuesto_id=obj.repuesto_id)
+        if sucursal:
+            qs = qs.filter(ubicacion__almacen__sucursal=sucursal)
+        return sum(item.stock_disponible for item in qs)
+
+    def get_stock_otras_sucursales(self, obj):
+        if not obj.repuesto_id:
+            return 0
+        from apps.inventario.models import InventarioStock
+        sucursal = getattr(obj.orden, 'sucursal', None)
+        if not sucursal:
+            return 0
+        qs = InventarioStock.objects.filter(repuesto_id=obj.repuesto_id).exclude(ubicacion__almacen__sucursal=sucursal)
+        return sum(item.stock_disponible for item in qs)
 
     def get_tiene_stock_suficiente(self, obj):
         if obj.instalado:
@@ -325,14 +337,12 @@ class OrdenRepuestoSerializer(serializers.ModelSerializer):
         if not obj.repuesto_id:
             return False
         from apps.inventario.models import InventarioStock
-        stock_disp = sum(
-            item.stock_disponible
-            for item in InventarioStock.objects.filter(repuesto_id=obj.repuesto_id)
-        )
-        stock_res = sum(
-            item.stock_reservado
-            for item in InventarioStock.objects.filter(repuesto_id=obj.repuesto_id)
-        )
+        sucursal = getattr(obj.orden, 'sucursal', None)
+        qs = InventarioStock.objects.filter(repuesto_id=obj.repuesto_id)
+        if sucursal:
+            qs = qs.filter(ubicacion__almacen__sucursal=sucursal)
+        stock_disp = sum(item.stock_disponible for item in qs)
+        stock_res = sum(item.stock_reservado for item in qs)
         return (stock_disp >= obj.cantidad) or (stock_res >= obj.cantidad)
 
     def validate(self, attrs):
@@ -346,10 +356,15 @@ class OrdenTrabajoListSerializer(serializers.ModelSerializer):
     cliente_nombre = serializers.SerializerMethodField()
     mecanico_nombre = serializers.CharField(source='mecanico_asignado.nombre_completo', read_only=True)
     tipo_servicio_detalle = TipoServicioSerializer(source='tipo_servicio', read_only=True)
+    sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True, default=None)
     
     class Meta:
         model = OrdenTrabajo
-        fields = ['id', 'numero', 'vehiculo', 'vehiculo_placa', 'cliente', 'cliente_nombre', 'estado', 'tipo_servicio', 'tipo_servicio_detalle', 'fecha_ingreso', 'mecanico_asignado', 'mecanico_nombre', 'motivo_ingreso', 'fecha_vencimiento_cotizacion', 'fecha_estimada_entrega']
+        fields = [
+            'id', 'numero', 'sucursal', 'sucursal_nombre', 'vehiculo', 'vehiculo_placa', 'cliente', 'cliente_nombre',
+            'estado', 'tipo_servicio', 'tipo_servicio_detalle', 'fecha_ingreso', 'mecanico_asignado', 'mecanico_nombre',
+            'motivo_ingreso', 'fecha_vencimiento_cotizacion', 'fecha_estimada_entrega'
+        ]
         
     def get_cliente_nombre(self, obj):
         if obj.cliente:
@@ -398,6 +413,7 @@ class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
     accesorios_pertenencias = OrdenAccesorioPertenenciaSerializer(many=True, read_only=True)
     recepcionista_nombre = serializers.CharField(source='recepcionista.nombre_completo', read_only=True)
     mecanico_nombre = serializers.CharField(source='mecanico_asignado.nombre_completo', read_only=True)
+    sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True, default=None)
     historial_estados = OrdenHistorialEstadoSerializer(many=True, read_only=True)
     proforma_origen_id = serializers.IntegerField(source='proforma_origen.id', read_only=True, default=None)
     proforma_origen_numero = serializers.CharField(source='proforma_origen.numero', read_only=True, default=None)
@@ -405,7 +421,7 @@ class OrdenTrabajoDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrdenTrabajo
         fields = [
-            'id', 'numero', 'vehiculo', 'vehiculo_detalle', 'cliente', 'cliente_detalle', 'recepcionista', 'recepcionista_nombre',
+            'id', 'numero', 'sucursal', 'sucursal_nombre', 'vehiculo', 'vehiculo_detalle', 'cliente', 'cliente_detalle', 'recepcionista', 'recepcionista_nombre',
             'mecanico_asignado', 'mecanico_nombre', 'estado', 'tipo_servicio', 'tipo_servicio_detalle', 'kilometraje_ingreso',
             'motivo_ingreso', 'url_cotizacion_pdf', 'fecha_vencimiento_cotizacion', 'fecha_estimada_entrega', 'fecha_ingreso',
             'fecha_finalizacion', 'hallazgos', 'servicios', 'repuestos', 'evidencias_ingreso', 'accesorios_pertenencias', 'historial_estados',

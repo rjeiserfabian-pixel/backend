@@ -38,8 +38,8 @@ class OrdenTrabajoTests(TestCase):
             precio_compra=Decimal('5.00'), precio_por_mayor=Decimal('8.00'),
             precio_cash=Decimal('9.00'), precio_lista=Decimal('10.00'),
         )
-        sucursal = Sucursal.objects.create(nombre='Sucursal Taller Test')
-        almacen = Almacen.objects.create(sucursal=sucursal, nombre='Almacen Taller Test')
+        self.sucursal = Sucursal.objects.create(nombre='Sucursal Taller Test')
+        almacen = Almacen.objects.create(sucursal=self.sucursal, nombre='Almacen Taller Test')
         self.ubicacion = UbicacionFisica.objects.create(almacen=almacen, codigo='GENERAL')
         InventarioStock.objects.create(
             repuesto=self.repuesto, ubicacion=self.ubicacion, stock_disponible=Decimal('20')
@@ -49,6 +49,7 @@ class OrdenTrabajoTests(TestCase):
         return self.client.post('/api/taller/ordenes/', {
             'vehiculo': self.vehiculo.id,
             'cliente': self.cliente.id,
+            'sucursal': self.sucursal.id,
         }, format='json')
 
     def _stock(self):
@@ -292,7 +293,7 @@ class OrdenTrabajoTests(TestCase):
         # 3. Intentar instalar sin haber comprado el repuesto debe ser rechazado
         resp_inst = self.client.patch(f'/api/taller/repuestos/{orp_id}/marcar_instalado/', {}, format='json')
         self.assertEqual(resp_inst.status_code, 400, resp_inst.data)
-        self.assertIn('no cuenta con stock físico en almacén', str(resp_inst.data))
+        self.assertIn('no cuenta con stock físico en', str(resp_inst.data))
 
         # 4. Llega la compra del repuesto a almacén (+2 unidades)
         inv_stock.stock_disponible = Decimal('2.00')
@@ -303,6 +304,67 @@ class OrdenTrabajoTests(TestCase):
         self.assertEqual(resp_inst_ok.status_code, 200, resp_inst_ok.data)
         inv_stock.refresh_from_db()
         self.assertEqual(inv_stock.stock_disponible, Decimal('1.00'))
+
+    def test_bloquea_instalacion_si_stock_esta_en_otra_sucursal_hasta_traslado(self):
+        """Si el repuesto tiene stock en Sucursal B pero la OT es de Sucursal A, se bloquea la instalación y se exige traslado."""
+        sucursal_b = Sucursal.objects.create(nombre='Sucursal B Remota')
+        almacen_b = Almacen.objects.create(sucursal=sucursal_b, nombre='Almacen B')
+        ubicacion_b = UbicacionFisica.objects.create(almacen=almacen_b, codigo='REMOTO')
+
+        repuesto_remoto = Repuesto.objects.create(
+            codigo='REP-REMOTO-TEST',
+            nombre='Repuesto Remoto',
+            categoria=self.repuesto.categoria,
+            marca=self.repuesto.marca,
+            precio_compra=Decimal('10.00'),
+            precio_por_mayor=Decimal('15.00'),
+            precio_cash=Decimal('18.00'),
+            precio_lista=Decimal('20.00'),
+        )
+        # Sucursal A (donde está la orden) tiene 0
+        InventarioStock.objects.create(
+            repuesto=repuesto_remoto,
+            ubicacion=self.ubicacion,
+            stock_disponible=Decimal('0.00'),
+        )
+        # Sucursal B tiene 5 unidades
+        InventarioStock.objects.create(
+            repuesto=repuesto_remoto,
+            ubicacion=ubicacion_b,
+            stock_disponible=Decimal('5.00'),
+        )
+
+        resp_orden = self._crear_orden()
+        orden_id = resp_orden.data['id']
+
+        resp_rep = self.client.post('/api/taller/repuestos/', {
+            'orden': orden_id,
+            'repuesto': repuesto_remoto.id,
+            'cantidad': '1',
+            'precio_unitario': '20.00',
+        }, format='json')
+        orp_id = resp_rep.data['id']
+
+        self.client.post(f'/api/taller/ordenes/{orden_id}/aprobar_servicios/', {
+            'servicios_aprobados': [],
+            'repuestos_aprobados': [orp_id],
+        }, format='json')
+
+        # Intentar instalar: debe fallar avisando que hay stock en otra sucursal y requiere traslado
+        resp_inst = self.client.patch(f'/api/taller/repuestos/{orp_id}/marcar_instalado/', {}, format='json')
+        self.assertEqual(resp_inst.status_code, 400)
+        self.assertIn('Traslado de Almacén', str(resp_inst.data))
+
+        # Simular traslado hacia Sucursal A (+1 unidad en la ubicación de la orden)
+        stock_a = InventarioStock.objects.get(repuesto=repuesto_remoto, ubicacion=self.ubicacion)
+        stock_a.stock_disponible = Decimal('1.00')
+        stock_a.save()
+
+        # Ahora sí se permite marcar instalado
+        resp_inst_ok = self.client.patch(f'/api/taller/repuestos/{orp_id}/marcar_instalado/', {}, format='json')
+        self.assertEqual(resp_inst_ok.status_code, 200, resp_inst_ok.data)
+        stock_a.refresh_from_db()
+        self.assertEqual(stock_a.stock_disponible, Decimal('0.00'))
 
 
 class ConsultaVehiculoPublicaTests(TestCase):

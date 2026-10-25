@@ -753,6 +753,7 @@ class CitaViewSet(viewsets.ModelViewSet):
 
         orden = OrdenTrabajo.objects.create(
             numero=numero_ot,
+            sucursal=cita.sucursal,
             cliente=cita.cliente,
             vehiculo=cita.vehiculo,
             recepcionista=request.user,

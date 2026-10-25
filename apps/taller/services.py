@@ -59,12 +59,14 @@ def aprobar_cotizacion_orden(
     repuestos_a_aprobar = OrdenRepuesto.objects.filter(orden=orden, id__in=repuestos_validos).select_related("repuesto")
     for orp in repuestos_a_aprobar:
         if not orp.aprobado_cliente:
-            stock_record = InventarioStock.objects.select_for_update().filter(
-                repuesto=orp.repuesto, stock_disponible__gte=orp.cantidad
-            ).first()
+            qs_stock = InventarioStock.objects.select_for_update().filter(repuesto=orp.repuesto)
+            if orden.sucursal:
+                qs_stock = qs_stock.filter(ubicacion__almacen__sucursal=orden.sucursal)
+            stock_record = qs_stock.filter(stock_disponible__gte=orp.cantidad).order_by('-stock_disponible').first()
             if not stock_record and exigir_stock:
+                sucursal_str = f" en la sucursal '{orden.sucursal.nombre}'" if orden.sucursal else ""
                 raise ValidationError(
-                    f"No hay stock disponible suficiente para el repuesto '{orp.repuesto.nombre}'. "
+                    f"No hay stock disponible suficiente para el repuesto '{orp.repuesto.nombre}'{sucursal_str}. "
                     f"Cantidad requerida: {orp.cantidad}."
                 )
 
@@ -101,7 +103,12 @@ def aprobar_cotizacion_orden(
                 f"No se puede quitar la aprobacion del repuesto '{orp.repuesto.codigo}': "
                 "ya fue instalado. Revierta la instalacion primero."
             )
-        stock_record = InventarioStock.objects.select_for_update().filter(repuesto=orp.repuesto).first()
+        qs_stock = InventarioStock.objects.select_for_update().filter(repuesto=orp.repuesto)
+        if orden.sucursal:
+            qs_stock = qs_stock.filter(ubicacion__almacen__sucursal=orden.sucursal)
+        stock_record = qs_stock.filter(stock_reservado__gte=orp.cantidad).first()
+        if not stock_record:
+            stock_record = qs_stock.filter(stock_reservado__gt=0).order_by('-stock_reservado').first()
         if stock_record and stock_record.stock_reservado >= orp.cantidad:
             stock_record.stock_disponible += orp.cantidad
             stock_record.stock_reservado -= orp.cantidad
